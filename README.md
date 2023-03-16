@@ -28,3 +28,7 @@ How to run Swing_prediction.lua:
 
 # Progress Status
 halted
+
+##Changelog
+[![Changelog](https://img.shields.io/badge/Changelog-v1.0.0--stable...v1.1.0-blue?style=for-the-badge)](https://github.com/titaniummachine1/Swing_prediction.lua/compare/v1.0.0-stable...v1.1.0)
+
