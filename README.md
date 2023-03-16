@@ -1,3 +1,9 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub issues](https://img.shields.io/github/issues/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/issues)
+[![GitHub forks](https://img.shields.io/github/forks/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/network)
+[![GitHub stars](https://img.shields.io/github/stars/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/stargazers)
+[![Beta Downloads](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/Beta/total.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/releases)
+[![Visitors](https://visitor-badge.glitch.me/badge?page_id=titaniummachine1/Swing_prediction.lua)](https://github.com/titaniummachine1/Swing_prediction.lua)
 ## Requirements
 
 - [Menu] [![Download zip](https://custom-icon-badges.herokuapp.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white "Download lua")](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
@@ -21,11 +27,3 @@ How to run Swing_prediction.lua:
 ## Images
 ![Swing_prediction.lua Screenshot](https://i.imgur.com/TAtdkNf.png)
 ![Swing_prediction.lua Screenshot](https://i.imgur.com/bVMorQp.png)
-
-## Badges
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub issues](https://img.shields.io/github/issues/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/issues)
-[![GitHub forks](https://img.shields.io/github/forks/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/network)
-[![GitHub stars](https://img.shields.io/github/stars/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/stargazers)
-[![Beta Downloads](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/Beta/total.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/releases)
-[![Visitors](https://visitor-badge.glitch.me/badge?page_id=titaniummachine1/Swing_prediction.lua)](https://github.com/titaniummachine1/Swing_prediction.lua)
