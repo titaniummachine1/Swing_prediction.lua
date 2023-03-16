@@ -24,7 +24,7 @@ How to run Swing_prediction.lua:
   1. Create a .bat file in the same directory as lmaobox.exe.
   2. Right-click the .bat file and click "edit".
   3. Put "Lmaobox file name.exe -beta" inside the file, save, and run it.
-  4. It should look similar to this: `start Lmaobox file name.exe -beta`
+  4. It should look similar to this: `start Lmaobox file-name.exe -beta`
 
 # Progress Status
 halted
