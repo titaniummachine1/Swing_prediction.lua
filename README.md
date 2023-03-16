@@ -27,8 +27,4 @@ How to run Swing_prediction.lua:
   4. It should look similar to this: `start Lmaobox file name.exe -beta`
 
 # Progress Status
-
 halted
-
-# Full Changelog
-working
