@@ -2,8 +2,10 @@
 [![GitHub issues](https://img.shields.io/github/issues/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/issues)
 [![GitHub forks](https://img.shields.io/github/forks/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/network)
 [![GitHub stars](https://img.shields.io/github/stars/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/stargazers)
-[![Download Latest Release](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/latest/Swing_prediction.lua.svg?style=for-the-badge&logo=download)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 [![Visitors](https://visitor-badge.glitch.me/badge?page_id=titaniummachine1/Swing_prediction.lua)](https://github.com/titaniummachine1/Swing_prediction.lua)
+## Download
+[![Download Latest Release](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/latest/Swing_prediction.lua.svg?style=for-the-badge&logo=download)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
+
 ## Requirements
 
 - [Menu] [![Download zip](https://custom-icon-badges.herokuapp.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white "Download lua")](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
