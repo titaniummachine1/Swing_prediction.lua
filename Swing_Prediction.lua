@@ -29,17 +29,17 @@ local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
 menu.Style.Outline = true                 -- Outline around the menu
 
---[[menu:AddComponent(MenuLib.Button("Disable Weapon Sway", function() -- Disable Weapon Sway (Executes commands)
+menu:AddComponent(MenuLib.Button("Disable Weapon Sway", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
     client.SetConVar("cl_jiggle_bone_framerate_cutoff", 0)             -- Set cl_jiggle_bone_framerate_cutoff to 0
     client.SetConVar("cl_bobcycle",                     10000)         -- Set cl_bobcycle to 10000
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
-end, ItemFlags.FullWidth))]]
+end, ItemFlags.FullWidth))
 
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Swing Prediction", true))
-local mswingdist   = menu:AddComponent(MenuLib.Slider("swing distance",    10, 100, 47))
+local mswingdist   = menu:AddComponent(MenuLib.Slider("swing distance",    10, 100, 40))
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
 --local mRemovals     = menu:AddComponent(MenuLib.MultiCombo("Removals", Removals, ItemFlags.FullWidth)) -- Remove RTD and HUD Texts
@@ -86,9 +86,6 @@ local function OnCreateMove(pCmd)                    -- Everything within this f
 
         if vPlayer:IsAlive() == false then goto continue end
         if vPlayer:GetIndex() == pLocal:GetIndex() then goto continue end            -- Code below this line doesn't work if you're the only player in the game.
-
-        local distVector = vPlayer:GetAbsOrigin() - pLocal:GetAbsOrigin()            -- Set "distVector" to the distance between us and the player we are iterating through
-        distance = distVector:Length()                                     -- Set "distance" to the length of "distVector"
         if pLocal:IsAlive() == false then goto continue end                          -- If we are not alive, skip the rest of this code
 
         --if vPlayer:GetTeamNumber() == pLocal:GetTeamNumber() then goto continue end  -- If we are on the same team as the player we are iterating through, skip the rest of this code
@@ -120,72 +117,89 @@ if sneakyboy then goto continue end
 -- Initialize closest distance and closest player
 local closestDistance = math.huge
 
--- Loop through all players in the game
 if Swingpred:GetValue() then
-    for i, vPlayer in pairs(players) do
-        -- For each player in the game
-        if not vPlayer:IsAlive() or vPlayer:IsDormant() then
-            break
-        end
-        
-        -- Update closest player and closest distance
-        if distance < closestDistance then
-            closestPlayer = vPlayer
-            closestDistance = distance
-        end
-        
-        -- Check if there are enemies in range and predicted hit time is valid
-        if #players > 0 and estime ~= nil then
-            
-            -- Swing Prediction
-            if distance < 500 then
-                -- Calculate closing speed
-                local tickRate = 66
-                local speedPerTick = distance - (previousDistance or 0)
-                local closingSpeed = speedPerTick * tickRate
-                local relativeSpeed = -closingSpeed
-                local myteam = (vPlayer:GetTeamNumber() == pLocal:GetTeamNumber())
-                
-                -- Check if relative speed is not zero
-                if relativeSpeed ~= 0 then
-                    -- Round down relative speed to nearest integer
-                    relativeSpeed = math.floor(relativeSpeed)
-                end
-                
-                -- Calculate estimated hit time
-                if relativeSpeed ~= 0 then
-                    estime = distance / relativeSpeed
-                end
-                
-                -- Check if relative speed is greater than 2000
-                if math.abs(relativeSpeed) > 2000 then
-                    relativeSpeed = 0
-                end
+    local closestPlayer = nil
+    local closestDistance = 99999
     
-                -- Set estimated hit time to 0 if negative
-                if estime < 0 then
-                    estime = 0
-                end
-                -- Check if the enemy is within melee distance
-                local meleedist = distance <= 400
-                local swingdist = distance <= swingrange
-
-                -- Check if estimated hit time is within range, enemy is not on the same team, and melee distance
-                if meleedist and not myteam then
-                    -- Set attack button
-                    local mswingrange1 = mswingdist
-                    if estime > 0.08 and estime <= (0.01 * mswingdist:GetValue()) and is_melee then
-                        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                        print(estime)
-                    end
-                end
-                
-                -- Update previous distance
-                previousDistance = distance
+    -- Find the closest player
+    for _, vPlayer in ipairs(players) do
+        -- Only check distance for alive enemies on the other team
+        if vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
+            local distVector = vPlayer:GetAbsOrigin() - pLocal:GetAbsOrigin()    -- Set "distVector" to the distance between us and the player we are iterating through
+            local distance = distVector:Length()
+            
+            -- Update closest player and closest distance
+            if distance < closestDistance then
+                closestPlayer = vPlayer
+                closestDistance = distance
             end
         end
     end
+    
+    -- Check if there is a valid closest player
+    if closestPlayer ~= nil then
+        -- Calculate estimated hit time based on the closest player's distance
+        local distance = closestDistance
+        local myteam = (closestPlayer:GetTeamNumber() == pLocal:GetTeamNumber())
+        
+        -- Check if there are enemies in range and predicted hit time is valid
+        if not myteam and distance < 500 then
+            -- Swing Prediction
+            
+            -- Calculate closing speed
+            local tickRate = 66
+            local speedPerTick = distance - (previousDistance or 0)
+            local closingSpeed = speedPerTick * tickRate
+            local relativeSpeed = -closingSpeed
+            
+            -- Check if relative speed is not zero
+            if relativeSpeed ~= 0 then
+                -- Round down relative speed to nearest integer
+                relativeSpeed = math.floor(relativeSpeed)
+            end
+            
+            -- Calculate estimated hit time
+            local estime = 0
+            if relativeSpeed ~= 0 then
+                estime = distance / relativeSpeed
+            end
+            
+            -- Check if relative speed is greater than 2000
+            if math.abs(relativeSpeed) > 2000 then
+                relativeSpeed = 0
+            end
+    
+            -- Set estimated hit time to 0 if negative
+            if estime < 0 then
+                estime = 0
+            end
+            
+            -- Check if the enemy is within melee distance
+            local meleedist = distance <= 200
+            local swingdist = distance <= swingrange
+
+            local timeahead = (0.01 * mswingdist:GetValue())
+            
+            if estime == estimelast then
+                estime = 0
+            end
+
+            -- Check if estimated hit time is within range, enemy is not on the same team, and melee distance
+            if meleedist then
+                -- Set attack button
+                if estime > 0.1 and estime <= timeahead and is_melee then
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+                    print(estime)
+                end
+            end
+            
+            -- Update previous distance
+            previousDistance = distance
+            estimelast = estime
+        end
+    end
 end
+
 
         ::continue::
     end
