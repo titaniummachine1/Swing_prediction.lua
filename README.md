@@ -19,11 +19,10 @@ How to run Swing_prediction.lua:
 
 # Progress Status
 
-2023.03.09 Progress continues.
+halted
 
 # Full Changelog
-
+working
 
 ## Images
-![Swing_prediction.lua Screenshot](https://i.imgur.com/TAtdkNf.png)
-![Swing_prediction.lua Screenshot](https://i.imgur.com/bVMorQp.png)
+![Swing_prediction.lua Screenshot](https://i.imgur.com/jyDi832.png)
