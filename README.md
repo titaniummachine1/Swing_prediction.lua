@@ -10,6 +10,10 @@
 
 - [Menu] [![Download zip](https://custom-icon-badges.herokuapp.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white "Download lua")](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
 
+## describtion
+simple swing prediction lua for Lmaobox
+linear prediction only so far but if i have time it'll be better.
+
 # Setup
 Put all required files in your %localappdata% folder.
 
