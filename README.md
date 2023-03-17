@@ -11,7 +11,7 @@
 
 ## Requirements
 
-- [Menu] [![Download](https://img.shields.io/badge/Download-Menu-brightgreen?style=for-the-badge&logo=github)](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
+- [![Download](https://img.shields.io/badge/Download-Menu-brightgreen?style=for-the-badge&logo=github)](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
 
 
 ## describtion
