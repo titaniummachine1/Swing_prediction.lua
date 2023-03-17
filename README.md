@@ -5,7 +5,7 @@
 [![Visitors](https://visitor-badge.glitch.me/badge?page_id=titaniummachine1/Swing_prediction.lua)](https://github.com/titaniummachine1/Swing_prediction.lua)
 ## Download
 
-![Swing_prediction.lua Screenshot](https://i.imgur.com/jyDi832.png)
+![Swing_prediction.lua Screenshot](https://i.imgur.com/GfCARP3.png)
 
 [![Download Latest Release](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/latest/Swing_prediction.lua.svg?style=for-the-badge&logo=download)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 
