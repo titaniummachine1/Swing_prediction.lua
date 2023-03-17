@@ -41,6 +41,7 @@ end, ItemFlags.FullWidth))
 
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mswingdist   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    10, 1000, 250))
+--local debug = menu:AddComponent(MenuLib.Checkbox("debug", true))
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
 --local mRemovals     = menu:AddComponent(MenuLib.MultiCombo("Removals", Removals, ItemFlags.FullWidth)) -- Remove RTD and HUD Texts
@@ -229,7 +230,7 @@ local function doDraw()
         local players = entities.FindByClass("CTFPlayer")
         local pLocal = entities.GetLocalPlayer()
         
-        if pLocal ~= nil then
+        if pLocal ~= nil and debug == true then
             local w, h = draw.GetScreenSize()
             local screenPos = { w / 2 + 10, h / 2 }
         
