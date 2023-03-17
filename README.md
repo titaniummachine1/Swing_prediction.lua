@@ -10,7 +10,7 @@
 [![Download Latest Release](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/latest/Swing_prediction.lua.svg?style=for-the-badge&logo=download)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 
 ## Requirements
-[Menu] [![Download](https://img.shields.io/badge/Download-Menu.lua_lnx00-gray?style=for-the-badge&logo=download)](https://raw.githubusercontent.com/lnx00/Lmaobox-LUA/main/Menu.lua)
+[Menu] [![Download](https://img.shields.io/badge/Download-Menu.lua_lnx00-blue?style=for-the-badge&logo=download)](https://raw.githubusercontent.com/lnx00/Lmaobox-LUA/main/Menu.lua)
 
 
 
