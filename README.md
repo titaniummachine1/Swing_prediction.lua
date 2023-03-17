@@ -11,7 +11,8 @@
 
 ## Requirements
 
-- [Menu] [![Download zip](https://custom-icon-badges.herokuapp.com/badge/-Download-blue?style=for-the-badge&logo=download&logoColor=white "Download lua")](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
+- [Menu] [![Download](https://img.shields.io/badge/Download-Menu-brightgreen?style=for-the-badge&logo=github)](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
+
 
 ## describtion
 simple swing prediction lua for Lmaobox
