@@ -119,6 +119,20 @@ if sneakyboy then return end
 
 -- Initialize closest distance and closest player
 if Swingpred:GetValue() then
+    local PlayerClass = LocalPlayer:GetPropInt("m_iClass")
+    
+    local charge = false
+    if PlayerClass == 4 and (pLocal:InCond(17)) then
+        charge = true                                        -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
+        if distance < 30 then
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+        end
+    end
+
+    if PlayerClass == 8 then
+        return
+    end
+
     local closestPlayer = nil
     local closestDistance = 99999
     
@@ -152,7 +166,6 @@ if Swingpred:GetValue() then
             local speedPerTick = distance - (previousDistance or 0)
             local closingSpeed = speedPerTick * tickRate / 1000
             local relativeSpeed = -closingSpeed
-            local PlayerClass = LocalPlayer:GetPropInt("m_iClass")
                         -- Convert time ahead from seconds to milliseconds
             local timeahead = mswingdist:GetValue()
             local swingdist = distance <= swingrange
@@ -161,14 +174,6 @@ if Swingpred:GetValue() then
             -- Check if relative speed is greater than 2000 units/ms
             if math.abs(relativeSpeed) > 2 then
                 relativeSpeed = 0
-            end
-
-            local charge = false
-            if PlayerClass == 4 and (pLocal:InCond(17)) then
-                charge = true                                        -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
-                if distance < 30 then
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                end
             end
             -- Calculate estimated hit time in milliseconds
             local estime = 0
@@ -198,7 +203,7 @@ if Swingpred:GetValue() then
                 -- Set attack button if the estimated hit time is within the time ahead limit
                 if charge == false and estime > 0 and estime <= timeahead and is_melee then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                    print("Estimated hit time:", estime, "ms")
+                    --print("Estimated hit time:", estime, "ms")
                     estimedraw = estime
                 end
             end
