@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))
 ]]
 
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mswingdist   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    10, 1000, 250))
+local mswingdist   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    100, 350, 250))
 --local debug = menu:AddComponent(MenuLib.Checkbox("debug", true))
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
