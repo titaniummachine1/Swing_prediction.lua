@@ -16,7 +16,7 @@
 
 
 ## describtion
-🎮 This Lua script is made for a game where the player needs to hit their enemies with a melee weapon.
+🎮 This Lua script is made for players who needs to hit their enemies with a melee weapon as quickly as posible.
 
 👥 The script finds the closest enemy player on the opposing team and calculates their distance from the local player.
 
