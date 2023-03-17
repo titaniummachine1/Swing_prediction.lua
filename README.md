@@ -28,6 +28,6 @@ How to run Swing_prediction.lua:
   3. Put "Lmaobox file name.exe -beta" inside the file, save, and run it.
   4. It should look similar to this: `start Lmaobox file-name.exe -beta`
 
-## Changelog
-[![Changelog](https://img.shields.io/badge/Changelog-v1.0.0--stable...v1.1.0-blue?style=for-the-badge)](https://github.com/titaniummachine1/Swing_prediction.lua/compare/v1.0.0-stable...v1.1.0)
+[![Changelog](https://img.shields.io/badge/Changelog-Latest%20Release-blue?style=for-the-badge)](https://github.com/titaniummachine1/Swing_prediction.lua/compare/v1.3.9_stable...latest)
+
 
