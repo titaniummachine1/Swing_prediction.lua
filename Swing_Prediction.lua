@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))
 ]]
 local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    0, 210, 200))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    0, 350, 250))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -114,15 +114,27 @@ if Swingpred:GetValue() then
 
     local closestPlayer = nil
     closestDistance = 1000
-    
+    height_offset = -85
+    local height_vector = Vector3( 0, 0, height_offset )
+
     -- Find the closest player
     local maxDistance = 400
     for _, vPlayer in ipairs(players) do
         -- Only check distance for alive enemies on the other team within maxDistance
         if vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
-            local distVector = vPlayer:GetAbsOrigin() - pLocal:GetAbsOrigin()
-            local distance = distVector:Length() - swingrange
-    
+            
+            pLocalOrigin = pLocal:GetAbsOrigin()
+            vPlayerOrigin = vPlayer:GetAbsOrigin()
+            
+            local distVector = vPlayerOrigin - pLocalOrigin
+            distancefeet = distVector:Length() - swingrange
+
+            pLocalOrigin = pLocalOrigin - height_vector
+            vPlayerOrigin = vPlayerOrigin - height_vector
+            
+            local distVector = vPlayerOrigin - pLocalOrigin
+            distance = distVector:Length() - swingrange
+            
             -- Update closest player and closest distance
             if distance < closestDistance and distance <= maxDistance then
                 closestPlayer = vPlayer
@@ -152,28 +164,30 @@ if Swingpred:GetValue() then
             -- Swing Prediction
             local tickRate = 66 -- game tick rate
             local speedPerTick = distance - (previousDistance or 0) -- difference in distance between current and previous tick
+            local speedperTickfeet = distancefeet - (previousDistancefeet or 0)
             
-            local closingSpeed = speedPerTick * tickRate / 1000 -- closing speed in units/ms
-            local relativeSpeed = -closingSpeed -- relative speed
+            local closingSpeed = -(speedPerTick * tickRate / 1000) -- closing speed in units/ms
+            local closingSpeedfeet = -(speedperTickfeet * tickRate / 1000)
+            --print(closingSpeed)
             local isMelee = pWeapon:IsMeleeWeapon()
             -- turn input milisecodn value to code
-            local timeAhead = mtimeahead:GetValue() + 100
+            local timeAhead = mtimeahead:GetValue()
             
             -- Check if enemy is within swing range or melee range
             local withinMeleeRange = distance <= 500
             
             -- Check if relative speed is greater than 2000 units/ms
-            if math.abs(relativeSpeed) > 2 then
-                relativeSpeed = 0
+            if math.abs(closingSpeed) > 2000 then
+                closingSpeed = 0
             end
             
             -- Calculate estimated hit time in milliseconds
-            local estHitTime = 0
-            if relativeSpeed ~= 0 then
-                estHitTime = distance / relativeSpeed
+            estHitTime = 0
+            if closingSpeed ~= 0 then
+                estHitTime = distance / closingSpeed
+            elseif closingSpeedfeet ~= 0 and distance > distancefeet then
+                estHitTime = distancefeet / closingSpeedfeet
             end
-            
-            estHitTime = estHitTime -- Subtract swingrange to get the estimated hit time when within range
             
             -- If estimated hit time has not changed since last tick, set it to 0
             if estHitTime == estHitTimeLast then
@@ -182,14 +196,14 @@ if Swingpred:GetValue() then
 
             -- Update previous distance and estimated hit time
             previousDistance = distance
-
+            prewiousDistancefeet = distancefeet
             -- Check if estimated hit time is within range, enemy is not on the same team, and within melee distance
             if withinMeleeRange then
                 -- Set attack button if the estimated hit time is within the time ahead limit
                 if isMelee and not stop and estHitTime > 0 and estHitTime <= timeAhead then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                    print("Estimated hit time:", estHitTime, "ms")
-                    estime = estHitTime
+                    --print("Estimated hit time:", estHitTime, "ms")
+                    estHitTime1 = estHitTime
                 end
             end
         end
@@ -202,20 +216,39 @@ end
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
+    if engine.Con_IsVisible() or engine.IsGameUIVisible() then
+        return
+    end
+    local players = entities.FindByClass("CTFPlayer")
+    local vPlayerOriginvector = vPlayerOrigin
 
+        local pLocal = entities.GetLocalPlayer()
         if (mfTimer > 12 * 66) then                                                                                                            -- Remove the cross after 12 seconds (isn't this fps-based? on 144hz monitors, 66 = 5.5 seconds. In that case, this may show longer than it should for others)
             mfTimer = 0
         end
 
-        local pLocal = entities.GetLocalPlayer()
-        
         if pLocal ~= nil and debug ~= nil then
             if debug:GetValue() == true then
+
+            local screenPos = client.WorldToScreen(vPlayerOriginvector)
+
+                for i, p in ipairs( players ) do
+                    if p:IsAlive() and not p:IsDormant() then
+                        
+                        local screenPos = client.WorldToScreen(vPlayerOrigin)
+                        if screenPos ~= nil then
+                            draw.SetFont( myfont )
+                            draw.Color( 255, 255, 255, 255 )
+                            draw.Text( screenPos[1], screenPos[2], string.format("%.2f", estHitTime1))
+                        end
+                    end
+                end
+
                 local w, h = draw.GetScreenSize()
-                local screenPos = { w / 2 + 10, h / 2 }
+                local screenPos = { w / 2 - 15, h / 2 + 20}
                 local str1 = 0
                 if estime ~= nil then
-                    str1 = string.format("%.2f", estime)
+                    str1 = string.format("%.2f", estHitTime1)
                 end
             
                 draw.SetFont(myfont)
