@@ -37,8 +37,8 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
 end, ItemFlags.FullWidth))
-
-local debug = menu:AddComponent(MenuLib.Checkbox("debug", true))]]
+]]
+local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mtimeahead   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    100, 350, 300))
 
@@ -204,18 +204,19 @@ local function doDraw()
 
         local pLocal = entities.GetLocalPlayer()
         
-        if pLocal ~= nil and debug:GetValue() == true then
-            local w, h = draw.GetScreenSize()
-            local screenPos = { w / 2 + 10, h / 2 }
-            local str1 = 0
-            if estime ~= nil then
-                str1 = string.format("%.2f", estime)
+        if pLocal ~= nil and debug ~= nil then
+            if debug:GetValue() == true then
+                local w, h = draw.GetScreenSize()
+                local screenPos = { w / 2 + 10, h / 2 }
+                local str1 = 0
+                if estime ~= nil then
+                    str1 = string.format("%.2f", estime)
+                end
+            
+                draw.SetFont(myfont)
+                draw.Color(255, 255, 255, 255)
+                draw.TextShadow(screenPos[1], screenPos[2], str1)
             end
-        
-            draw.SetFont(myfont)
-            draw.Color(255, 255, 255, 255)
-            draw.TextShadow(screenPos[1], screenPos[2], str1)
-        
         end
         
 
