@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))
 ]]
 local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    100, 350, 300))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    100, 350, 250))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -98,6 +98,9 @@ local function OnCreateMove(pCmd)                    -- Everything within this f
     
 
     local swingrange = pWeapon:GetSwingRange()
+    if swingrange == nil then
+        swingrange = 0
+    end
 
 if sneakyboy then return end
 
@@ -113,19 +116,21 @@ if Swingpred:GetValue() then
     closestDistance = 1000
     
     -- Find the closest player
+    local maxDistance = 400
     for _, vPlayer in ipairs(players) do
-        -- Only check distance for alive enemies on the other team
+        -- Only check distance for alive enemies on the other team within maxDistance
         if vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
-            local distVector = vPlayer:GetAbsOrigin() - pLocal:GetAbsOrigin()    -- Set "distVector" to the distance between us and the player we are iterating through
-            local distance = distVector:Length() - swingrange -- Subtract swingrange to get distance to hit the target
-            
+            local distVector = vPlayer:GetAbsOrigin() - pLocal:GetAbsOrigin()
+            local distance = distVector:Length() - swingrange
+    
             -- Update closest player and closest distance
-            if distance < closestDistance then
+            if distance < closestDistance and distance <= maxDistance then
                 closestPlayer = vPlayer
                 closestDistance = distance
             end
         end
     end
+    
 
     local stop = false
     if (pLocal:InCond(17)) and PlayerClass == 4 or PlayerClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
