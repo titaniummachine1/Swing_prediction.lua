@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))
 ]]
 local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    200, 310, 300))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    0, 210, 200))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -157,7 +157,7 @@ if Swingpred:GetValue() then
             local relativeSpeed = -closingSpeed -- relative speed
             local isMelee = pWeapon:IsMeleeWeapon()
             -- turn input milisecodn value to code
-            local timeAhead = mtimeahead:GetValue()
+            local timeAhead = mtimeahead:GetValue() + 100
             
             -- Check if enemy is within swing range or melee range
             local withinMeleeRange = distance <= 500
