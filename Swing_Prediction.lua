@@ -37,16 +37,14 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
 end, ItemFlags.FullWidth))
-]]
 
+local debug = menu:AddComponent(MenuLib.Checkbox("debug", true))]]
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mswingdist   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    100, 350, 250))
---local debug = menu:AddComponent(MenuLib.Checkbox("debug", true))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("Miliseconds ahead",    100, 350, 300))
+
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
 --local mRemovals     = menu:AddComponent(MenuLib.MultiCombo("Removals", Removals, ItemFlags.FullWidth)) -- Remove RTD and HUD Texts
-
-local myfont = draw.CreateFont("Verdana", 16, 800)
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)                    -- Everything within this function will run 66 times a second
@@ -97,44 +95,22 @@ local function OnCreateMove(pCmd)                    -- Everything within this f
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
     local LocalPlayer = entities.GetLocalPlayer()
    -- local added_per_shot, bucket_current, crit_fired
-    local is_melee                  = pWeapon:IsMeleeWeapon()
-    local cond_Melee
-
-    --local primaryWeapon = pLocal:GetEntityForLoadoutSlot( LOADOUT_POSITION_PRIMARY )
-    --local secondaryWeapon = pLocal:GetEntityForLoadoutSlot( LOADOUT_POSITION_SECONDARY )
-    --local meleeWeapon = pLocal:GetEntityForLoadoutSlot( LOADOUT_POSITION_MELEE )
-   --local Localclass = pLocal:GetTeamNumber()
-    --local touching = 69
-    --swingrange = 69
-    local swingrange = pWeapon:GetSwingRange()
-
-    --local shouldmelee = true
-    --local safe = true
-    --local incombat = false
-    --local safemode = true
     
 
+    local swingrange = pWeapon:GetSwingRange()
 
 if sneakyboy then return end
 
 -- Initialize closest distance and closest player
 if Swingpred:GetValue() then
     local PlayerClass = LocalPlayer:GetPropInt("m_iClass")
-    
-    local charge = false
-    if PlayerClass == 4 and (pLocal:InCond(17)) then
-        charge = true                                        -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
-        if distance < 30 then
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-        end
-    end
 
     if PlayerClass == 8 then
         return
     end
 
     local closestPlayer = nil
-    local closestDistance = 99999
+    closestDistance = 1000
     
     -- Find the closest player
     for _, vPlayer in ipairs(players) do
@@ -150,75 +126,69 @@ if Swingpred:GetValue() then
             end
         end
     end
-    
+
+    local stop = false
+    if (pLocal:InCond(17)) and PlayerClass == 4 or PlayerClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
+        stop = true
+        dynamicstop = 45
+        if (pCmd.forwardmove == 0) then dynamicstop = 30 end -- case if you dont hold w when charging
+        if closestDistance <= dynamicstop and PlayerClass == 4 then
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+        end
+    end
     -- Check if there is a valid closest player
     if closestPlayer ~= nil then
         -- Calculate estimated hit time based on the closest player's distance
         local distance = closestDistance
-        local hostle = (closestPlayer:GetTeamNumber() == pLocal:GetTeamNumber())
+        --local hostile = (closestPlayer:GetTeamNumber() == pLocal:GetTeamNumber())
         
-        -- Check if there are enemies in range and predicted hit time is valid
-        if not hostle and distance < 500 then
-            -- Swing Prediction
+            -- Check if there are enemies in range and predicted hit time is valid
             
-            -- Calculate closing speed in units/ms
-            local tickRate = 66
-            local speedPerTick = distance - (previousDistance or 0)
-            local closingSpeed = speedPerTick * tickRate / 1000
-            local relativeSpeed = -closingSpeed
-                        -- Convert time ahead from seconds to milliseconds
-            local timeahead = mswingdist:GetValue()
-            local swingdist = distance <= swingrange
-            local meleedist = distance <= 350
-
+            -- Swing Prediction
+            local tickRate = 66 -- game tick rate
+            local speedPerTick = distance - (previousDistance or 0) -- difference in distance between current and previous tick
+            
+            local closingSpeed = speedPerTick * tickRate / 1000 -- closing speed in units/ms
+            local relativeSpeed = -closingSpeed -- relative speed
+            local isMelee = pWeapon:IsMeleeWeapon()
+            -- turn input milisecodn value to code
+            local timeAhead = mtimeahead:GetValue()
+            
+            -- Check if enemy is within swing range or melee range
+            local withinMeleeRange = distance <= 500
+            
             -- Check if relative speed is greater than 2000 units/ms
             if math.abs(relativeSpeed) > 2 then
                 relativeSpeed = 0
             end
+            
             -- Calculate estimated hit time in milliseconds
-            local estime = 0
+            local estHitTime = 0
             if relativeSpeed ~= 0 then
-                estime = distance / relativeSpeed
-            end
-
-            estime = estime - swingrange -- Subtract swingrange to get the estimated hit time when within range
-
-            if estime == estimelast then
-                estime = 0
-            end
-
-            -- Set estimated hit time to 0 if negative
-            if estime < 0 then
-                estime = 0
-            end
-
-            
-
-            
-
-            
-            estimedraw = estime
-            -- Check if estimated hit time is within range, enemy is not on the same team, and within melee distance
-            if meleedist then
-                -- Set attack button if the estimated hit time is within the time ahead limit
-                if charge == false and estime > 0 and estime <= timeahead and is_melee then
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                    --print("Estimated hit time:", estime, "ms")
-                    estimedraw = estime
-                end
+                estHitTime = distance / relativeSpeed
             end
             
+            estHitTime = estHitTime -- Subtract swingrange to get the estimated hit time when within range
+            
+            -- If estimated hit time has not changed since last tick, set it to 0
+            if estHitTime == estHitTimeLast then
+                estHitTime = 0
+            end
+
             -- Update previous distance and estimated hit time
             previousDistance = distance
-            estimelast = estime
+
+            -- Check if estimated hit time is within range, enemy is not on the same team, and within melee distance
+            if withinMeleeRange then
+                -- Set attack button if the estimated hit time is within the time ahead limit
+                if isMelee and not stop and estHitTime > 0 and estHitTime <= timeAhead then
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+                    print("Estimated hit time:", estHitTime, "ms")
+                    estime = estHitTime
+                end
+            end
         end
     end
-end
-
-
-
-
-
         ::continue::
     end
 end
@@ -232,17 +202,14 @@ local function doDraw()
             mfTimer = 0
         end
 
-        local players = entities.FindByClass("CTFPlayer")
         local pLocal = entities.GetLocalPlayer()
         
-        if pLocal ~= nil and debug == true then
+        if pLocal ~= nil and debug:GetValue() == true then
             local w, h = draw.GetScreenSize()
             local screenPos = { w / 2 + 10, h / 2 }
-        
-            if estimedraw ~= nil and estimedraw ~= 0 then
-                str1 = string.format("%.2f", estimedraw)
-            else
-                str1 = "0" -- or whatever message you want to display if relativeSpeed is zero or nil
+            local str1 = 0
+            if estime ~= nil then
+                str1 = string.format("%.2f", estime)
             end
         
             draw.SetFont(myfont)
