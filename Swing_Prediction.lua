@@ -36,11 +36,11 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
-end, ItemFlags.FullWidth))
-]]
+end, ItemFlags.FullWidth))]]
+
 local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    0, 350, 250))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    0, 300, 250))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -96,8 +96,13 @@ local function OnCreateMove(pCmd)                    -- Everything within this f
     local LocalPlayer = entities.GetLocalPlayer()
    -- local added_per_shot, bucket_current, crit_fired
     
+    local vPlayerhitbox = 32
 
     local swingrange = pWeapon:GetSwingRange()
+    if swingrange ~= nil then
+        swingrange = swingrange + vPlayerhitbox
+    end
+
     if swingrange == nil then
         swingrange = 0
     end
@@ -114,27 +119,41 @@ if Swingpred:GetValue() then
 
     local closestPlayer = nil
     closestDistance = 1000
-    height_offset = -85
-    local height_vector = Vector3( 0, 0, height_offset )
+    Vhitbox_Height = 85
+    
+    
+    local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
+    local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
+    viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
 
+    local hitbox_height = Vector3( 0, 0, Vhitbox_Height )
+    local Vheight = Vector3( 0, 0, viewheight )
     -- Find the closest player
-    local maxDistance = 400
+    local maxDistance = 700
     for _, vPlayer in ipairs(players) do
         -- Only check distance for alive enemies on the other team within maxDistance
         if vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
             
-            pLocalOrigin = pLocal:GetAbsOrigin()
+
+
+
+
+
+            pLocalOrigin = pLocal:GetAbsOrigin() + Vheight
             vPlayerOrigin = vPlayer:GetAbsOrigin()
             
             local distVector = vPlayerOrigin - pLocalOrigin
             distancefeet = distVector:Length() - swingrange
 
-            pLocalOrigin = pLocalOrigin - height_vector
-            vPlayerOrigin = vPlayerOrigin - height_vector
+            vPlayerOrigin = vPlayerOrigin + Vheight
             
             local distVector = vPlayerOrigin - pLocalOrigin
             distance = distVector:Length() - swingrange
-            
+
+            vPlayerOrigin = vPlayer:GetAbsOrigin()
+            vPlayerOrigin = vPlayerOrigin + hitbox_height
+            distancetop = distVector:Length() - swingrange
+
             -- Update closest player and closest distance
             if distance < closestDistance and distance <= maxDistance then
                 closestPlayer = vPlayer
@@ -177,7 +196,7 @@ if Swingpred:GetValue() then
             local withinMeleeRange = distance <= 500
             
             -- Check if relative speed is greater than 2000 units/ms
-            if math.abs(closingSpeed) > 2000 then
+            if math.abs(closingSpeed) > 3000 then
                 closingSpeed = 0
             end
             
@@ -223,7 +242,7 @@ local function doDraw()
     local vPlayerOriginvector = vPlayerOrigin
 
         local pLocal = entities.GetLocalPlayer()
-        if (mfTimer > 12 * 66) then                                                                                                            -- Remove the cross after 12 seconds (isn't this fps-based? on 144hz monitors, 66 = 5.5 seconds. In that case, this may show longer than it should for others)
+        if (mfTimer > 12 * 66) then                                 --[]                                                                           -- Remove the cross after 12 seconds (isn't this fps-based? on 144hz monitors, 66 = 5.5 seconds. In that case, this may show longer than it should for others)
             mfTimer = 0
         end
 
