@@ -7,7 +7,7 @@
 
 ![Swing_prediction.lua Screenshot](https://i.imgur.com/GfCARP3.png)
 
-[![Download Latest Release](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download)](https://github.com/titaniummachine1/Swing_prediction.lua/releases)
+[![Download total](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=downloads)](https://github.com/titaniummachine1/Swing_prediction.lua/releases)
 
 
 ## Requirements
