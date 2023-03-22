@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))
 
 local debug = menu:AddComponent(MenuLib.Checkbox("indicator", true))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    0, 300, 250))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    0, 350, 300))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -154,22 +154,39 @@ if Swingpred:GetValue() then
             local distVector = vPlayerOrigin - pLocalOrigin
             distance = distVector:Length() - swingrange
 
-            vPlayerOrigin = vPlayer:GetAbsOrigin()
-            vPlayerOrigin = vPlayerOrigin + hitbox_height
-            distancetop = distVector:Length() - swingrange
+            --distancetop = distVector:Length() - swingrange
 
             -- Update closest player and closest distance
             if distance < closestDistance and distance <= maxDistance and  vPlayer:IsAlive() == true then
                 closestPlayer = vPlayer
                 closestDistance = distance
             end
+
+            distance = closestDistance
+
+            -- Trace towards enemy hitbox
+            local trace = engine.TraceLine(pLocalOrigin, vPlayerOrigin, MASK_SHOT_HULL)
+
+            -- Check if hitbox was hit
+            if trace == vPlayer then
+                -- Get closest point on hitbox
+                local closestPoint = trace.entity:GetHitboxPosition(0)
+                local hitboxdistance = closestPoint - pLocalOrigin
+                local hitboxdistance = hitboxdistance:Length()
+                print("Distance to enemy hitbox: " .. hitboxdistance)
+            end
+            
+            if hitboxdistance ~= nil then
+                print(hitboxdistance)
+            end
         end
     end
     
     -- Check if there is a valid closest player
     if closestPlayer ~= nil then
-        -- Calculate estimated hit time based on the closest player's distance
-        local distance = closestDistance
+
+
+
         --local hostile = (closestPlayer:GetTeamNumber() == pLocal:GetTeamNumber())
             -- Check if there are enemies in range and predicted hit time is valid
 
