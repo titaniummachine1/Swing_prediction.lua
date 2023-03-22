@@ -7,7 +7,8 @@
 
 ![Swing_prediction.lua Screenshot](https://i.imgur.com/GfCARP3.png)
 
-[![Download](https://img.shields.io/badge/Download-Menu.lua_lnx00-blue?style=for-the-badge&logo=download)](https://raw.githubusercontent.com/lnx00/Lmaobox-LUA/main/Menu.lua?raw=true&sanitize=true&header=Content-Disposition:%20attachment)
+[![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
+
 
 
 
