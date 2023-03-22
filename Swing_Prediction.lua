@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))
 
 local debug = menu:AddComponent(MenuLib.Checkbox("indicator", true))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    0, 350, 300))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    0, 300, 250))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -114,12 +114,13 @@ if Swingpred:GetValue() then
         local maxDistance = 700
 
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
-        local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
-        local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
-        viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
+            local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
+            local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
+            viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
 
-        local hitbox_height = Vector3( 0, 0, Vhitbox_Height )
-        local Vheight = Vector3( 0, 0, viewheight )
+        -- set heightvector to later add to obsorigin.
+            local hitbox_height = Vector3( 0, 0, Vhitbox_Height )
+            local Vheight = Vector3( 0, 0, viewheight )
 
 
         if PlayerClass == 8 then
@@ -127,7 +128,7 @@ if Swingpred:GetValue() then
         end
     
     for _, vPlayer in ipairs(players) do
-        local enemy = vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber()
+        local enemy = (vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber())
         -- Only check distance for alive enemies on the other team within maxDistance
         if enemy then
 
@@ -154,6 +155,8 @@ if Swingpred:GetValue() then
             local distVector = vPlayerOrigin - pLocalOrigin
             distance = distVector:Length() - swingrange
 
+            
+
             --distancetop = distVector:Length() - swingrange
 
             -- Update closest player and closest distance
@@ -161,7 +164,6 @@ if Swingpred:GetValue() then
                 closestPlayer = vPlayer
                 closestDistance = distance
             end
-
             distance = closestDistance
 
             -- Trace towards enemy hitbox
@@ -230,9 +232,9 @@ if Swingpred:GetValue() then
                 end
             end
 
-            if closingSpeed ~= 0 and closingspeed ~= nil then
+            if closingSpeed ~= 0.00 and closingspeed ~= nil then
                 estHitTime = distance / closingSpeed
-            elseif closingSpeed ~= nil and closingSpeedfeet ~= 0 and distance > distancefeet then
+            elseif closingSpeed ~= nil and closingSpeedfeet ~= 0.00 and distance > distancefeet then
                 estHitTime = distancefeet / closingSpeedfeet
             end
             
@@ -254,9 +256,9 @@ if Swingpred:GetValue() then
                 end
             end
         end
-    end
         ::continue::
     end
+end
 
 -- ent_fire !picker Addoutput "health 99"
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
