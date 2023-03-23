@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))
 
 local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    100, 300, 150))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    150, 300, 250))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -69,6 +69,43 @@ local function GetClosingSpeed(mDistance, mPastdistance)
     end
 end
 
+function GetClosestPlayer(pLocal, players, maxDistance, swingrange)
+    local closestPlayer = nil
+    local closestDistance = maxDistance
+    local pLocalOrigin = GetPlayerOrigin(pLocal, GetAdjustedHeight(pLocal))
+    local hitbox_height = Vector3(0, 0, 85)
+
+    for _, vPlayer in ipairs(players) do
+        if vPlayer == nil then
+            goto continue
+        end
+
+        local enemy = (vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber())
+
+        -- Only check distance for alive enemies on the other team within maxDistance
+        if enemy and vPlayer:IsAlive() then
+            local vPlayerOrigin = GetPlayerOrigin(vPlayer, GetAdjustedHeight(vPlayer))
+            local distVector = vPlayerOrigin - pLocalOrigin
+            local distance = distVector:Length() - swingrange
+
+            if distance < closestDistance and distance <= maxDistance then
+                closestPlayer = vPlayer
+                closestDistance = distance
+            end
+        end
+
+        ::continue::
+    end
+
+    if closestPlayer ~= nil then
+        return {
+            origin = GetPlayerOrigin(closestPlayer, GetAdjustedHeight(closestPlayer)),
+            feetOrigin = GetPlayerOrigin(closestPlayer, Vhitbox_Height),
+        }
+    end
+
+    return nil
+end
 
 
 --[[ Code needed to run 66 times a second ]]--
@@ -91,6 +128,8 @@ local function OnCreateMove(pCmd, gameData)
    -- local added_per_shot, bucket_current, crit_fired
     if pWeapon:GetSwingRange() ~= nil then
         swingrange = pWeapon:GetSwingRange()-- + 11.17
+    else
+        swingrange = 0
     end
 
 if sneakyboy then return end
@@ -113,6 +152,8 @@ if not Swingpred:GetValue() then goto continue end
             local hitbox_height = Vector3( 0, 0, Vhitbox_Height )
             local Vheight = Vector3( 0, 0, viewheight )
             pLocalOrigin = pLocal:GetAbsOrigin() + Vheight
+        
+        if PlayerClass == nil then goto continue end
 
         if PlayerClass == 8 then
             return
@@ -133,7 +174,7 @@ if not Swingpred:GetValue() then goto continue end
 
 
 
-                local distVector = vPlayerOrigin - pLocalOrigin
+                distVector = vPlayerOrigin - pLocalOrigin
                 local distance = distVector:Length() - swingrange
                 if distance < closestDistance and distance <= maxDistance then
                     closestPlayer = vPlayer
@@ -141,13 +182,14 @@ if not Swingpred:GetValue() then goto continue end
                 end
                 if closestPlayer ~= nil then
                 vPlayerOriginvector = closestPlayer:GetAbsOrigin() + Vheight
+                vPlayerOriginvectorfeet = closestPlayer:GetAbsOrigin() + hitbox_height
                 end
             end
         end
 
             distance = closestDistance
 
-                if distvector and distance > distVector and vPlayerOriginvector ~= nil then
+                if distVector ~= nil and vPlayerOriginvector ~= nil then
                     distance = distVector:Length() - swingrange
                 end
 
@@ -208,7 +250,7 @@ if not Swingpred:GetValue() then goto continue end
                 end
             end
             estHitTime = 0
-            if closestDistance > 0 then
+            if closestDistance > 0 and distance < 600 then
                 estHitTime = distance / closingSpeed
             end
 
@@ -252,7 +294,7 @@ local function doDraw()
         local estHitTime2 = estHitTime1
         if debug:GetValue() == true then
             --if pLocal ~= nil then
-            if estHitTime2 ~= nil then
+            if estHitTime2 ~= nil and distance ~= nil then
                 str1 = string.format("%.2f", estHitTime2)
                 str2 = string.format("%.2f", distance)
             end
