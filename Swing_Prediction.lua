@@ -29,16 +29,16 @@ local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
 menu.Style.Outline = true                 -- Outline around the menu
 
-menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
+--[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
     client.SetConVar("cl_jiggle_bone_framerate_cutoff", 0)             -- Set cl_jiggle_bone_framerate_cutoff to 0
     client.SetConVar("cl_bobcycle",                     10000)         -- Set cl_bobcycle to 10000
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
-end, ItemFlags.FullWidth))
+end, ItemFlags.FullWidth))]]
 
-local debug = menu:AddComponent(MenuLib.Checkbox("indicator", true))
+local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    200, 300, 275))
 
@@ -161,18 +161,6 @@ if not Swingpred:GetValue() then goto continue end
                     if trace.entity:HitboxSurroundingBox() then
                     distance = (trace.fraction * -1000)
                     end
-                end
-                vPlayerOrigin = (vPlayer:GetAbsOrigin() + hitbox_height)
-                local trace = engine.TraceLine( source, destination, MASK_SHOT_HULL );
-
-                if (trace.entity ~= nil) then
-                    if trace.entity:HitboxSurroundingBox() then
-                    distance1 = (trace.fraction * -1000)
-                    end
-                end
-
-                if distance1 < distance then
-                    distance = distance1
                 end
  
     -- Check if there is a valid closest player
