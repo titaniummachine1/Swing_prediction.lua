@@ -53,9 +53,9 @@ function GameData()
     data.pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
     data.pWeapon = data.pLocal:GetPropEntity("m_hActiveWeapon")
     data.pWeaponDefIndex = data.pWeapon:GetPropInt("m_iItemDefinitionIndex")
-    data.pWeaponDef = itemschema.GetItemDefinitionByID(data.pWeaponDefIndex)
-    data.pWeaponName = data.pWeaponDef:GetName()
-    data.pUsingProjectileWeapon = (data.pWeaponName == "CTFRocketLauncher" or data.pWeaponName == "CTFCannon")
+    --data.pWeaponDef = itemschema.GetItemDefinitionByID(data.pWeaponDefIndex)
+    --data.pWeaponName = data.pWeaponDef:GetName()
+    --data.pUsingProjectileWeapon = (data.pWeaponName == "CTFRocketLauncher" or data.pWeaponName == "CTFCannon")
     -- Get player data for all players in the game
 
     -- Check if local player is invisible
