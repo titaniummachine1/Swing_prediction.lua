@@ -29,18 +29,18 @@ local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
 menu.Style.Outline = true                 -- Outline around the menu
 
-menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
+--[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
     client.SetConVar("cl_jiggle_bone_framerate_cutoff", 0)             -- Set cl_jiggle_bone_framerate_cutoff to 0
     client.SetConVar("cl_bobcycle",                     10000)         -- Set cl_bobcycle to 10000
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
-end, ItemFlags.FullWidth))
+end, ItemFlags.FullWidth))]]
 
-local debug = menu:AddComponent(MenuLib.Checkbox("indicator", true))
+local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    0, 300, 250))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    200, 300, 285))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -91,24 +91,17 @@ local function OnCreateMove(pCmd, gameData)
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
     local LocalPlayer = entities.GetLocalPlayer()
    -- local added_per_shot, bucket_current, crit_fired
-    
+    if pWeapon:GetSwingRange() ~= nil then
     local vPlayerhitbox = 0
-
-    local swingrange = pWeapon:GetSwingRange()
-    if swingrange ~= nil then
-        swingrange = swingrange + vPlayerhitbox
-    end
-
-    if swingrange == nil then
-        swingrange = 0
+        swingrange = pWeapon:GetSwingRange() + 11.17
     end
 
 if sneakyboy then return end
 
 -- Initialize closest distance and closest player
-if Swingpred:GetValue() then
+if not Swingpred:GetValue() then goto continue end
         local PlayerClass = LocalPlayer:GetPropInt("m_iClass")
-        local closestPlayer = nil
+        closestPlayer = nil
         closestDistance = 1000
         Vhitbox_Height = 85
         local maxDistance = 700
@@ -121,69 +114,57 @@ if Swingpred:GetValue() then
         -- set heightvector to later add to obsorigin.
             local hitbox_height = Vector3( 0, 0, Vhitbox_Height )
             local Vheight = Vector3( 0, 0, viewheight )
-
+            local pLocalOrigin = pLocal:GetAbsOrigin() + Vheight
 
         if PlayerClass == 8 then
             return
         end
-    
+
+
     for _, vPlayer in ipairs(players) do
+        if vPlayer == nil then goto continue end            -- Code below this line doesn't work if you're the only player in the game.
+            
         local enemy = (vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber())
-        -- Only check distance for alive enemies on the other team within maxDistance
-        if enemy then
+            -- Only check distance for alive enemies on the other team within maxDistance
+        if enemy and vPlayer:IsAlive() then
 
-            if vPlayer:GetIndex() == pLocal:GetIndex() then goto continue end            -- Code below this line doesn't work if you're the only player in the game.
-            if pLocal:IsAlive() == false then goto continue end                          -- If we are not alive, skip the rest of this code
-    
-            if vPlayer:IsValid() then
-                local vWeapon = vPlayer:GetPropEntity("m_hActiveWeapon")
-                if vWeapon ~= nil then
-                    local vWeaponDefIndex = vWeapon:GetPropInt("m_iItemDefinitionIndex")
-                    --local vWeaponDef = itemschema.GetItemDefinitionByID(vWeaponDefIndex)
-                    --local vWeaponName = vWeaponDef:GetName()
+                local vPlayerOrigin = vPlayer:GetAbsOrigin()
+                local distVector = vPlayerOrigin - pLocalOrigin
+                local distance = distVector:Length() - swingrange
+                if distance < closestDistance and distance <= maxDistance then
+                    closestPlayer = vPlayer
+                    closestDistance = distance
                 end
+                vPlayerOriginvector = closestPlayer:GetAbsOrigin() + Vheight
             end
+        end
+        
+    distance = closestDistance
 
-            pLocalOrigin = pLocal:GetAbsOrigin() + Vheight
-            vPlayerOrigin = vPlayer:GetAbsOrigin()
-            
-            local distVector = vPlayerOrigin - pLocalOrigin
-            distancefeet = distVector:Length() - swingrange
-
-            vPlayerOrigin = vPlayerOrigin + Vheight
-            
-            local distVector = vPlayerOrigin - pLocalOrigin
-            distance = distVector:Length() - swingrange
-
-            
-
-            --distancetop = distVector:Length() - swingrange
-
-            -- Update closest player and closest distance
-            if distance < closestDistance and distance <= maxDistance and  vPlayer:IsAlive() == true then
-                closestPlayer = vPlayer
-                closestDistance = distance
-            end
-            distance = closestDistance
-
+            --eye level distance check
+            local vPlayerOrigin = vPlayerOrigin + Vheight
+        
+            distVector = (vPlayerOrigin - pLocalOrigin):Length()
+                if distance > distVector and vPlayerOrigin ~= nil then
+                    distance = distVector:Length() - swingrange
+                end
             -- Trace towards enemy hitbox
             local trace = engine.TraceLine(pLocalOrigin, vPlayerOrigin, MASK_SHOT_HULL)
 
             -- Check if hitbox was hit
             if trace == vPlayer then
                 -- Get closest point on hitbox
-                local closestPoint = trace.entity:GetHitboxPosition(0)
-                local hitboxdistance = closestPoint - pLocalOrigin
-                local hitboxdistance = hitboxdistance:Length()
-                print("Distance to enemy hitbox: " .. hitboxdistance)
+                local mclosestPoint = trace.entity:GetHitboxPosition(1)
+                local mhitboxdistance = mclosestPoint - pLocalOrigin
+                local mhitboxdistance = mhitboxdistance:Length()
+                print("Distance to enemy hitbox: " .. mhitboxdistance)
             end
             
-            if hitboxdistance ~= nil then
-                print(hitboxdistance)
+            if mhitboxdistance ~= nil then
+                --print(mhitboxdistance)
             end
-        end
-    end
-    
+
+ 
     -- Check if there is a valid closest player
     if closestPlayer ~= nil then
 
@@ -202,23 +183,20 @@ if Swingpred:GetValue() then
                 local mDistance = distance
                 local mPastdistance = previousDistance
                 closingSpeed = GetClosingSpeed(mDistance, mPastdistance)
-
             -- calculating feetlevel closing speed towards our eyes
                 local mDistance = distancefeet
                 local mPastdistance = previousDistancefeet
                 closingSpeedfeet = GetClosingSpeed(mDistance, mPastdistance)
-            
                 --print(closingSpeed)
             
             -- Check if enemy is within swing range or melee range
-            local withinMeleeRange = distance <= 500
-            
+            local withinMeleeRange = distance <= 400
             --[[ Check if relative speed is greater than 2000 units/ms
             if math.abs(closingSpeed) > 3000 then
                 closingSpeed = 0
             end]]
             
-            -- Calculate estimated hit time in milliseconds
+
             estHitTime = 0
 
             -- Try predicting demoman shield charge.
@@ -232,33 +210,28 @@ if Swingpred:GetValue() then
                 end
             end
 
-            if closingSpeed ~= 0.00 and closingspeed ~= nil then
-                estHitTime = distance / closingSpeed
-            elseif closingSpeed ~= nil and closingSpeedfeet ~= 0.00 and distance > distancefeet then
-                estHitTime = distancefeet / closingSpeedfeet
-            end
-            
-            -- If estimated hit time has not changed since last tick, set it to 0
-            if estHitTime == estHitTimeLast or stop then
-                estHitTime = 0
-            end
+        estHitTime = distance / closingSpeed
 
-            -- Update previous distance and estimated hit time
-            previousDistance = distance
+            previousDistance = distance    -- Update previous distance and estimated hit time
             prewiousDistancefeet = distancefeet
+
+                        -- Calculate estimated hit time in milliseconds
             -- Check if estimated hit time is within range, enemy is not on the same team, and within melee distance
             if withinMeleeRange then
+                --debugging
+                if isMelee and not stop and estHitTime > 0 and estHitTime < 10000 then
+                    estHitTime1 = estHitTime
+                end
                 -- Set attack button if the estimated hit time is within the time ahead limit
                 if isMelee and not stop and estHitTime > 0 and estHitTime <= timeAhead then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                     --print("Estimated hit time:", estHitTime, "ms")
-                    estHitTime1 = estHitTime
+                    
                 end
             end
         end
         ::continue::
     end
-end
 
 -- ent_fire !picker Addoutput "health 99"
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
@@ -267,50 +240,35 @@ local function doDraw()
     if engine.Con_IsVisible() or engine.IsGameUIVisible() then
         return
     end
-    local players = entities.FindByClass("CTFPlayer")
-    local vPlayerOriginvector = vPlayerOrigin
 
         local pLocal = entities.GetLocalPlayer()
-        if (mfTimer > 12 * 66) then                                 --[]                                                                           -- Remove the cross after 12 seconds (isn't this fps-based? on 144hz monitors, 66 = 5.5 seconds. In that case, this may show longer than it should for others)
+        if (mfTimer > 12 * 66) then                                                                                                            -- Remove the cross after 12 seconds (isn't this fps-based? on 144hz monitors, 66 = 5.5 seconds. In that case, this may show longer than it should for others)
             mfTimer = 0
         end
 
-        if pLocal ~= nil and debug ~= nil then
-            if debug:GetValue() == true then
-
-            local screenPos = client.WorldToScreen(vPlayerOriginvector)
-
-                for i, p in ipairs( players ) do
-                    if p:IsAlive() and not p:IsDormant() then
-                        
-                        local screenPos = client.WorldToScreen(vPlayerOrigin)
+        local estHitTime2 = estHitTime1
+        if debug:GetValue() == true then
+            --if pLocal ~= nil then
+            if estHitTime2 ~= nil then
+                str1 = string.format("%.2f", estHitTime2)
+            end
+     
+                        local screenPos = client.WorldToScreen(vPlayerOriginvector)
                         if screenPos ~= nil then
                             draw.SetFont( myfont )
                             draw.Color( 255, 255, 255, 255 )
-                            draw.Text( screenPos[1], screenPos[2], string.format("%.2f", estHitTime1))
+                            draw.Text( screenPos[1], screenPos[2], str1)
                         end
-                    end
-                end
 
                 local w, h = draw.GetScreenSize()
                 local screenPos = { w / 2 - 15, h / 2 + 20}
-                local str1 = 0
-                if estime ~= nil then
-                    str1 = string.format("%.2f", estHitTime1)
-                end
-            
-                draw.SetFont(myfont)
-                draw.Color(255, 255, 255, 255)
+
+                draw.SetFont( myfont )
+                draw.Color( 255, 255, 255, 255 )
                 draw.TextShadow(screenPos[1], screenPos[2], str1)
             end
         end
-        
-
-
-end
-
-
-
+    --end
 
 --[[ Remove the menu when unloaded ]]--
 local function OnUnload()                                -- Called when the script is unloaded
