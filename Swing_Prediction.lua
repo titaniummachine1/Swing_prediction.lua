@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))
 
 local debug = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    150, 300, 200))
+local mtimeahead   = menu:AddComponent(MenuLib.Slider("distance ahead",    100, 300, 150))
 
 -- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
 -- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
@@ -201,7 +201,7 @@ if not Swingpred:GetValue() then goto continue end
             local stop = false
             if (pLocal:InCond(17)) and PlayerClass == 4 or PlayerClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                dynamicstop = 35
+                dynamicstop = 30
                 if (pCmd.forwardmove == 0) then dynamicstop = 30 end -- case if you dont hold w when charging
                 if closestDistance <= dynamicstop and PlayerClass == 4 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
