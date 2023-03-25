@@ -15,14 +15,6 @@ local menuLoaded, MenuLib = pcall(require, "Menu")                              
 assert(menuLoaded, "MenuLib not found, please install it!")                       -- If not found, throw error
 assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!")  -- If version is too old, throw error
 
-
---[[ Varibles used for looping ]]--
-local LastExtenFreeze = 0  -- Spectator Mode
-local prTimer = 0          -- Timer for Random Ping
-local flTimer = 0          -- Timer for Fake Latency
-local c2Timer = 0          -- Timer for Battle CryoWeaponmAutoweapon raytracing
-local c2Timer2 = 0         -- Timer for ^ to prevent spamming
-local mfTimer = 0          -- Timer for Medic Finder
 tickRate = 66 -- game tick rate
 --[[ Menu ]]--
 local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
