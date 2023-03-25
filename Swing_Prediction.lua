@@ -66,14 +66,12 @@ function GetClosestPlayer(pLocal, players, maxDistance, swingrange)
     local closestDistance = maxDistance
     local pLocalOrigin = GetPlayerOrigin(pLocal, GetAdjustedHeight(pLocal))
     local hitbox_height = Vector3(0, 0, 85)
+    local enemy = (vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber())
 
     for _, vPlayer in ipairs(players) do
         if vPlayer == nil then
             goto continue
         end
-
-        local enemy = (vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber())
-
         -- Only check distance for alive enemies on the other team within maxDistance
         if enemy and vPlayer:IsAlive() then
             local vPlayerOrigin = GetPlayerOrigin(vPlayer, GetAdjustedHeight(vPlayer))
