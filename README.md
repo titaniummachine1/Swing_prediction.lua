@@ -3,6 +3,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/network)
 [![GitHub stars](https://img.shields.io/github/stars/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/stargazers)
 [![Visitors](https://visitor-badge.glitch.me/badge?page_id=titaniummachine1/Swing_prediction.lua)](https://github.com/titaniummachine1/Swing_prediction.lua)
+
 ## Download
 
 ![Swing_prediction.lua Screenshot](https://i.imgur.com/GfCARP3.png)
