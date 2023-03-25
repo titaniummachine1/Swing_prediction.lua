@@ -158,6 +158,9 @@ if not Swingpred:GetValue() then goto continue end
         if PlayerClass == 8 then
             return
         end
+
+        --test1
+        
 if not Swingpred:GetValue() then goto continue end
     for _, vPlayer in ipairs(players) do
         if vPlayer == nil then goto continue end            -- Code below this line doesn't work if you're the only player in the game.
