@@ -182,7 +182,7 @@ if not Swingpred:GetValue() then goto continue end
                 end
                 if closestPlayer ~= nil then
                 vPlayerOriginvector = closestPlayer:GetAbsOrigin() + Vheight
-                vPlayerOriginvectorfeet = closestPlayer:GetAbsOrigin() + hitbox_height
+                vPlayerOriginvectortop = closestPlayer:GetAbsOrigin() + hitbox_height
                 end
             end
         end
@@ -193,7 +193,7 @@ if not Swingpred:GetValue() then goto continue end
                     distance = distVector:Length() - swingrange
                 end
             
-                
+
     -- Check if there is a valid closest player
     if closestPlayer ~= nil then
 
