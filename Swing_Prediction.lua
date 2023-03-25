@@ -192,7 +192,7 @@ if not Swingpred:GetValue() then goto continue end
                 if distVector ~= nil and vPlayerOriginvector ~= nil then
                     distance = distVector:Length() - swingrange
                 end
-            --test
+            
     -- Check if there is a valid closest player
     if closestPlayer ~= nil then
 
