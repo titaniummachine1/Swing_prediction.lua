@@ -89,7 +89,7 @@ function GetClosestPlayer(pLocal, players, maxDistance, swingrange)
     if closestPlayer ~= nil then
         return {
             origin = GetPlayerOrigin(closestPlayer, GetAdjustedHeight(closestPlayer)),
-            feetOrigin = GetPlayerOrigin(closestPlayer, Vhitbox_Height),
+            topOrigin = GetPlayerOrigin(closestPlayer, Vhitbox_Height),
         }
     end
 
@@ -201,10 +201,10 @@ if not Swingpred:GetValue() then goto continue end
                 local mDistance = distance
                 local mPastdistance = previousDistance
                 closingSpeed = GetClosingSpeed(mDistance, mPastdistance)
-            -- calculating feetlevel closing speed towards our eyes
-                local mDistance = distancefeet
-                local mPastdistance = previousDistancefeet
-                closingSpeedfeet = GetClosingSpeed(mDistance, mPastdistance)
+            -- calculating toplevel closing speed towards our eyes
+                local mDistance = distancetop
+                local mPastdistance = previousDistancetop
+                closingSpeedtop = GetClosingSpeed(mDistance, mPastdistance)
                 --print(closingSpeed)
             
             -- Check if enemy is within swing range or melee range
@@ -233,7 +233,7 @@ if not Swingpred:GetValue() then goto continue end
             end
 
             previousDistance = distance    -- Update previous distance and estimated hit time
-            prewiousDistancefeet = distancefeet
+            prewiousDistancetop = distancetop
 
                         -- Calculate estimated hit time in milliseconds
             -- Check if estimated hit time is within range, enemy is not on the same team, and within melee distance
@@ -258,7 +258,10 @@ if not Swingpred:GetValue() then goto continue end
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
-    if engine.Con_IsVisible() or engine.IsGameUIVisible() then return end
+    if engine.Con_IsVisible() or engine.IsGameUIVisible() then
+        return
+    end
+
         local pLocal = entities.GetLocalPlayer()
 
         draw.SetFont( myfont )
