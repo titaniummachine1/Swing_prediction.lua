@@ -192,18 +192,6 @@ if not Swingpred:GetValue() then goto continue end
                 if distVector ~= nil and vPlayerOriginvector ~= nil then
                     distance = distVector:Length() - swingrange
                 end
-
-                --[[Distance check to hitbox
-                local source = viewOffset
-                local destination = source + vPlayerOriginvector
-
-                local trace = engine.TraceLine( source, destination, MASK_SHOT_HULL );
-
-                if (trace.entity ~= nil) then
-                    if trace.entity:HitboxSurroundingBox() then
-                    --distance = (trace.fraction * -1000)
-                    end
-                end]]
  
     -- Check if there is a valid closest player
     if closestPlayer ~= nil then
