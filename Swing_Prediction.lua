@@ -1,4 +1,3 @@
---[[                                ]]--
 --[[ Swing prediction for  Lmaobox  ]]--
 --[[      (Modded misc-tools)       ]]--
 --[[          --Authors--           ]]--
@@ -10,7 +9,6 @@
 --[[             Muqa1              ]]--
 --[[   https://github.com/Muqa1     ]]--
 --[[         SylveonBottle          ]]--
-
 
 local menuLoaded, MenuLib = pcall(require, "Menu")                                -- Load MenuLib
 assert(menuLoaded, "MenuLib not found, please install it!")                       -- If not found, throw error
