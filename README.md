@@ -1,4 +1,4 @@
-![Visitors](https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Ftitaniummachine1%2FSwing_prediction.lua&label=Visitors&countColor=%23263759)
+![Visitors](https://api.visitorbadge.io/api/combined?path=https%3A%2F%2Fgithub.com%2Ftitaniummachine1%2FSwing_prediction.lua&label=Visitors&countColor=%23263759&style=plastic)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub issues](https://img.shields.io/github/issues/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/issues)
 [![GitHub forks](https://img.shields.io/github/forks/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/network)
