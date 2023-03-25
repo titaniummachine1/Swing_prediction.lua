@@ -263,9 +263,6 @@ local function doDraw()
     end
 
         local pLocal = entities.GetLocalPlayer()
-        if (mfTimer > 12 * 66) then                                                                                                            -- Remove the cross after 12 seconds (isn't this fps-based? on 144hz monitors, 66 = 5.5 seconds. In that case, this may show longer than it should for others)
-            mfTimer = 0
-        end
 
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
