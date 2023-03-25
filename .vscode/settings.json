@@ -1,0 +1,6 @@
+{
+    "problems.autoReveal": true,
+    "outline.problems.enabled": true,
+    "outline.problems.badges": true,
+    "typescript.tsserver.enableTracing": true
+}
