@@ -258,10 +258,7 @@ if not Swingpred:GetValue() then goto continue end
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
-    if engine.Con_IsVisible() or engine.IsGameUIVisible() then
-        return
-    end
-
+    if engine.Con_IsVisible() or engine.IsGameUIVisible() then return end
         local pLocal = entities.GetLocalPlayer()
 
         draw.SetFont( myfont )
