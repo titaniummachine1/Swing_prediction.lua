@@ -2,7 +2,8 @@
 [![GitHub issues](https://img.shields.io/github/issues/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/issues)
 [![GitHub forks](https://img.shields.io/github/forks/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/network)
 [![GitHub stars](https://img.shields.io/github/stars/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/stargazers)
-[![Visitors](https://visitor-badge.glitch.me/badge?page_id=titaniummachine1.Swing_prediction.lua.visitor-badge&label=Total%20Visitors&style=flat-square)](https://github.com/titaniummachine1/Swing_prediction.lua)
+![Visitor Count](https://www.webfreecounter.com/hit.php?id=<YOUR_VISITOR_COUNTER_ID>&nd=6&nc=5&bc=FFFFFF&tc=000000&cc=000000&cd=1&rs=1)
+
 
 
 ## Download
