@@ -50,14 +50,6 @@ function GameData()
 
     return data
 end
-
---[[local function GetClosingSpeed(mDistance, mPastdistance)
-    if (mDistance or mPastdistance) ~= nil then
-    local speedPerTick = mDistance - (mPastdistance or 0)
-    local closingSpeed = -(speedPerTick * tickRate / 1000) -- closing speed in units/ms
-    return (closingSpeed or 0) -- difference in distance between current and previous tick
-    end
-end]]
    
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd, gameData)
@@ -202,42 +194,32 @@ local function doDraw()
         return
     end
 
-        local pLocal = entities.GetLocalPlayer()
-
+    local pLocal = entities.GetLocalPlayer()
+    if debug:GetValue() == true then
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
-        local EstHitTime2 = EstHitTime1
-        if debug:GetValue() == true then
-            --if pLocal ~= nil then
-            if EstHitTime2 ~= nil and distance ~= nil then
-                str2 = string.format("%.2f", distance)
+        local screenPos = client.WorldToScreen(vPlayerOriginvector)
+        if screenPos ~= nil then
+            draw.Line( screenPos[1], screenPos[2] + 20, screenPos[1], screenPos[2] - 20)
+        end
+        if vPlayerFuture ~= nil and pLocalFuture ~= nil then
+            local screenPos = client.WorldToScreen(pLocalFuture)
+            if screenPos ~= nil then
+                draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
+                draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
             end
-                        local screenPos = client.WorldToScreen(vPlayerOriginvector)
-                        if screenPos ~= nil then
-                            draw.Line( screenPos[1], screenPos[2] + 20,screenPos[1],screenPos[2] - 20)
-                        end
-                        if vPlayerFuture1 ~= nil and pLocalFuture1 ~= nil then
-                            local screenPos = client.WorldToScreen(pLocalFuture)
-                            if screenPos ~= nil then
-                                draw.Line( screenPos[1] + 10, screenPos[2],screenPos[1] - 10,screenPos[2])
-                                draw.Line( screenPos[1], screenPos[2] - 10,screenPos[1],screenPos[2] + 10)
-                            end
-                            local screenPos = client.WorldToScreen(vPlayerFuture)
-                            if screenPos ~= nil then
-                                draw.Line( screenPos[1] + 10, screenPos[2],screenPos[1] - 10,screenPos[2])
-                                draw.Line( screenPos[1], screenPos[2] - 10,screenPos[1],screenPos[2] + 10)
-                                local screenPos1 = client.WorldToScreen(vPlayerOriginvector)
-                                if screenPos ~= nil then
-                                    draw.Line( screenPos1[1], screenPos1[2],screenPos[1],screenPos[2])
-                                end
-                            end
-                        end
-                local w, h = draw.GetScreenSize()
-                local screenPos = { w / 2 - 15, h / 2 }
-                draw.TextShadow(screenPos[1], screenPos[2], str2)
+            local screenPos = client.WorldToScreen(vPlayerFuture)
+            if screenPos ~= nil then
+                draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
+                draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+                local screenPos1 = client.WorldToScreen(vPlayerOriginvector)
+                if screenPos1 ~= nil then
+                    draw.Line( screenPos1[1], screenPos1[2], screenPos[1], screenPos[2])
+                end
             end
         end
-    --end
+    end
+end
 
 --[[ Remove the menu when unloaded ]]--
 local function OnUnload()                                -- Called when the script is unloaded
