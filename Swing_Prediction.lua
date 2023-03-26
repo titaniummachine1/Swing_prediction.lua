@@ -51,6 +51,39 @@ function GameData()
     return data
 end
    
+function PositionPrediction(closestPlayer, Vheight, vPlayerOriginLast, pLocalOriginLast, tickRate, time)
+    vPlayerOrigin = closestPlayer:GetAbsOrigin() + Vheight
+    local pLocal = entities.GetLocalPlayer()
+    pLocalOrigin = pLocal:GetAbsOrigin() + Vheight
+    local vPlayerSpeed = vPlayerOrigin - vPlayerOriginLast
+    local pLocalSpeed = pLocalOrigin - pLocalOriginLast
+    
+    -- Accessing x, y, z components of the vectors
+    local vPlayerSpeedX, vPlayerSpeedY, vPlayerSpeedZ = vPlayerSpeed.x, vPlayerSpeed.y, vPlayerSpeed.z
+    local pLocalSpeedX, pLocalSpeedY, pLocalSpeedZ = pLocalSpeed.x, pLocalSpeed.y, pLocalSpeed.z
+    
+    -- Calculating the length of each component
+    local vPlayerSpeedLengthX = math.abs(vPlayerSpeedX)
+    local vPlayerSpeedLengthY = math.abs(vPlayerSpeedY)
+    local vPlayerSpeedLengthZ = math.abs(vPlayerSpeedZ)
+    
+    local pLocalSpeedLengthX = math.abs(pLocalSpeedX)
+    local pLocalSpeedLengthY = math.abs(pLocalSpeedY)
+    local pLocalSpeedLengthZ = math.abs(pLocalSpeedZ)
+
+    -- Separate components of pLocalSpeed and vPlayerSpeed
+    local pLocalSpeedX, pLocalSpeedY, pLocalSpeedZ = pLocalSpeed:Unpack()
+    local vPlayerSpeedX, vPlayerSpeedY, vPlayerSpeedZ = vPlayerSpeed:Unpack()
+    -- Create vectors from components
+    pLocalSpeedVec = Vector3(pLocalSpeedX * tickRate * time, pLocalSpeedY * tickRate * time, pLocalSpeedZ * tickRate * time)
+    vPlayerSpeedVec = Vector3(vPlayerSpeedX * tickRate * time, vPlayerSpeedY * tickRate * time, vPlayerSpeedZ * tickRate * time)
+
+    pLocalFuture = pLocalOrigin + pLocalSpeedVec
+    vPlayerFuture = vPlayerOrigin + vPlayerSpeedVec
+    
+    return vPlayerOriginvector, pLocalFuture, vPlayerFuture
+end
+
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd, gameData)
     local time = mtime:GetValue() * 0.001
@@ -111,35 +144,11 @@ if not Swingpred:GetValue() then goto continue end
     end
 
 if closestPlayer ~= nil then
-
+    vPlayerOriginvector = vPlayerOrigin
 --[[position prediction]]--
-        vPlayerOrigin = closestPlayer:GetAbsOrigin() + Vheight
-        pLocalOrigin = pLocal:GetAbsOrigin() + Vheight
-        vPlayerOriginvector = vPlayerOrigin
-        local vPlayerSpeed = vPlayerOrigin - vPlayerOriginLast
-        local pLocalSpeed = pLocalOrigin - pLocalOriginLast
-        
-        -- Accessing x, y, z components of the vectors
-        local vPlayerSpeedX, vPlayerSpeedY, vPlayerSpeedZ = vPlayerSpeed.x, vPlayerSpeed.y, vPlayerSpeed.z
-        local pLocalSpeedX, pLocalSpeedY, pLocalSpeedZ = pLocalSpeed.x, pLocalSpeed.y, pLocalSpeed.z
-        
-        -- Calculating the length of each component
-        local vPlayerSpeedLengthX = math.abs(vPlayerSpeedX)
-        local vPlayerSpeedLengthY = math.abs(vPlayerSpeedY)
-        local vPlayerSpeedLengthZ = math.abs(vPlayerSpeedZ)
-        
-        local pLocalSpeedLengthX = math.abs(pLocalSpeedX)
-        local pLocalSpeedLengthY = math.abs(pLocalSpeedY)
-        local pLocalSpeedLengthZ = math.abs(pLocalSpeedZ)
 
-        -- Separate components of pLocalSpeed and vPlayerSpeed
-        local pLocalSpeedX, pLocalSpeedY, pLocalSpeedZ = pLocalSpeed:Unpack()
-        local vPlayerSpeedX, vPlayerSpeedY, vPlayerSpeedZ = vPlayerSpeed:Unpack()
-        -- Create vectors from components
-        local pLocalSpeedVec = Vector3(pLocalSpeedX * tickRate * time, pLocalSpeedY * tickRate * time, pLocalSpeedZ * tickRate * time)
-        local vPlayerSpeedVec = Vector3(vPlayerSpeedX * tickRate * time, vPlayerSpeedY * tickRate * time, vPlayerSpeedZ * tickRate * time)
+        PositionPrediction(closestPlayer, Vheight, vPlayerOriginLast, pLocalOriginLast, tickRate, time)
 
-        
         pLocalFuture = pLocalOrigin + pLocalSpeedVec
         vPlayerFuture = vPlayerOrigin + vPlayerSpeedVec
 --[[position prediction]]--
