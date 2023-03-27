@@ -31,11 +31,7 @@ end, ItemFlags.FullWidth))
 
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", true))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtime          = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,375 ,350 ))
-
--- local mUberWarning  = menu:AddComponent(MenuLib.Checkbox("Uber Warning", false)) -- Medic Uber Warning (currently no way to check)
--- local mRageSpecKill = menu:AddComponent(MenuLib.Checkbox("Rage Spectator Killbind", false)) -- fuck you "pizza pasta", stop spectating me
---local mRemovals     = menu:AddComponent(MenuLib.MultiCombo("Removals", Removals, ItemFlags.FullWidth)) -- Remove RTD and HUD Texts
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,175 , 150 ))
 
 function GameData()
     local data = {}
@@ -135,12 +131,10 @@ local function OnCreateMove(pCmd, gameData)
         local PlayerClass = pLocal:GetPropInt("m_iClass")
         closestPlayer = vPlayer
         closestDistance = 1200
-        Vhitbox_Height = 82
-        vhitbox_width = 24
+        Vhitbox_Height = 85
+        vhitbox_width = 20
 
-        vhitbox_Height_trigger = (82 + swingrange)
-        vhitbox_Height_trigger_bottom = (swingrange)
-        vhitbox_width_trigger = (24 + swingrange)
+  
         local maxDistance = 1000
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
             local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
@@ -150,17 +144,7 @@ local function OnCreateMove(pCmd, gameData)
           local Vheight = Vector3( 0, 0, viewheight )
 
           pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
-        -- set surroundinghitbox boundaries.
-            local hitbox_height = Vector3( 0, 0, Vhitbox_Height )
-            local hitbox_width = Vector3( 0,  vhitbox_width, 0 )
-            local hitbox_min = Vector3( -vhitbox_width,  -vhitbox_width, 0 )
-            local hitbox_max = Vector3( vhitbox_width,  vhitbox_width, Vhitbox_Height )
-        -- set triggerbox boundaries
-            hitbox_height_trigger = Vector3( 0, 0, vhitbox_Height_trigger )
-            hitbox_width_trigger = Vector3( 0,  vhitbox_width_trigger, 0 )
-            hitbox_min_trigger = (vPlayerFuture + Vector3( -vhitbox_width_trigger,  -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom ))
-            hitbox_max_trigger = (vPlayerFuture + Vector3( vhitbox_width_trigger,  vhitbox_width_trigger, vhitbox_Height_trigger))
-        
+
             if PlayerClass == nil then goto continue end
 
         if PlayerClass == 8 then
@@ -182,20 +166,35 @@ local function OnCreateMove(pCmd, gameData)
     end
 
 if closestPlayer ~= nil then
-    vPlayerOriginvector = vPlayerOrigin
 
+    vPlayerOriginvector = vPlayerOrigin
+        -- set surroundinghitbox boundaries.
+        local hitbox_surrounding_box = closestPlayer:EntitySpaceHitboxSurroundingBox(0)
+            local hitbox_height = Vector3( 0, 0, Vhitbox_Height )
+            local hitbox_width = Vector3( 0,  vhitbox_width, 0 )
+            local hitbox_min = hitbox_surrounding_box[1]
+            local hitbox_max = hitbox_surrounding_box[2]
+        -- set triggerbox boundariess
+            vhitbox_Height_trigger = (85 + swingrange)
+            vhitbox_Height_trigger_bottom = (swingrange)
+            vhitbox_width_trigger = (14 + swingrange)
+
+            hitbox_height_trigger = Vector3( 0, 0, vhitbox_Height_trigger )
+            hitbox_width_trigger = Vector3( 0,  vhitbox_width_trigger, 0 )
+            hitbox_min_trigger = (vPlayerFuture + hitbox_surrounding_box[1] + Vector3( -vhitbox_width_trigger,  -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom ))
+            hitbox_max_trigger = (vPlayerFuture + hitbox_surrounding_box[2] + Vector3( vhitbox_width_trigger,  vhitbox_width_trigger, vhitbox_Height_trigger))
+        
 --[[position prediction]]--
 vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
         PositionPrediction(closestPlayer, Vheight, vPlayerOriginLast, pLocalOriginLast, tickRate, time)
         pLocalFuture = pLocalOrigin + pLocalSpeedVec
         vPlayerFuture = vPlayerOrigin + vPlayerSpeedVec
-        --smooth out output
-        
+    
 --[[position prediction]]--
 
         -- Calculate distance between future positions (temporary)
-        distance = (pLocalFuture - vPlayerFuture):Length()
+        distance = (pLocalOrigin - vPlayerOrigin):Length()
     end
 
     -- Check if there is a valid closest player
@@ -220,7 +219,7 @@ vPlayerOrigin = closestPlayer:GetAbsOrigin()
                 end
             end
                 -- Set attack button if the estimated hit time is within the time ahead limit
-                if withinMeleeRange and isMelee and not stop and isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture) then
+                if withinMeleeRange and isMelee and not stop and isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture) or distance < swingrange then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
 
@@ -265,6 +264,7 @@ local function doDraw()
                 end
             end
             -- Draw box around trigger hitbox        
+            if vPlayerFuture ~= nil then
             local vertices = {
                 client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
                 client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
@@ -275,7 +275,7 @@ local function doDraw()
                 client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger)),
                 client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger))
               }
-              if vertices == nil then return end
+              
                 -- Front face
                 draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
                 draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
@@ -291,6 +291,7 @@ local function doDraw()
                 draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2])
                 draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2])
                 draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2])
+            end
             -- text
 
             str2 = string.format("%.2f", distance)
