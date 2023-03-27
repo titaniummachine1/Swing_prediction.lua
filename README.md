@@ -21,13 +21,11 @@
 
 
 ## describtion
-🎮 This Lua script is made for players who needs to hit their enemies with a melee weapon as quickly as posible.
+👥 The script finds the closest enemy player on the opposing team and calculates their Velocity.
 
-👥 The script finds the closest enemy player on the opposing team and calculates their distance from the local player.
+⏱️ it checks if the user's eye position is going to be inside the range hitbox of the enemy that is always at the predicted position of the enemy.
 
-⏱️ It then estimates the time it will take for the local player's melee attack to reach the enemy player by taking into account their distance, the speed of their movement, and the time it takes for the melee attack to hit.
-
-👊 If the estimated hit time is within a certain time limit and the enemy is within melee range, the script sets the attack button to be pressed to perform the melee attack.
+👊 when the predicted position of a user is inside the area of predicted position of the enemy then it attacks
 
 💻 This helps the player predict their enemy's movement and hit them with their melee weapon more accurately.
 
