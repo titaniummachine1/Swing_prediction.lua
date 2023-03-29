@@ -13,7 +13,8 @@
 [![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 
 ## Requirements
-MenuLib - Already included in repository put entire folder inside your %localappdata%' folder
+
+MenuLib - Already included in repository "entire folder"
 
 [![Download](https://img.shields.io/badge/Download-Menu.lua_lnx00-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
 
