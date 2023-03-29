@@ -30,7 +30,7 @@ end, ItemFlags.FullWidth))]]
 
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,175 , 150 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 200 ))
 
 local pastPredictions = {}
 local hitbox_min = Vector3(14, 14, 0)
@@ -143,11 +143,10 @@ local function OnCreateMove(pCmd, gameData)
     -- Initialize closest distance and closest player
 
 
-
+    local isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     local Vhitbox_Height = 85
     local vhitbox_width = 14
     local closestDistance = 1200
-
     local maxDistance = 1000
 
     if pLocalClass == nil then goto continue end
@@ -170,22 +169,22 @@ local function OnCreateMove(pCmd, gameData)
     end
     
     if closestPlayer == nil then goto continue end
-
+    if closestDistance == 1200 then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
         --[[position prediction]]--
         vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time)
         pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
 
-            --[[-----------------------------Swing Prediction--------------------------------]]
-        local isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
+ --[[-----------------------------Swing Prediction--------------------------------]]
 
             -- bypass problem with prior attacking with shield not beeign able to reach target..
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                dynamicstop = 30
-                if (pCmd.forwardmove == 0) then dynamicstop = 30 end -- case if you dont hold w when charging
+                dynamicstop = 200
+                print(closestDistance)
+                if (pCmd.forwardmove == 0) then dynamicstop = 150 end -- case if you dont hold w when charging
                 if closestDistance <= dynamicstop and pLocalClass == 4 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
@@ -210,7 +209,7 @@ local function doDraw()
     if engine.Con_IsVisible() or engine.IsGameUIVisible() then
         return
     end
-    if vPlayerOriginvector == nil then return end
+    if vPlayerOrigin == nil then return end
     if vPlayerFuture == nil and pLocalFuture == nil then return end
 
     local pLocal = entities.GetLocalPlayer()
