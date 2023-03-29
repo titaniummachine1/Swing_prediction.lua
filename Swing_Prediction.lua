@@ -14,24 +14,31 @@ local menuLoaded, MenuLib = pcall(require, "Menu")                              
 assert(menuLoaded, "MenuLib not found, please install it!")                       -- If not found, throw error
 assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!")  -- If version is too old, throw error
 
-tickRate = 66 -- game tick rate
 --[[ Menu ]]--
 local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
 menu.Style.Outline = true                 -- Outline around the menu
 
---[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
+menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
     client.SetConVar("cl_jiggle_bone_framerate_cutoff", 0)             -- Set cl_jiggle_bone_framerate_cutoff to 0
     client.SetConVar("cl_bobcycle",                     10000)         -- Set cl_bobcycle to 10000
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
-end, ItemFlags.FullWidth))]]
+end, ItemFlags.FullWidth))
 
-local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
+local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", true))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
+local Swingpred1     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
+local Swingpred2     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,175 , 150 ))
+
+local pastPredictions = {}
+local hitbox_min = Vector3(14, 14, 0)
+local hitbox_max = Vector3(-14, -14, 85)
+local vPlayerOrigin = nil
+
 
 function GameData()
     local data = {}
@@ -39,218 +46,189 @@ function GameData()
     -- Get local player data
     data.pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
     data.pWeapon = data.pLocal:GetPropEntity("m_hActiveWeapon")
-    -- Get player data for all players in the game
+    data.swingrange = data.pWeapon:GetSwingRange() -- + 11.17
+    data.tickRate = 66 -- game tick rate
+    --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
+    local viewOffset = data.pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
+    local adjustedHeight = data.pLocal:GetAbsOrigin() + viewOffset
+    data.viewheight = (adjustedHeight - data.pLocal:GetAbsOrigin()):Length()
+        -- eye level 
+        local Vheight = Vector3(0, 0, data.viewheight)
+        data.pLocalOrigin = (data.pLocal:GetAbsOrigin() + Vheight)
+    --get local class
+    data.pLocalClass = data.pLocal:GetPropInt("m_iClass")
 
-    -- Check if local player is invisible
-    data.sneakyboy = (data.pLocal:InCond(4) or data.pLocal:InCond(2) or data.pLocal:InCond(13) or data.pLocal:InCond(9))
 
     return data
 end
 
-function PositionPrediction(closestPlayer, Vheight, vPlayerOriginLast, pLocalOriginLast, tickRate, time)
-    if vPlayerOriginLast == nil then
-        vPlayerOriginLast = Vector3(0, 0, 0)
-        pLocalOriginLast = Vector3(0, 0, 0)
+
+function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time)
+    if targetOriginLast == nil then
+        targetOriginLast = Vector3(0, 0, 0)
     end
-    local vPlayerSpeed = vPlayerOrigin - vPlayerOriginLast
-    local pLocalSpeed = pLocalOrigin - pLocalOriginLast
-    -- Accessing x, y, z components of the vectors
-    local vPlayerSpeedX, vPlayerSpeedY, vPlayerSpeedZ = vPlayerSpeed.x, vPlayerSpeed.y, vPlayerSpeed.z
-    local pLocalSpeedX, pLocalSpeedY, pLocalSpeedZ = pLocalSpeed.x, pLocalSpeed.y, pLocalSpeed.z
+    if targetOriginLast == nil or targetLastPos == nil then
+        return nil
+    end
     
-    -- Calculating the length of each component
-    local vPlayerSpeedLengthX = math.abs(vPlayerSpeedX)
-    local vPlayerSpeedLengthY = math.abs(vPlayerSpeedY)
-    local vPlayerSpeedLengthZ = math.abs(vPlayerSpeedZ)
-    
-    local pLocalSpeedLengthX = math.abs(pLocalSpeedX)
-    local pLocalSpeedLengthY = math.abs(pLocalSpeedY)
-    local pLocalSpeedLengthZ = math.abs(pLocalSpeedZ)
+    local targetVelocity = targetLastPos - targetOriginLast
+    local targetVelocityX, targetVelocityY, targetVelocityZ = targetVelocity:Unpack()
+    local targetVelocityVec = Vector3(targetVelocityX * tickRate * time, targetVelocityY * tickRate * time, targetVelocityZ * tickRate * time)
 
-    -- Separate components of pLocalSpeed and vPlayerSpeed
-    local pLocalSpeedX, pLocalSpeedY, pLocalSpeedZ = pLocalSpeed:Unpack()
-    local vPlayerSpeedX, vPlayerSpeedY, vPlayerSpeedZ = vPlayerSpeed:Unpack()
-    -- Create vectors from components
-    pLocalSpeedVec = Vector3(pLocalSpeedX * tickRate * time, pLocalSpeedY * tickRate * time, pLocalSpeedZ * tickRate * time)
-    vPlayerSpeedVec = Vector3(vPlayerSpeedX * tickRate * time, vPlayerSpeedY * tickRate * time, vPlayerSpeedZ * tickRate * time)
-
-    pLocalFuture = pLocalOrigin + pLocalSpeedVec
-    vPlayerFuture = vPlayerOrigin + vPlayerSpeedVec
+    local targetFuture = targetLastPos + targetVelocityVec
     
-    return vPlayerOriginvector, pLocalFuture, vPlayerFuture
+    return targetFuture
+end
+
+function GetTriggerboxMin(swingrange, vPlayerFuture)
+    if vPlayerFuture ~= nil then
+        vhitbox_Height_trigger_bottom = swingrange
+        vhitbox_width_trigger = (14 + swingrange)
+        local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
+        local hitbox_min_trigger = (vPlayerFuture + vhitbox_min)
+        return hitbox_min_trigger
+    end
+end
+
+function GetTriggerboxMax(swingrange, vPlayerFuture)
+    if vPlayerFuture ~= nil then
+        vhitbox_Height_trigger = (85 + swingrange)
+        vhitbox_width_trigger = (14 + swingrange)
+        local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)
+        local hitbox_max_trigger = (vPlayerFuture + vhitbox_max)
+        return hitbox_max_trigger
+    end
 end
 
 function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture)
     if pLocalFuture == nil or hitbox_min_trigger == nil or hitbox_max_trigger == nil then
         return false
     end
-    if pLocalFuture.x < hitbox_min_trigger.x or pLocalFuture.x > hitbox_max_trigger.x then
+    -- Unpack hitbox vectors
+    local hitbox_min_trigger_x, hitbox_min_trigger_y, hitbox_min_trigger_z = hitbox_min_trigger:Unpack()
+    local hitbox_max_trigger_x, hitbox_max_trigger_y, hitbox_max_trigger_z = hitbox_max_trigger:Unpack()
+    
+    -- Check if pLocalFuture is within the hitbox
+    if pLocalFuture.x < hitbox_min_trigger_x or pLocalFuture.x > hitbox_max_trigger_x then
         return false
     end
-    if pLocalFuture.y < hitbox_min_trigger.y or pLocalFuture.y > hitbox_max_trigger.y then
+    if pLocalFuture.y < hitbox_min_trigger_y or pLocalFuture.y > hitbox_max_trigger_y then
         return false
     end
-    if pLocalFuture.z < hitbox_min_trigger.z or pLocalFuture.z > hitbox_max_trigger.z then
+    if pLocalFuture.z < hitbox_min_trigger_z or pLocalFuture.z > hitbox_max_trigger_z then
         return false
     end
     return true
 end
 
+        
+    
 
-function SmoothVector(vector, factor)
-    local smoothedX = math.floor(vector.x) + (vector.x - math.floor(vector.x)) * factor
-    local smoothedY = math.floor(vector.y) + (vector.y - math.floor(vector.y)) * factor
-    local smoothedZ = math.floor(vector.z) + (vector.z - math.floor(vector.z)) * factor
-    return Vector3(smoothedX, smoothedY, smoothedZ)
-end
+
+
 
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd, gameData)
+    if not Swingpred:GetValue() then goto continue end -- enable or distable script
+
     local time = mtime:GetValue() * 0.001
     gameData = GameData()  -- Update gameData with latest information
-    local pLocal, pWeapon = gameData.pLocal, gameData.pWeapon
+    local pLocal, pWeapon, swingrange, viewheight, pLocalOrigin, pLocalClass, tickRate
+    = gameData.pLocal, gameData.pWeapon, gameData.swingrange, gameData.viewheight, gameData.pLocalOrigin, gameData.pLocalClass, gameData.tickRate
     -- Use pLocal, pWeapon, pWeaponDefIndex, etc. as needed
 
-    if not pLocal then return end                    -- Immediately check if the local player exists. If it doesn't, return.
+    if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
 
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-    local pLocal = entities.GetLocalPlayer()
-   -- local added_per_shot, bucket_current, crit_fired
-    if pWeapon:GetSwingRange() ~= nil then
-        swingrange = pWeapon:GetSwingRange()-- + 11.17
-    else
-        swingrange = 0
+
+    -- Initialize closest distance and closest player
+
+
+
+    local Vhitbox_Height = 85
+    local vhitbox_width = 14
+    local closestDistance = 1200
+
+    local maxDistance = 1000
+
+    if pLocalClass == nil then goto continue end
+
+    if pLocalClass == 8 then
+        return
     end
 
-    if sneakyboy then return end
-
--- Initialize closest distance and closest player
-    if not Swingpred:GetValue() then goto continue end
-
-        local PlayerClass = pLocal:GetPropInt("m_iClass")
-        closestPlayer = vPlayer
-        closestDistance = 1200
-        Vhitbox_Height = 85
-        vhitbox_width = 20
-
-  
-        local maxDistance = 1000
-    --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
-            local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
-            local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
-            viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
-          -- eye level 
-          local Vheight = Vector3( 0, 0, viewheight )
-
-          pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
-
-            if PlayerClass == nil then goto continue end
-
-        if PlayerClass == 8 then
-            return
-        end
-    if not Swingpred:GetValue() then goto continue end
+   
+    -- find clsoest enemy
     for _, vPlayer in ipairs(players) do
-        if vPlayer == nil then goto continue end
-        local enemy = (vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber())
-        if enemy and vPlayer:IsAlive() then
+        if vPlayer ~= nil and vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
             vPlayerOrigin = vPlayer:GetAbsOrigin()
-            local distVector = vPlayerOrigin - pLocalOrigin
-            local distance = distVector:Length()
+            local distance = (vPlayerOrigin - pLocalOrigin):Length()
             if distance < closestDistance and distance <= maxDistance then
                 closestPlayer = vPlayer
                 closestDistance = distance
             end
         end
     end
-
-if closestPlayer ~= nil then
-
-    vPlayerOriginvector = vPlayerOrigin
-        -- set surroundinghitbox boundaries.
-        local hitbox_surrounding_box = closestPlayer:EntitySpaceHitboxSurroundingBox(0)
-            local hitbox_height = Vector3( 0, 0, Vhitbox_Height )
-            local hitbox_width = Vector3( 0,  vhitbox_width, 0 )
-            local hitbox_min = hitbox_surrounding_box[1]
-            local hitbox_max = hitbox_surrounding_box[2]
-        -- set triggerbox boundariess
-            vhitbox_Height_trigger = (85 + swingrange)
-            vhitbox_Height_trigger_bottom = (swingrange)
-            vhitbox_width_trigger = (14 + swingrange)
-
-            hitbox_height_trigger = Vector3( 0, 0, vhitbox_Height_trigger )
-            hitbox_width_trigger = Vector3( 0,  vhitbox_width_trigger, 0 )
-            hitbox_min_trigger = (vPlayerFuture + hitbox_surrounding_box[1] + Vector3( -vhitbox_width_trigger,  -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom ))
-            hitbox_max_trigger = (vPlayerFuture + hitbox_surrounding_box[2] + Vector3( vhitbox_width_trigger,  vhitbox_width_trigger, vhitbox_Height_trigger))
-        
---[[position prediction]]--
-vPlayerOrigin = closestPlayer:GetAbsOrigin()
-
-        PositionPrediction(closestPlayer, Vheight, vPlayerOriginLast, pLocalOriginLast, tickRate, time)
-        pLocalFuture = pLocalOrigin + pLocalSpeedVec
-        vPlayerFuture = vPlayerOrigin + vPlayerSpeedVec
     
---[[position prediction]]--
+    if closestPlayer == nil then goto continue end
 
-        -- Calculate distance between future positions (temporary)
-        distance = (pLocalOrigin - vPlayerOrigin):Length()
-    end
+        vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
-    -- Check if there is a valid closest player
-    if closestPlayer == nil then return end
-    --save for next it
-
-
+if not Swingpred2:GetValue() then goto continue end
+        --[[position prediction]]--
+        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time)
+        pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
 
             --[[-----------------------------Swing Prediction--------------------------------]]
-            local isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
-            -- Check if enemy is within swing range or melee range
-            local withinMeleeRange = distance <= 1000
+        local isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
 
-            -- Try predicting demoman shield charge.
+            -- bypass problem with prior attacking with shield not beeign able to reach target..
             local stop = false
-            if (pLocal:InCond(17)) and PlayerClass == 4 or PlayerClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
+            if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
                 dynamicstop = 30
                 if (pCmd.forwardmove == 0) then dynamicstop = 30 end -- case if you dont hold w when charging
-                if closestDistance <= dynamicstop and PlayerClass == 4 then
+                if closestDistance <= dynamicstop and pLocalClass == 4 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
             end
-                -- Set attack button if the estimated hit time is within the time ahead limit
-                if withinMeleeRange and isMelee and not stop and isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture) or distance < swingrange then
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                end
+
+        --Attack when futere position is inside attack range triggerbox
+            if isMelee and not stop and isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture) then
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            end
 
 -- Update last variables
-            previousDistance = distance
-            prewiousDistancetop = distancetop
             vPlayerOriginLast = vPlayerOrigin
             pLocalOriginLast = pLocalOrigin
-        ::continue::
-    end
+    ::continue::
+end
     
--- ent_fire !picker Addoutput "health 99"
+
+-- debug command: ent_fire !picker Addoutput "health 99"
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
     if engine.Con_IsVisible() or engine.IsGameUIVisible() then
         return
     end
+    if vPlayerOriginvector == nil then return end
+    if vPlayerFuture == nil and pLocalFuture == nil then return end
 
     local pLocal = entities.GetLocalPlayer()
-    if debug:GetValue() == true then
+    if debug and debug:GetValue() == true then
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
         local w, h = draw.GetScreenSize()
         local screenPos = { w / 2 - 15, h / 2 + 35}
-        
-        local screenPos = client.WorldToScreen(vPlayerOriginvector)
+
+
+
+        local screenPos = client.WorldToScreen(vPlayerOrigin)
         if screenPos ~= nil then
-            draw.Line( screenPos[1], screenPos[2] + 20, screenPos[1], screenPos[2] - 20)
+            draw.Line( screenPos[1], screenPos[2], screenPos[1], screenPos[2] - 20)
         end
-        if vPlayerFuture ~= nil and pLocalFuture ~= nil then
             local screenPos = client.WorldToScreen(pLocalFuture)
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
@@ -258,13 +236,13 @@ local function doDraw()
             end
             local screenPos = client.WorldToScreen(vPlayerFuture)
             if screenPos ~= nil then
-                local screenPos1 = client.WorldToScreen(vPlayerOriginvector)
+                local screenPos1 = client.WorldToScreen(vPlayerOrigin)
                 if screenPos1 ~= nil then
                     draw.Line( screenPos1[1], screenPos1[2], screenPos[1], screenPos[2])
                 end
             end
-            -- Draw box around trigger hitbox        
-            if vPlayerFuture ~= nil then
+            if vhitbox_Height_trigger == nil then return end
+
             local vertices = {
                 client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
                 client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
@@ -274,29 +252,73 @@ local function doDraw()
                 client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)),
                 client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger)),
                 client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger))
-              }
-              
-                -- Front face
-                draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
-                draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
-                draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
-                draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
-                -- Back face
-                draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
-                draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
-                draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
-                draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
-                -- Connecting lines
-                draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2])
-                draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2])
-                draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2])
-                draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2])
-            end
-            -- text
+            }
+              -- check if not nil
+            if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
+            -- Front face
+            draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
+            draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
+            draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
+            draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
+            
+            -- Back face
+            draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
+            draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
+            draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
+            draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
+            
+            -- Connecting lines
+            if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
+            if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
+            if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
+            if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
 
-            str2 = string.format("%.2f", distance)
-            draw.TextShadow(screenPos[1], screenPos[2], str2)
-        end
+            end
+
+
+            --text
+
+            --str2 = string.format("%.2f", vPla)
+            --draw.TextShadow(screenPos[1], screenPos[2], str2)
+           
+
+            --[[ czapka
+            -- ustawienie rozdzielczości koła
+            local resolution = 36
+
+            -- promień koła
+            local radius = 50
+
+            -- wektor środka koła
+            local center = pLocalOrigin
+
+            -- wektor wysokości ostrosłupa
+            local height = Vector3(0, 0, 20)
+
+            -- inicjalizacja tablicy wierzchołków koła
+            local vertices = {}
+
+            -- wyznaczanie pozycji wierzchołków koła
+            for i = 1, resolution do
+                local angle = (2 * math.pi / resolution) * (i - 1)
+                local x = radius * math.cos(angle)
+                local y = radius * math.sin(angle)
+                vertices[i] = Vector3(center.x + x, center.y + y)
+            end
+
+            -- rysowanie linii z wierzchołków koła do punktu v2
+            for i = 1, resolution do
+                draw.line(vertices[i], height + vertices[i])
+            end
+
+            -- rysowanie linii łączących kolejne wierzchołki koła
+            for i = 1, resolution do
+                draw.line(vertices[i], vertices[(i % resolution) + 1])
+            end
+
+            -- rysowanie linii łączącej ostatni wierzchołek z pierwszym
+            draw.line(vertices[resolution], vertices[1])
+            ]]
     end
 end
 
