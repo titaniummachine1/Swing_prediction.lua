@@ -19,19 +19,17 @@ local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
 menu.Style.Outline = true                 -- Outline around the menu
 
-menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
+--[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
     client.SetConVar("cl_jiggle_bone_framerate_cutoff", 0)             -- Set cl_jiggle_bone_framerate_cutoff to 0
     client.SetConVar("cl_bobcycle",                     10000)         -- Set cl_bobcycle to 10000
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
-end, ItemFlags.FullWidth))
+end, ItemFlags.FullWidth))]]
 
-local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", true))
+local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local Swingpred1     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local Swingpred2     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,175 , 150 ))
 
 local pastPredictions = {}
@@ -175,7 +173,6 @@ local function OnCreateMove(pCmd, gameData)
 
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
-if not Swingpred2:GetValue() then goto continue end
         --[[position prediction]]--
         vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time)
         pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
