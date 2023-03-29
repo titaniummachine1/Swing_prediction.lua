@@ -14,7 +14,7 @@
 
 ## Requirements
 
-MenuLib - Already included in repository "entire folder"
+MenuLib - Already included in repository "entire folder required"
 
 [![Download](https://img.shields.io/badge/Download-Menu.lua_lnx00-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua)
 
