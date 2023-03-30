@@ -9,10 +9,12 @@
 ## Download
 
 ![Swing_prediction.lua Screenshot](https://i.imgur.com/GfCARP3.png)
+
+[![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
+
 https://user-images.githubusercontent.com/78664175/228688346-6eb6a37a-b45c-46c2-a61d-144040b5692c.mp4
 
 
-[![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 
 ## Requirements
 
