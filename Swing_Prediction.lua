@@ -263,7 +263,6 @@ local function OnCreateMove(pCmd, gameData)
         return
     end
 
-   
     -- find clsoest enemy
     for _, vPlayer in ipairs(players) do
         if vPlayer ~= nil and vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
@@ -297,9 +296,17 @@ local function OnCreateMove(pCmd, gameData)
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
             end
+        
+        --wall check
+        local can_attack = false
 
+        local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
+        if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
+            can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
+        end
+        
         --Attack when futere position is inside attack range triggerbox
-            if isMelee and not stop and isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture) then
+            if isMelee and not stop and can_attack then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
             end
 
