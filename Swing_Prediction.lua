@@ -19,18 +19,18 @@ local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
 menu.Style.Outline = true                 -- Outline around the menu
 
---[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
+menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
     client.SetConVar("cl_jiggle_bone_framerate_cutoff", 0)             -- Set cl_jiggle_bone_framerate_cutoff to 0
     client.SetConVar("cl_bobcycle",                     10000)         -- Set cl_bobcycle to 10000
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
-end, ItemFlags.FullWidth))]]
-
+end, ItemFlags.FullWidth))
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 200 ))
+--amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
 local pastPredictions = {}
 local hitbox_min = Vector3(14, 14, 0)
@@ -61,6 +61,80 @@ function GameData()
 end
 
 
+--[[ Global table of velocity vectors
+local velocitySamples = {}
+local maxSamples = 3 -- maximum number of samples
+local tickrate = 66 -- number of ticks per second
+
+-- Returns the future position of a target based on its current position, last position, and a specified time ahead
+function getFuturePosition(targetPosition, targetLastPos, timeAhead)
+-- Calculate the current velocity
+local currentVelocity = (targetPosition - targetLastPos) / tickrate
+  -- Add a new velocity sample to the table
+table.insert(velocitySamples, currentVelocity)
+
+-- Remove the oldest sample if the number of samples exceeds the limit
+if #velocitySamples > maxSamples then
+    table.remove(velocitySamples, 1)
+end
+
+-- Calculate the average velocity from the latest samples
+local avgVelocity = nil
+for _, velocity in ipairs(velocitySamples) do
+    avgVelocity = avgVelocity + velocity
+end
+avgVelocity = avgVelocity / #velocitySamples
+
+-- Calculate the trajectory
+local trajectory = Vector3.new()
+for i = 2, #velocitySamples do
+    local prevVelocity = velocitySamples[i - 1]
+    local currVelocity = velocitySamples[i]
+
+    -- Calculate the time difference between the two samples
+    local timeDiff = 1 / tickrate
+
+    -- Calculate the angle between the two velocity vectors
+    local angle = math.acos(currVelocity:Dot(prevVelocity) / (currVelocity.Magnitude * prevVelocity.Magnitude))
+
+    -- Calculate the cross product of the two velocity vectors
+    local cross = currVelocity:Cross(prevVelocity)
+
+    -- Flip the angle if the cross product is negative
+    if cross.Z < 0 then
+        angle = -angle
+    end
+
+    -- Calculate the curvature of the trajectory
+    local curvature = angle / timeDiff
+
+    -- Calculate the horizontal correction based on the curvature
+    local correction = Vector3.new(0, 0, -curvature * 0.25)
+
+    -- Calculate the lateral vector, which is perpendicular to the forward vector
+    local forwardVector = currVelocity.Unit
+    local lateralVector = forwardVector:Cross(Vector3.new(0,0,1)).Unit
+
+    -- Calculate the turn angle between the two velocity vectors
+    local turnAngle = math.atan2(forwardVector.Y, forwardVector.X) - math.atan2(prevVelocity.Y, prevVelocity.X)
+
+    -- Calculate the turn radius and center offset
+    local turnRadius = currVelocity.Magnitude / turnAngle
+    local turnCenterOffset = lateralVector * turnRadius
+
+    -- Calculate the horizontal correction based on the turn
+    local turnCorrection = Vector3.new(turnCenterOffset.X, turnCenterOffset.Y, 0)
+
+    -- Add the corrections to the trajectory
+    trajectory = trajectory + currVelocity + correction * timeDiff + turnCorrection
+end
+
+    -- Calculate the future position based on the trajectory and time ahead
+    local futurePosition = targetPosition + trajectory * timeAhead
+
+    return futurePosition
+end]]
+
 function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time)
     if targetOriginLast == nil then
         targetOriginLast = Vector3(0, 0, 0)
@@ -68,20 +142,51 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     if targetOriginLast == nil or targetLastPos == nil then
         return nil
     end
-    
+
+    -- Initialize targetVelocitySamples as a table if it doesn't exist
+    if not targetVelocitySamples then
+        targetVelocitySamples = {}
+    end
+
+    -- Initialize the table for this target if it doesn't exist
+    local targetKey = tostring(targetLastPos)
+    if not targetVelocitySamples[targetKey] then
+        targetVelocitySamples[targetKey] = {}
+    end
+
+    -- Insert the latest velocity sample into the table
     local targetVelocity = targetLastPos - targetOriginLast
-    local targetVelocityX, targetVelocityY, targetVelocityZ = targetVelocity:Unpack()
+    table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
+
+    -- Remove the oldest sample if there are more than maxSamples
+    if #targetVelocitySamples[targetKey] > 5 then
+        table.remove(targetVelocitySamples[targetKey], 6)
+    end
+
+    -- Calculate the average velocity from the samples
+    local totalVelocity = Vector3(0, 0, 0)
+    for i = 1, #targetVelocitySamples[targetKey] do
+        totalVelocity = totalVelocity + targetVelocitySamples[targetKey][i]
+    end
+    local averageVelocity = totalVelocity / #targetVelocitySamples[targetKey]
+
+    local targetVelocityX, targetVelocityY, targetVelocityZ = averageVelocity:Unpack()
     local targetVelocityVec = Vector3(targetVelocityX * tickRate * time, targetVelocityY * tickRate * time, targetVelocityZ * tickRate * time)
 
     local targetFuture = targetLastPos + targetVelocityVec
-    
+
     return targetFuture
 end
 
+
+
+
+local Vhitbox_Height = 80
+local vhitbox_width = 20
 function GetTriggerboxMin(swingrange, vPlayerFuture)
     if vPlayerFuture ~= nil then
         vhitbox_Height_trigger_bottom = swingrange
-        vhitbox_width_trigger = (14 + swingrange)
+        vhitbox_width_trigger = (vhitbox_width + swingrange)
         local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
         local hitbox_min_trigger = (vPlayerFuture + vhitbox_min)
         return hitbox_min_trigger
@@ -90,15 +195,15 @@ end
 
 function GetTriggerboxMax(swingrange, vPlayerFuture)
     if vPlayerFuture ~= nil then
-        vhitbox_Height_trigger = (85 + swingrange)
-        vhitbox_width_trigger = (14 + swingrange)
+        vhitbox_Height_trigger = (Vhitbox_Height + swingrange)
+        vhitbox_width_trigger = (vhitbox_width + swingrange)
         local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)
         local hitbox_max_trigger = (vPlayerFuture + vhitbox_max)
         return hitbox_max_trigger
     end
 end
 
-function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture)
+function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vPlayerFuture)
     if pLocalFuture == nil or hitbox_min_trigger == nil or hitbox_max_trigger == nil then
         return false
     end
@@ -116,6 +221,11 @@ function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture)
     if pLocalFuture.z < hitbox_min_trigger_z or pLocalFuture.z > hitbox_max_trigger_z then
         return false
     end
+     -- Check if vPlayerFuture is within distanceThreshold distance from pLocalFuture
+     if (vPlayerFuture - pLocalFuture):Length() > 200 then
+        return false
+    end
+    vdistance = (vPlayerFuture - pLocalFuture):Length() > 200
     return true
 end
 
@@ -144,8 +254,6 @@ local function OnCreateMove(pCmd, gameData)
 
 
     local isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
-    local Vhitbox_Height = 85
-    local vhitbox_width = 14
     local closestDistance = 1200
     local maxDistance = 1000
 
@@ -175,14 +283,14 @@ local function OnCreateMove(pCmd, gameData)
         --[[position prediction]]--
         vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time)
         pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
-
+        targetFuture, targetVelocityTable = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
  --[[-----------------------------Swing Prediction--------------------------------]]
 
             -- bypass problem with prior attacking with shield not beeign able to reach target..
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                dynamicstop = 200
+                dynamicstop = 175
                 print(closestDistance)
                 if (pCmd.forwardmove == 0) then dynamicstop = 150 end -- case if you dont hold w when charging
                 if closestDistance <= dynamicstop and pLocalClass == 4 then
@@ -191,7 +299,7 @@ local function OnCreateMove(pCmd, gameData)
             end
 
         --Attack when futere position is inside attack range triggerbox
-            if isMelee and not stop and isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture) then
+            if isMelee and not stop and isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture) then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
             end
 
@@ -225,11 +333,12 @@ local function doDraw()
         if screenPos ~= nil then
             draw.Line( screenPos[1], screenPos[2], screenPos[1], screenPos[2] - 20)
         end
-            local screenPos = client.WorldToScreen(pLocalFuture)
+        local screenPos = client.WorldToScreen(pLocalFuture)
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
             end
+
             local screenPos = client.WorldToScreen(vPlayerFuture)
             if screenPos ~= nil then
                 local screenPos1 = client.WorldToScreen(vPlayerOrigin)
@@ -269,12 +378,13 @@ local function doDraw()
             if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
             if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
 
-            end
+
+end
 
 
             --text
 
-            --str2 = string.format("%.2f", vPla)
+            --str2 = string.format("%.2f", vdistance)
             --draw.TextShadow(screenPos[1], screenPos[2], str2)
            
 
