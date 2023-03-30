@@ -29,7 +29,7 @@ menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Exe
 end, ItemFlags.FullWidth))
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", true))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 250 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 200 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
 local pastPredictions = {}
