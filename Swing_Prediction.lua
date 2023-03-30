@@ -19,17 +19,17 @@ local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
 menu.Style.Outline = true                 -- Outline around the menu
 
---[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
+menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
     client.SetConVar("cl_jiggle_bone_framerate_cutoff", 0)             -- Set cl_jiggle_bone_framerate_cutoff to 0
     client.SetConVar("cl_bobcycle",                     10000)         -- Set cl_bobcycle to 10000
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
-end, ItemFlags.FullWidth))]]
-local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
+end, ItemFlags.FullWidth))
+local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", true))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 200 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 250 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
 local pastPredictions = {}
@@ -136,54 +136,74 @@ end
 end]]
 
 function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time)
+    -- If the origin of the target from the previous tick is nil, initialize it to a zero vector.
     if targetOriginLast == nil then
         targetOriginLast = Vector3(0, 0, 0)
     end
+
+    -- If either the target's last known position or previous origin is nil, return nil.
     if targetOriginLast == nil or targetLastPos == nil then
         return nil
     end
 
-    -- Initialize targetVelocitySamples as a table if it doesn't exist
+    -- Initialize targetVelocitySamples as a table if it doesn't exist.
     if not targetVelocitySamples then
         targetVelocitySamples = {}
     end
 
-    -- Initialize the table for this target if it doesn't exist
+    -- Initialize the table for this target if it doesn't exist.
     local targetKey = tostring(targetLastPos)
     if not targetVelocitySamples[targetKey] then
         targetVelocitySamples[targetKey] = {}
     end
 
-    -- Insert the latest velocity sample into the table
+    -- Insert the latest velocity sample into the table.
     local targetVelocity = targetLastPos - targetOriginLast
     table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
 
-    -- Remove the oldest sample if there are more than maxSamples
+    -- Remove the oldest sample if there are more than maxSamples.
     if #targetVelocitySamples[targetKey] > 5 then
         table.remove(targetVelocitySamples[targetKey], 6)
     end
 
-    -- Calculate the average velocity from the samples
+    -- Calculate the average velocity from the samples.
     local totalVelocity = Vector3(0, 0, 0)
     for i = 1, #targetVelocitySamples[targetKey] do
         totalVelocity = totalVelocity + targetVelocitySamples[targetKey][i]
     end
     local averageVelocity = totalVelocity / #targetVelocitySamples[targetKey]
 
-    local targetVelocityX, targetVelocityY, targetVelocityZ = averageVelocity:Unpack()
-    local targetVelocityVec = Vector3(targetVelocityX * tickRate * time, targetVelocityY * tickRate * time, targetVelocityZ * tickRate * time)
+    -- Initialize the curve to a zero vector.
+    local curve = Vector3(0, 0, 0)
 
-    local targetFuture = targetLastPos + targetVelocityVec
+    -- Calculate the curve of the path if there are enough samples.
+    if #targetVelocitySamples[targetKey] >= 2 then
+        local previousVelocity = targetVelocitySamples[targetKey][1]
+        for i = 2, #targetVelocitySamples[targetKey] do
+            local currentVelocity = targetVelocitySamples[targetKey][i]
+            curve = curve + (previousVelocity - currentVelocity)
+            previousVelocity = currentVelocity
+        end
+        curve = curve / (#targetVelocitySamples[targetKey] - 1)
+    end
 
+    -- Scale the curve by the tick rate and time to predict.
+    curve = curve * tickRate * time
+
+    -- Add the curve to the predicted future position of the target.
+    local targetFuture = targetLastPos + (averageVelocity * tickRate * time) + curve
+
+    -- Return the predicted future position.
     return targetFuture
 end
 
 
 
 
+
 local vhitbox_Height = 80
-local vhitbox_width = 20
-function GetTriggerboxMin(swingrange, vPlayerFuture, isMelee)
+local vhitbox_width = 18
+function GetTriggerboxMin(swingrange, vPlayerFuture)
     if vPlayerFuture ~= nil and isMelee then
         vhitbox_Height_trigger_bottom = swingrange
         vhitbox_width_trigger = (vhitbox_width + swingrange)
@@ -193,7 +213,7 @@ function GetTriggerboxMin(swingrange, vPlayerFuture, isMelee)
     end
 end
 
-function GetTriggerboxMax(swingrange, vPlayerFuture, isMelee)
+function GetTriggerboxMax(swingrange, vPlayerFuture)
     if vPlayerFuture ~= nil and isMelee then
         vhitbox_Height_trigger = (vhitbox_Height + swingrange)
         vhitbox_width_trigger = (vhitbox_width + swingrange)
@@ -210,7 +230,9 @@ function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vP
     -- Unpack hitbox vectors
     local hitbox_min_trigger_x, hitbox_min_trigger_y, hitbox_min_trigger_z = hitbox_min_trigger:Unpack()
     local hitbox_max_trigger_x, hitbox_max_trigger_y, hitbox_max_trigger_z = hitbox_max_trigger:Unpack()
-    
+  
+
+    vdistance = (vPlayerFuture - pLocalFuture):Length() > 200
     -- Check if pLocalFuture is within the hitbox
     if pLocalFuture.x < hitbox_min_trigger_x or pLocalFuture.x > hitbox_max_trigger_x then
         return false
@@ -225,7 +247,6 @@ function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vP
      if (vPlayerFuture - pLocalFuture):Length() > 200 then
         return false
     end
-    vdistance = (vPlayerFuture - pLocalFuture):Length() > 200
     return true
 end
 
@@ -298,12 +319,12 @@ if not isMelee then return end
         
         --wall check
         local can_attack = false
-
+        
         local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
         end
-        
+
         --Attack when futere position is inside attack range triggerbox
             if isMelee and not stop and can_attack then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
