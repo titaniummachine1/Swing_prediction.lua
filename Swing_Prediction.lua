@@ -181,10 +181,10 @@ end
 
 
 
-local Vhitbox_Height = 80
+local vhitbox_Height = 80
 local vhitbox_width = 20
-function GetTriggerboxMin(swingrange, vPlayerFuture)
-    if vPlayerFuture ~= nil then
+function GetTriggerboxMin(swingrange, vPlayerFuture, isMelee)
+    if vPlayerFuture ~= nil and isMelee then
         vhitbox_Height_trigger_bottom = swingrange
         vhitbox_width_trigger = (vhitbox_width + swingrange)
         local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
@@ -193,9 +193,9 @@ function GetTriggerboxMin(swingrange, vPlayerFuture)
     end
 end
 
-function GetTriggerboxMax(swingrange, vPlayerFuture)
-    if vPlayerFuture ~= nil then
-        vhitbox_Height_trigger = (Vhitbox_Height + swingrange)
+function GetTriggerboxMax(swingrange, vPlayerFuture, isMelee)
+    if vPlayerFuture ~= nil and isMelee then
+        vhitbox_Height_trigger = (vhitbox_Height + swingrange)
         vhitbox_width_trigger = (vhitbox_width + swingrange)
         local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)
         local hitbox_max_trigger = (vPlayerFuture + vhitbox_max)
@@ -247,15 +247,13 @@ local function OnCreateMove(pCmd, gameData)
     -- Use pLocal, pWeapon, pWeaponDefIndex, etc. as needed
 
     if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
-
-    local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-
     -- Initialize closest distance and closest player
-
-
-    local isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
+    isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     local closestDistance = 1200
     local maxDistance = 1000
+    local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
+if not isMelee then return end
+
 
     if pLocalClass == nil then goto continue end
 
@@ -328,7 +326,7 @@ local function doDraw()
     if vPlayerFuture == nil and pLocalFuture == nil then return end
 
     local pLocal = entities.GetLocalPlayer()
-    if debug and debug:GetValue() == true then
+    if debug and debug:GetValue() == true and isMelee then
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
         local w, h = draw.GetScreenSize()
