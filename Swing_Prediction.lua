@@ -231,8 +231,6 @@ function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vP
     local hitbox_min_trigger_x, hitbox_min_trigger_y, hitbox_min_trigger_z = hitbox_min_trigger:Unpack()
     local hitbox_max_trigger_x, hitbox_max_trigger_y, hitbox_max_trigger_z = hitbox_max_trigger:Unpack()
   
-
-    vdistance = (vPlayerFuture - pLocalFuture):Length() > 200
     -- Check if pLocalFuture is within the hitbox
     if pLocalFuture.x < hitbox_min_trigger_x or pLocalFuture.x > hitbox_max_trigger_x then
         return false
@@ -266,21 +264,17 @@ local function OnCreateMove(pCmd, gameData)
     local pLocal, pWeapon, swingrange, viewheight, pLocalOrigin, pLocalClass, tickRate
     = gameData.pLocal, gameData.pWeapon, gameData.swingrange, gameData.viewheight, gameData.pLocalOrigin, gameData.pLocalClass, gameData.tickRate
     -- Use pLocal, pWeapon, pWeaponDefIndex, etc. as needed
-
     if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
+    if pLocalClass == nil then goto continue end
+    if pLocalClass == 8 then return end
+
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     local closestDistance = 1200
     local maxDistance = 1000
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
+
 if not isMelee then return end
-
-
-    if pLocalClass == nil then goto continue end
-
-    if pLocalClass == 8 then
-        return
-    end
 
     -- find clsoest enemy
     for _, vPlayer in ipairs(players) do
@@ -298,21 +292,23 @@ if not isMelee then return end
     if closestDistance == 1200 then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
+        
         --[[position prediction]]--
         vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time)
         pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
         targetFuture, targetVelocityTable = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
- --[[-----------------------------Swing Prediction--------------------------------]]
+--[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 
             -- bypass problem with prior attacking with shield not beeign able to reach target..
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                dynamicstop = 150
-                print(closestDistance)
-                if (pCmd.forwardmove == 0) then dynamicstop = 100 end -- case if you dont hold w when charging
+                dynamicstop = swingrange + 15
+                if (pCmd.forwardmove == 0) then dynamicstop = swingrange + 10 end -- case if you dont hold w when charging
                 
-                if vdistance <= dynamicstop and pLocalClass == 4 then
+                vdistance = (vPlayerFuture - pLocalOrigin):Length()
+                print(vdistance)
+                if pLocalClass == 4 and vdistance <= dynamicstop then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
             end
