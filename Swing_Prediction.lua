@@ -287,10 +287,11 @@ if not isMelee then return end
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                dynamicstop = 175
+                dynamicstop = 150
                 print(closestDistance)
-                if (pCmd.forwardmove == 0) then dynamicstop = 150 end -- case if you dont hold w when charging
-                if closestDistance <= dynamicstop and pLocalClass == 4 then
+                if (pCmd.forwardmove == 0) then dynamicstop = 100 end -- case if you dont hold w when charging
+                
+                if vdistance <= dynamicstop and pLocalClass == 4 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
             end
