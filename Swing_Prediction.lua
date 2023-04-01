@@ -207,7 +207,7 @@ end
 
 
 
-local vhitbox_Height = 80
+local vhitbox_Height = 85
 local vhitbox_width = 18
 function GetTriggerboxMin(swingrange, vPlayerFuture)
     if vPlayerFuture ~= nil and isMelee then
