@@ -29,8 +29,8 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 200 ))
-local msamples      = menu:AddComponent(MenuLib.Slider("Movement Samples", 1 ,66 , 20 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 225 ))
+local msamples      = menu:AddComponent(MenuLib.Slider("Movement Samples", 1 ,66 , 25 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
 local pastPredictions = {}
@@ -297,10 +297,10 @@ if not isMelee then return end
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                dynamicstop = swingrange + 10
-                if (pCmd.forwardmove == 0) then dynamicstop = swingrange end -- case if you dont hold w when charging
+                local dynamicstop = swingrange
+                if (pCmd.forwardmove == 0) then dynamicstop = swingrange - 10 end -- case if you dont hold w when charging
                 
-                vdistance = (vPlayerFuture - pLocalOrigin):Length()
+                vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 if pLocalClass == 4 and vdistance <= dynamicstop then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
@@ -338,6 +338,7 @@ local function doDraw()
 
     local pLocal = entities.GetLocalPlayer()
     if debug and debug:GetValue() == true and isMelee then
+        if pLocalFuture == nil then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
         local w, h = draw.GetScreenSize()
