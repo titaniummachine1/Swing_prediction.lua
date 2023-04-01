@@ -63,11 +63,15 @@ end
 function GetClosestEnemy(pLocal, pLocalOrigin, players)
     local closestDistance = 1000
     local maxDistance = 1000
-    -- find clsoest enemy
+    local closestPlayer = nil
+    -- find closest enemy
     for _, vPlayer in ipairs(players) do
         if vPlayer ~= nil and vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
-            vPlayerOrigin = vPlayer:GetAbsOrigin()
-            local distance = (vPlayerOrigin - pLocalOrigin):Length()
+            local vPlayerOrigin = vPlayer:GetAbsOrigin()
+            local distanceX = math.abs(vPlayerOrigin.x - pLocalOrigin.x)
+            local distanceY = math.abs(vPlayerOrigin.y - pLocalOrigin.y)
+            local distanceZ = 0
+            local distance = math.sqrt(distanceX * distanceX + distanceY * distanceY + distanceZ * distanceZ)
             if distance < closestDistance and distance <= maxDistance then
                 closestPlayer = vPlayer
                 closestDistance = distance
@@ -76,6 +80,8 @@ function GetClosestEnemy(pLocal, pLocalOrigin, players)
     end
     return closestPlayer
 end
+
+
 --[[ Global table of velocity vectors
 local velocitySamples = {}
 local maxSamples = 3 -- maximum number of samples
