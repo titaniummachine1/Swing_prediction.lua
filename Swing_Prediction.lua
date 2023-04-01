@@ -30,7 +30,7 @@ end, ItemFlags.FullWidth))]]
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 225 ))
-local msamples      = menu:AddComponent(MenuLib.Slider("Movement Samples", 1 ,66 , 25 ))
+local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,66 , 25 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
 local pastPredictions = {}
