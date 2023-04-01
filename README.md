@@ -14,7 +14,6 @@
 
 https://user-images.githubusercontent.com/78664175/228688346-6eb6a37a-b45c-46c2-a61d-144040b5692c.mp4
 
-media:
 <a href="https://www.youtube.com/watch?v=T8TRa1C5T2I&t=25s" target="_blank">
   <img src="https://img.shields.io/badge/YouTube%20Showcase-red?style=for-the-badge&logo=youtube" alt="YouTube Showcase Badge">
 </a>
