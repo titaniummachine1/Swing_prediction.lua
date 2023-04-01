@@ -42,6 +42,7 @@ MenuLib - Already included in repository "entire folder required"
 
 # Setup
 Put all required files in your %localappdata% folder.
+including Menulib Folder from repos files.
 
 How to run Swing_prediction.lua:
   1. Create a .bat file in the same directory as lmaobox.exe.
