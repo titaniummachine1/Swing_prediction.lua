@@ -8,7 +8,7 @@
 
 ## Download
 
-![Swing_prediction.lua Screenshot](https://i.imgur.com/75G2MiF.png)
+![Swing_prediction.lua Screenshot](https://i.imgur.com/HUNVrPJ.png)
 
 [![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 
