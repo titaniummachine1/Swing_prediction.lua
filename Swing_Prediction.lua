@@ -166,8 +166,8 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
 
     -- Remove the oldest sample if there are more than maxSamples.
-    if #targetVelocitySamples[targetKey] > 3 then
-        table.remove(targetVelocitySamples[targetKey], 4)
+    if #targetVelocitySamples[targetKey] > 5 then
+        table.remove(targetVelocitySamples[targetKey], 6)
     end
 
     -- Calculate the average velocity from the samples.
