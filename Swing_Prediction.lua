@@ -30,6 +30,7 @@ end, ItemFlags.FullWidth))]]
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 200 ))
+local msamples      = menu:AddComponent(MenuLib.Slider("Movement Samples", 1 ,66 , 20 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
 local pastPredictions = {}
@@ -165,9 +166,10 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     local targetVelocity = targetLastPos - targetOriginLast
     table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
 
+    local samples = msamples:GetValue()
     -- Remove the oldest sample if there are more than maxSamples.
-    if #targetVelocitySamples[targetKey] > 5 then
-        table.remove(targetVelocitySamples[targetKey], 6)
+    if #targetVelocitySamples[targetKey] > samples then
+        table.remove(targetVelocitySamples[targetKey], samples + 1)
     end
 
     -- Calculate the average velocity from the samples.
