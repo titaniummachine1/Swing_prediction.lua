@@ -60,78 +60,76 @@ function GameData()
     return data
 end
 
-
+function GetClosestEnemy(pLocal, pLocalOrigin, players)
+    local closestDistance = 1000
+    local maxDistance = 1000
+    -- find clsoest enemy
+    for _, vPlayer in ipairs(players) do
+        if vPlayer ~= nil and vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
+            vPlayerOrigin = vPlayer:GetAbsOrigin()
+            local distance = (vPlayerOrigin - pLocalOrigin):Length()
+            if distance < closestDistance and distance <= maxDistance then
+                closestPlayer = vPlayer
+                closestDistance = distance
+            end
+        end
+    end
+    return closestPlayer
+end
 --[[ Global table of velocity vectors
 local velocitySamples = {}
 local maxSamples = 3 -- maximum number of samples
 local tickrate = 66 -- number of ticks per second
-
 -- Returns the future position of a target based on its current position, last position, and a specified time ahead
 function getFuturePosition(targetPosition, targetLastPos, timeAhead)
 -- Calculate the current velocity
 local currentVelocity = (targetPosition - targetLastPos) / tickrate
   -- Add a new velocity sample to the table
 table.insert(velocitySamples, currentVelocity)
-
 -- Remove the oldest sample if the number of samples exceeds the limit
 if #velocitySamples > maxSamples then
     table.remove(velocitySamples, 1)
 end
-
 -- Calculate the average velocity from the latest samples
 local avgVelocity = nil
 for _, velocity in ipairs(velocitySamples) do
     avgVelocity = avgVelocity + velocity
 end
 avgVelocity = avgVelocity / #velocitySamples
-
 -- Calculate the trajectory
 local trajectory = Vector3.new()
 for i = 2, #velocitySamples do
     local prevVelocity = velocitySamples[i - 1]
     local currVelocity = velocitySamples[i]
-
     -- Calculate the time difference between the two samples
     local timeDiff = 1 / tickrate
-
     -- Calculate the angle between the two velocity vectors
     local angle = math.acos(currVelocity:Dot(prevVelocity) / (currVelocity.Magnitude * prevVelocity.Magnitude))
-
     -- Calculate the cross product of the two velocity vectors
     local cross = currVelocity:Cross(prevVelocity)
-
     -- Flip the angle if the cross product is negative
     if cross.Z < 0 then
         angle = -angle
     end
-
     -- Calculate the curvature of the trajectory
     local curvature = angle / timeDiff
-
     -- Calculate the horizontal correction based on the curvature
     local correction = Vector3.new(0, 0, -curvature * 0.25)
-
     -- Calculate the lateral vector, which is perpendicular to the forward vector
     local forwardVector = currVelocity.Unit
     local lateralVector = forwardVector:Cross(Vector3.new(0,0,1)).Unit
-
     -- Calculate the turn angle between the two velocity vectors
     local turnAngle = math.atan2(forwardVector.Y, forwardVector.X) - math.atan2(prevVelocity.Y, prevVelocity.X)
-
     -- Calculate the turn radius and center offset
     local turnRadius = currVelocity.Magnitude / turnAngle
     local turnCenterOffset = lateralVector * turnRadius
-
     -- Calculate the horizontal correction based on the turn
     local turnCorrection = Vector3.new(turnCenterOffset.X, turnCenterOffset.Y, 0)
-
     -- Add the corrections to the trajectory
     trajectory = trajectory + currVelocity + correction * timeDiff + turnCorrection
 end
-
     -- Calculate the future position based on the trajectory and time ahead
     local futurePosition = targetPosition + trajectory * timeAhead
-
     return futurePosition
 end]]
 
@@ -270,24 +268,12 @@ local function OnCreateMove(pCmd, gameData)
 
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
-    local closestDistance = 1200
-    local maxDistance = 1000
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
 
 if not isMelee then return end
 
-    -- find clsoest enemy
-    for _, vPlayer in ipairs(players) do
-        if vPlayer ~= nil and vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
-            vPlayerOrigin = vPlayer:GetAbsOrigin()
-            local distance = (vPlayerOrigin - pLocalOrigin):Length()
-            if distance < closestDistance and distance <= maxDistance then
-                closestPlayer = vPlayer
-                closestDistance = distance
-            end
-        end
-    end
-    
+
+    closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
     if closestPlayer == nil then goto continue end
     if closestDistance == 1200 then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
@@ -303,11 +289,10 @@ if not isMelee then return end
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                dynamicstop = swingrange + 15
-                if (pCmd.forwardmove == 0) then dynamicstop = swingrange + 10 end -- case if you dont hold w when charging
+                dynamicstop = swingrange + 10
+                if (pCmd.forwardmove == 0) then dynamicstop = swingrange end -- case if you dont hold w when charging
                 
                 vdistance = (vPlayerFuture - pLocalOrigin):Length()
-                print(vdistance)
                 if pLocalClass == 4 and vdistance <= dynamicstop then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
@@ -414,19 +399,14 @@ end
             --[[ czapka
             -- ustawienie rozdzielczości koła
             local resolution = 36
-
             -- promień koła
             local radius = 50
-
             -- wektor środka koła
             local center = pLocalOrigin
-
             -- wektor wysokości ostrosłupa
             local height = Vector3(0, 0, 20)
-
             -- inicjalizacja tablicy wierzchołków koła
             local vertices = {}
-
             -- wyznaczanie pozycji wierzchołków koła
             for i = 1, resolution do
                 local angle = (2 * math.pi / resolution) * (i - 1)
@@ -434,17 +414,14 @@ end
                 local y = radius * math.sin(angle)
                 vertices[i] = Vector3(center.x + x, center.y + y)
             end
-
             -- rysowanie linii z wierzchołków koła do punktu v2
             for i = 1, resolution do
                 draw.line(vertices[i], height + vertices[i])
             end
-
             -- rysowanie linii łączących kolejne wierzchołki koła
             for i = 1, resolution do
                 draw.line(vertices[i], vertices[(i % resolution) + 1])
             end
-
             -- rysowanie linii łączącej ostatni wierzchołek z pierwszym
             draw.line(vertices[resolution], vertices[1])
             ]]
