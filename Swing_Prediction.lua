@@ -82,64 +82,6 @@ function GetClosestEnemy(pLocal, pLocalOrigin, players)
     return closestPlayer
 end
 
-
---[[ Global table of velocity vectors
-local velocitySamples = {}
-local maxSamples = 3 -- maximum number of samples
-local tickrate = 66 -- number of ticks per second
--- Returns the future position of a target based on its current position, last position, and a specified time ahead
-function getFuturePosition(targetPosition, targetLastPos, timeAhead)
--- Calculate the current velocity
-local currentVelocity = (targetPosition - targetLastPos) / tickrate
-  -- Add a new velocity sample to the table
-table.insert(velocitySamples, currentVelocity)
--- Remove the oldest sample if the number of samples exceeds the limit
-if #velocitySamples > maxSamples then
-    table.remove(velocitySamples, 1)
-end
--- Calculate the average velocity from the latest samples
-local avgVelocity = nil
-for _, velocity in ipairs(velocitySamples) do
-    avgVelocity = avgVelocity + velocity
-end
-avgVelocity = avgVelocity / #velocitySamples
--- Calculate the trajectory
-local trajectory = Vector3.new()
-for i = 2, #velocitySamples do
-    local prevVelocity = velocitySamples[i - 1]
-    local currVelocity = velocitySamples[i]
-    -- Calculate the time difference between the two samples
-    local timeDiff = 1 / tickrate
-    -- Calculate the angle between the two velocity vectors
-    local angle = math.acos(currVelocity:Dot(prevVelocity) / (currVelocity.Magnitude * prevVelocity.Magnitude))
-    -- Calculate the cross product of the two velocity vectors
-    local cross = currVelocity:Cross(prevVelocity)
-    -- Flip the angle if the cross product is negative
-    if cross.Z < 0 then
-        angle = -angle
-    end
-    -- Calculate the curvature of the trajectory
-    local curvature = angle / timeDiff
-    -- Calculate the horizontal correction based on the curvature
-    local correction = Vector3.new(0, 0, -curvature * 0.25)
-    -- Calculate the lateral vector, which is perpendicular to the forward vector
-    local forwardVector = currVelocity.Unit
-    local lateralVector = forwardVector:Cross(Vector3.new(0,0,1)).Unit
-    -- Calculate the turn angle between the two velocity vectors
-    local turnAngle = math.atan2(forwardVector.Y, forwardVector.X) - math.atan2(prevVelocity.Y, prevVelocity.X)
-    -- Calculate the turn radius and center offset
-    local turnRadius = currVelocity.Magnitude / turnAngle
-    local turnCenterOffset = lateralVector * turnRadius
-    -- Calculate the horizontal correction based on the turn
-    local turnCorrection = Vector3.new(turnCenterOffset.X, turnCenterOffset.Y, 0)
-    -- Add the corrections to the trajectory
-    trajectory = trajectory + currVelocity + correction * timeDiff + turnCorrection
-end
-    -- Calculate the future position based on the trajectory and time ahead
-    local futurePosition = targetPosition + trajectory * timeAhead
-    return futurePosition
-end]]
-
 function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time)
     -- If the origin of the target from the previous tick is nil, initialize it to a zero vector.
     if targetOriginLast == nil then
@@ -203,10 +145,6 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     return targetFuture
 end
 
-
-
-
-
 local vhitbox_Height = 85
 local vhitbox_width = 18
 function GetTriggerboxMin(swingrange, vPlayerFuture)
@@ -253,13 +191,6 @@ function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vP
     end
     return true
 end
-
-        
-    
-
-
-
-
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd, gameData)
@@ -324,7 +255,6 @@ if not isMelee then return end
             pLocalOriginLast = pLocalOrigin
     ::continue::
 end
-    
 
 -- debug command: ent_fire !picker Addoutput "health 99"
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
@@ -393,47 +323,9 @@ local function doDraw()
             if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
             if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
             if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
-            if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
-
-
-end
-
-
-            --text
-
-            --str2 = string.format("%.2f", vdistance)
-            --draw.TextShadow(screenPos[1], screenPos[2], str2)
-           
-
-            --[[ czapka
-            -- ustawienie rozdzielczości koła
-            local resolution = 36
-            -- promień koła
-            local radius = 50
-            -- wektor środka koła
-            local center = pLocalOrigin
-            -- wektor wysokości ostrosłupa
-            local height = Vector3(0, 0, 20)
-            -- inicjalizacja tablicy wierzchołków koła
-            local vertices = {}
-            -- wyznaczanie pozycji wierzchołków koła
-            for i = 1, resolution do
-                local angle = (2 * math.pi / resolution) * (i - 1)
-                local x = radius * math.cos(angle)
-                local y = radius * math.sin(angle)
-                vertices[i] = Vector3(center.x + x, center.y + y)
+            if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) 
             end
-            -- rysowanie linii z wierzchołków koła do punktu v2
-            for i = 1, resolution do
-                draw.line(vertices[i], height + vertices[i])
-            end
-            -- rysowanie linii łączących kolejne wierzchołki koła
-            for i = 1, resolution do
-                draw.line(vertices[i], vertices[(i % resolution) + 1])
-            end
-            -- rysowanie linii łączącej ostatni wierzchołek z pierwszym
-            draw.line(vertices[resolution], vertices[1])
-            ]]
+        end
     end
 end
 
