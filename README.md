@@ -42,7 +42,7 @@ MenuLib - Already included in repository "entire folder required"
 
 👊 when the predicted position of a user is inside the area of predicted position of the enemy then it attacks
 
-💻 This helps the player predict their enemy's movement and hit them with their melee weapon more accurately.
+💻 predicts enemy's movement and hit's them with their melee weapon as soon as it is possible.
 
 # Setup
 Put all required files in your %localappdata% folder.
