@@ -30,7 +30,7 @@ end, ItemFlags.FullWidth))]]
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (Beta)", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,295 , 275 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,295 , 250 ))
 local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
