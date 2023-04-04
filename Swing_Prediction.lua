@@ -29,7 +29,7 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (Beta)", true))
+local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,295 , 250 ))
 local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
@@ -245,6 +245,7 @@ if not isMelee then return end
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
             if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
                 --warp.TriggerWarp()
+                --warp.TriggerDoubleTap()
             end
         end
 
