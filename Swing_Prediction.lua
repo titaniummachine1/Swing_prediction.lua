@@ -29,8 +29,9 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,250 , 225 ))
-local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,66 , 25 ))
+local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (Beta)", true))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,295 , 275 ))
+local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
 local pastPredictions = {}
@@ -139,8 +140,7 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     curve = curve * tickRate * time
 
     -- Add the curve to the predicted future position of the target.
-    local targetFuture = targetLastPos + (averageVelocity * tickRate * time) + curve
-
+        local targetFuture = targetLastPos + (averageVelocity * tickRate * time) + curve
     -- Return the predicted future position.
     return targetFuture
 end
@@ -217,9 +217,9 @@ if not isMelee then return end
     if closestDistance == 1200 then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
-        
+        local Killaura = mKillaura:GetValue()
         --[[position prediction]]--
-        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time)
+        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, Killaura)
         pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
         targetFuture, targetVelocityTable = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
@@ -228,7 +228,7 @@ if not isMelee then return end
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                local dynamicstop = swingrange
+                local dynamicstop = swingrange + 10
                 if (pCmd.forwardmove == 0) then dynamicstop = swingrange - 10 end -- case if you dont hold w when charging
                 
                 vdistance = (vPlayerOrigin - pLocalOrigin):Length()
@@ -243,6 +243,9 @@ if not isMelee then return end
         local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
+            if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
+                --warp.TriggerWarp()
+            end
         end
 
         --Attack when futere position is inside attack range triggerbox
