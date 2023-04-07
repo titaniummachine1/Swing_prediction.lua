@@ -30,7 +30,7 @@ end, ItemFlags.FullWidth))]]
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,295 , 250 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,295 , 245 ))
 local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
@@ -38,29 +38,26 @@ local pastPredictions = {}
 local hitbox_min = Vector3(14, 14, 0)
 local hitbox_max = Vector3(-14, -14, 85)
 local vPlayerOrigin = nil
+local pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
+local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
+local swingrange = pWeapon:GetSwingRange() -- + 11.17
+local tickRate = 66 -- game tick rate
+local pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
+local pLocalOrigin
+local closestPlayer
 
-
-function GameData()
-    local data = {}
-
-    -- Get local player data
-    data.pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
-    data.pWeapon = data.pLocal:GetPropEntity("m_hActiveWeapon")
-    data.swingrange = data.pWeapon:GetSwingRange() -- + 11.17
-    data.tickRate = 66 -- game tick rate
+function GetViewHeight()
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
-    local viewOffset = data.pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
-    local adjustedHeight = data.pLocal:GetAbsOrigin() + viewOffset
-    data.viewheight = (adjustedHeight - data.pLocal:GetAbsOrigin()):Length()
+    local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
+    local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
+    viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
         -- eye level 
-        local Vheight = Vector3(0, 0, data.viewheight)
-        data.pLocalOrigin = (data.pLocal:GetAbsOrigin() + Vheight)
-    --get local class
-    data.pLocalClass = data.pLocal:GetPropInt("m_iClass")
+        local Vheight = Vector3(0, 0, viewheight)
+        pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
 
-
-    return data
+    return pLocalOrigin
 end
+
 
 function GetClosestEnemy(pLocal, pLocalOrigin, players)
     local closestDistance = 1000
@@ -193,13 +190,10 @@ function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vP
 end
 
 --[[ Code needed to run 66 times a second ]]--
-local function OnCreateMove(pCmd, gameData)
+local function OnCreateMove(pCmd)
     if not Swingpred:GetValue() then goto continue end -- enable or distable script
 
     local time = mtime:GetValue() * 0.001
-    gameData = GameData()  -- Update gameData with latest information
-    local pLocal, pWeapon, swingrange, viewheight, pLocalOrigin, pLocalClass, tickRate
-    = gameData.pLocal, gameData.pWeapon, gameData.swingrange, gameData.viewheight, gameData.pLocalOrigin, gameData.pLocalClass, gameData.tickRate
     -- Use pLocal, pWeapon, pWeaponDefIndex, etc. as needed
     if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
     if pLocalClass == nil then goto continue end
@@ -211,6 +205,10 @@ local function OnCreateMove(pCmd, gameData)
 
 if not isMelee then return end
 
+    --try get vierwhegiht without crash
+    if pLocalClass ~= pLocalClasslast then
+        pLocalOrigin = GetViewHeight()
+    end
 
     closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
     if closestPlayer == nil then goto continue end
@@ -244,7 +242,7 @@ if not isMelee then return end
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
             if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
-                --warp.TriggerWarp()
+                warp.TriggerWarp()
                 --warp.TriggerDoubleTap()
             end
         end
