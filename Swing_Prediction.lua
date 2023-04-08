@@ -82,7 +82,11 @@ function GetClosestEnemy(pLocal, pLocalOrigin, players)
             end
         end
     end
+    if closestDistance < 2000 then
     return closestPlayer
+    else
+        return nil
+    end
 end
 
 local lastVectors = {}
@@ -262,9 +266,8 @@ local function OnCreateMove(pCmd)
         pLocalOrigin = GetViewHeight()
     end
 
-    closestPlayer, closestDistance = GetClosestEnemy(pLocal, pLocalOrigin, players)
+    closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
     if closestPlayer == nil then goto continue end
-    if closestDistance == 1200 then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         local Killaura = mKillaura:GetValue()
@@ -339,8 +342,8 @@ local function doDraw()
     if vPlayerOrigin == nil then return end
     if vPlayerFuture == nil and pLocalFuture == nil then return end
 
-    local pLocal = entities.GetLocalPlayer()
-    if debug and debug:GetValue() == true and isMelee then
+    --local pLocal = entities.GetLocalPlayer()
+    if debug and debug:GetValue() == true then
         if pLocalFuture == nil then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
