@@ -263,7 +263,6 @@ if not isMelee then return end
         
         --wall check
         local can_attack = false
-        print(pWeapon:GetCritTokenBucket())
         local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
@@ -277,7 +276,10 @@ if not isMelee then return end
                 end
             elseif isMelee and not stop and pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
                 if vdistance > 400 then
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
+                elseif vdistance > 1000 then
+                    --gui.SetValue("melee crit hack", "off")
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
 
