@@ -74,7 +74,7 @@ function GetClosestEnemy(pLocal, pLocalOrigin, players)
             local vPlayerOrigin = vPlayer:GetAbsOrigin()
             local distanceX = math.abs(vPlayerOrigin.x - pLocalOrigin.x)
             local distanceY = math.abs(vPlayerOrigin.y - pLocalOrigin.y)
-            local distanceZ = 0
+            local distanceZ = math.abs(vPlayerOrigin.z - pLocalOrigin.z)
             local distance = math.sqrt(distanceX * distanceX + distanceY * distanceY + distanceZ * distanceZ)
             if distance < closestDistance and distance <= maxDistance then
                 closestPlayer = vPlayer
