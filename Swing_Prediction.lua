@@ -50,6 +50,7 @@ local pLocalOrigin
 local closestPlayer
 local closestDistance = 2000
 local tick = 0
+local pLocalClass
 
 function GetViewHeight()
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
@@ -230,17 +231,16 @@ end
 local function OnCreateMove(pCmd)
     if not Swingpred:GetValue() then goto continue end -- enable or distable script
 
-    local time = mtime:GetValue() * 0.001
     -- Use pLocal, pWeapon, pWeaponDefIndex, etc. as needed
-    if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
-    pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
+    if not pLocal then goto continue end  -- Immediately check if the local player exists. If it doesn't, return.
+    local pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
     if pLocalClass == nil then goto continue end
-    if pLocalClass == 8 then return end
+    if pLocalClass == 8 then goto continue end
     local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
     local swingrange = pWeapon:GetSwingRange() -- + 11.17
     local flags = pLocal:GetPropInt( "m_fFlags" )
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-
+    local time = mtime:GetValue() * 0.001
    
 
     if mAutoGarden:GetValue() == true then
@@ -277,7 +277,7 @@ local function OnCreateMove(pCmd)
     end
 
     closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
-    if closestPlayer == nil then goto continue end
+if closestPlayer == nil then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         local Killaura = mKillaura:GetValue()
