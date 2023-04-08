@@ -25,7 +25,7 @@ local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Auto Crit Refill", true))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,400 , 250 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,300 , 250 ))
 local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
