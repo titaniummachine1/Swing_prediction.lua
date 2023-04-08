@@ -21,12 +21,13 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
 end, ItemFlags.FullWidth))]]
-local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
+
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Auto Crit Refill", true))
+local debug         = menu:AddComponent(MenuLib.Checkbox("visuals", false))
+local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,300 , 250 ))
-local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,300 , 250 ))
+
 local solution = {
     "default",
     "strafe pred"
@@ -36,7 +37,7 @@ local msolution = menu:AddComponent(MenuLib.Combo("Prediction Solution", solutio
   --solution:GetSelectedIndex() -- Selected item index (number)
   
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
-
+local msamples      = 132
 local pastPredictions = {}
 local hitbox_min = Vector3(14, 14, 0)
 local hitbox_max = Vector3(-14, -14, 85)
@@ -253,7 +254,6 @@ if not isMelee then return end
             vPlayerFuture = (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)--TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
             pLocalFuture = (pLocalOrigin + pLocal:EstimateAbsVelocity() * time) --TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
         else
-            print("working")
             if tick % 8 == 0 or tick == nil then
                 tick = 0
             end
