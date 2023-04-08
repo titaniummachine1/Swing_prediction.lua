@@ -8,7 +8,7 @@
 
 ## Download
 
-![Swing_prediction.lua Screenshot](https://i.imgur.com/CshU8m5.png)
+![Swing_prediction.lua Screenshot](https://i.imgur.com/Kw8Cdkf.png)
 
 <a href="https://www.youtube.com/watch?v=T8TRa1C5T2I&t=25s" target="_blank">
   <img src="https://img.shields.io/badge/YouTube%20Showcase-red?style=for-the-badge&logo=youtube" alt="YouTube Showcase Badge">
