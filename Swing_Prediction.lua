@@ -48,7 +48,7 @@ local pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the 
 local tickRate = 66 -- game tick rate
 local pLocalOrigin
 local closestPlayer
-local closestDistance
+local closestDistance = 2000
 local tick = 0
 
 function GetViewHeight()
@@ -222,7 +222,7 @@ function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vP
 end
 
 --[[ Code needed to run 66 times a second ]]--
-local function OnCreateMove(pCmd, cmd)
+local function OnCreateMove(pCmd)
     if not Swingpred:GetValue() then goto continue end -- enable or distable script
 
     local time = mtime:GetValue() * 0.001
