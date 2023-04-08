@@ -26,7 +26,7 @@ end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", false))
-local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Auto Troldier", false))
+local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,300 , 250 ))
 
@@ -64,7 +64,8 @@ function GetViewHeight()
 end
 
 
-function GetClosestEnemy(pLocal, pLocalOrigin, players)
+function GetClosestEnemy(pLocal, pLocalOrigin)
+    local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
     local closestDistance = 2000
     local maxDistance = 2000
     local closestPlayer = nil
@@ -240,18 +241,27 @@ local function OnCreateMove(pCmd)
     local flags = pLocal:GetPropInt( "m_fFlags" )
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
 
+   
+
     if mAutoGarden:GetValue() == true then
+        local bhopping = false
         local state = ""
-        if flags & FL_ONGROUND == 0 then
+        local downheight = Vector3(0, 0, -250)
+            if pCmd:GetButtons(pCmd.buttons | ~IN_DUCK) == 10 then
+                bhopping = true
+            end
+        if flags & FL_ONGROUND == 0 or bhopping then
             state = "slot3"
-        else
+        elseif not bhopping then
             state = "slot1"
+        else
+            bhopping = false
         end
         if state then
             client.Command(state, true)
         end
 
-        if flags & FL_ONGROUND == 0 then
+        if flags & FL_ONGROUND == 0 and not bhopping then
             pCmd:SetButtons(pCmd.buttons | IN_DUCK)
         else
             pCmd:SetButtons(pCmd.buttons & (~IN_DUCK))
