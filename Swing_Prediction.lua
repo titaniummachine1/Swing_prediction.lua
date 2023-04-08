@@ -25,7 +25,7 @@ local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Auto Crit Refill", true))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
-local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,295 , 245 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,400 , 250 ))
 local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
@@ -244,8 +244,8 @@ if not isMelee then return end
         end
         tick = tick + 1
       
-        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
-        pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
+        vPlayerFuture = (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)--TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
+        pLocalFuture = (pLocalOrigin + pLocal:EstimateAbsVelocity() * time) --TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
         
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 
@@ -277,11 +277,20 @@ if not isMelee then return end
             elseif isMelee and not stop and pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
                 if vdistance > 400 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
-                elseif vdistance > 1000 then
-                    --gui.SetValue("melee crit hack", "off")
+                elseif vdistance > 500 then
+                    gui.SetValue("crit hack", "none");
+                   
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
+
+            local flags = pLocal:GetPropInt( "m_fFlags" );
+
+            --[[if flags & IN_ATTACK == 1 then
+                pCmd:SetButtons(pCmd.buttons | IN_JUMP)
+            else 
+                pCmd:SetButtons(pCmd.buttons & (~IN_JUMP))
+            end]]
 
 -- Update last variables
             vPlayerOriginLast = vPlayerOrigin
