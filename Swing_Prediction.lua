@@ -25,8 +25,8 @@ end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local debug         = menu:AddComponent(MenuLib.Checkbox("visuals", false))
-local mAirduck      = menu:AddComponent(MenuLib.Checkbox("Air duck", false))
+local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", true))
+local mAutoGarden    = menu:AddComponent(MenuLib.Checkbox("Auto Troldier", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,300 , 250 ))
 
@@ -232,6 +232,26 @@ local function OnCreateMove(pCmd, cmd)
     if pLocalClass == 8 then return end
     local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
     local swingrange = pWeapon:GetSwingRange() -- + 11.17
+    local flags = pLocal:GetPropInt( "m_fFlags" )
+
+    if mAutoGarden:GetValue() == true then
+        local state = ""
+        if flags & FL_ONGROUND == 0 then
+            state = "slot3"
+        else
+            state = "slot1"
+        end
+        if state then
+            client.Command(state, true)
+        end
+
+        if flags & FL_ONGROUND == 0 then
+            pCmd:SetButtons(pCmd.buttons | IN_DUCK)
+        else
+            pCmd:SetButtons(pCmd.buttons & (~IN_DUCK))
+        end
+    end
+
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
@@ -263,14 +283,8 @@ if not isMelee then return end
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
             pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
         end
-        local flags = pLocal:GetPropInt( "m_fFlags" );
-        if mAirduck:GetValue() == true then
-            if flags & FL_ONGROUND == 0 then
-                pCmd:SetButtons(pCmd.buttons | IN_DUCK)
-            else
-                pCmd:SetButtons(pCmd.buttons & (~IN_DUCK))
-            end
-        end
+       
+
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 
             -- bypass problem with prior attacking with shield not beeign able to reach target..
@@ -308,13 +322,6 @@ if not isMelee then return end
                 end
             end
 
-            local flags = pLocal:GetPropInt( "m_fFlags" );
-
-            --[[if flags & IN_ATTACK == 1 then
-                pCmd:SetButtons(pCmd.buttons | IN_JUMP)
-            else 
-                pCmd:SetButtons(pCmd.buttons & (~IN_JUMP))
-            end]]
 
 -- Update last variables
             vPlayerOriginLast = vPlayerOrigin
