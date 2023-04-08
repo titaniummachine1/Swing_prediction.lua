@@ -23,6 +23,7 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local debug         = menu:AddComponent(MenuLib.Checkbox("indicator", false))
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
+local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Auto Crit Refill", true))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,295 , 245 ))
 local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
@@ -225,7 +226,6 @@ local function OnCreateMove(pCmd, cmd)
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
 
 if not isMelee then return end
-
     --try get vierwhegiht without crash
     if pLocalClass ~= pLocalClasslast then
         pLocalOrigin = GetViewHeight()
@@ -235,8 +235,9 @@ if not isMelee then return end
     if closestPlayer == nil then goto continue end
     if closestDistance == 1200 then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
-
+        vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         local Killaura = mKillaura:GetValue()
+
         --[[position prediction]]--
         if tick % 8 == 0 or tick == nil then
             tick = 0
@@ -255,7 +256,6 @@ if not isMelee then return end
                 local dynamicstop = swingrange + 10
                 if (pCmd.forwardmove == 0) then dynamicstop = swingrange - 10 end -- case if you dont hold w when charging
                 
-                vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 if pLocalClass == 4 and vdistance <= dynamicstop then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
@@ -263,18 +263,21 @@ if not isMelee then return end
         
         --wall check
         local can_attack = false
-        
+        print(pWeapon:GetCritTokenBucket())
         local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
         end
-
         --Attack when futere position is inside attack range triggerbox
             if isMelee and not stop and can_attack then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
                     warp.TriggerWarp()
                     --warp.TriggerDoubleTap()
+                end
+            elseif isMelee and not stop and pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
+                if vdistance > 400 then
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
 
