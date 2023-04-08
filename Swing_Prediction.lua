@@ -26,7 +26,7 @@ end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", false))
-local mAutoGarden    = menu:AddComponent(MenuLib.Checkbox("Auto Troldier", false))
+local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Auto Troldier", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,300 , 250 ))
 
@@ -39,7 +39,7 @@ local msolution = menu:AddComponent(MenuLib.Combo("Prediction Solution", solutio
   --solution:GetSelectedIndex() -- Selected item index (number)
   
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
-local msamples      = 132
+local msamples      = 66
 local pastPredictions = {}
 local hitbox_min = Vector3(14, 14, 0)
 local hitbox_max = Vector3(-14, -14, 85)
@@ -48,6 +48,7 @@ local pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the 
 local tickRate = 66 -- game tick rate
 local pLocalOrigin
 local closestPlayer
+local closestDistance
 local tick = 0
 
 function GetViewHeight()
@@ -63,7 +64,7 @@ function GetViewHeight()
 end
 
 
-function GetClosestEnemy(pLocal, pLocalOrigin, players, tick)
+function GetClosestEnemy(pLocal, pLocalOrigin, players)
     local closestDistance = 2000
     local maxDistance = 2000
     local closestPlayer = nil
@@ -233,6 +234,7 @@ local function OnCreateMove(pCmd, cmd)
     local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
     local swingrange = pWeapon:GetSwingRange() -- + 11.17
     local flags = pLocal:GetPropInt( "m_fFlags" )
+    local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
 
     if mAutoGarden:GetValue() == true then
         local state = ""
@@ -254,15 +256,13 @@ local function OnCreateMove(pCmd, cmd)
 
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
-    local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
 
-if not isMelee then return end
     --try get vierwhegiht without crash
     if pLocalClass ~= pLocalClasslast then
         pLocalOrigin = GetViewHeight()
     end
 
-    closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
+    closestPlayer, closestDistance = GetClosestEnemy(pLocal, pLocalOrigin, players)
     if closestPlayer == nil then goto continue end
     if closestDistance == 1200 then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
@@ -283,7 +283,7 @@ if not isMelee then return end
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
             pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
         end
-       
+        
 
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 
@@ -294,7 +294,7 @@ if not isMelee then return end
                 local dynamicstop = swingrange + 10
                 if (pCmd.forwardmove == 0) then dynamicstop = swingrange - 10 end -- case if you dont hold w when charging
                 
-                if pLocalClass == 4 and vdistance <= dynamicstop then
+                if isMelee and pLocalClass == 4 and vdistance <= dynamicstop then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
             end
