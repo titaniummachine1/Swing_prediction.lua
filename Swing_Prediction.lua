@@ -27,6 +27,14 @@ local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Auto Crit Refill", tru
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local mtime         = menu:AddComponent(MenuLib.Slider("movement ahead", 100 ,300 , 250 ))
 local msamples      = menu:AddComponent(MenuLib.Slider("Velocity Samples", 1 ,777 , 132 ))
+local solution = {
+    "default",
+    "strafe pred"
+  }
+
+local msolution = menu:AddComponent(MenuLib.Combo("Prediction Solution", solution))
+  --solution:GetSelectedIndex() -- Selected item index (number)
+  
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
 
 local pastPredictions = {}
@@ -239,14 +247,21 @@ if not isMelee then return end
         local Killaura = mKillaura:GetValue()
 
         --[[position prediction]]--
-        if tick % 8 == 0 or tick == nil then
-            tick = 0
-        end
-        tick = tick + 1
-      
-        vPlayerFuture = (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)--TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
-        pLocalFuture = (pLocalOrigin + pLocal:EstimateAbsVelocity() * time) --TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
+
         
+        if msolution:IsSelected("default") then
+            vPlayerFuture = (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)--TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
+            pLocalFuture = (pLocalOrigin + pLocal:EstimateAbsVelocity() * time) --TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
+        else
+            print("working")
+            if tick % 8 == 0 or tick == nil then
+                tick = 0
+            end
+            tick = tick + 1
+            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
+            pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
+        end
+
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 
             -- bypass problem with prior attacking with shield not beeign able to reach target..
