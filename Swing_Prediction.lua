@@ -25,7 +25,7 @@ end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", true))
+local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", false))
 local mAutoGarden    = menu:AddComponent(MenuLib.Checkbox("Auto Troldier", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,300 , 250 ))
