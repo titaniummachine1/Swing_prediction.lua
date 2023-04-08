@@ -20,11 +20,13 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("sv_cheats", 1)                                    -- debug fast setup
     client.SetConVar("mp_disable_respawn_times", 1)
     client.SetConVar("mp_respawnwavetime", -1)
+    client.SetConVar("mp_teams_unbalance_limit", 1000)
 end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local debug         = menu:AddComponent(MenuLib.Checkbox("visuals", false))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
+local debug         = menu:AddComponent(MenuLib.Checkbox("visuals", false))
+local mAirduck      = menu:AddComponent(MenuLib.Checkbox("Air duck", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,300 , 250 ))
 
@@ -261,7 +263,14 @@ if not isMelee then return end
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
             pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
         end
-
+        local flags = pLocal:GetPropInt( "m_fFlags" );
+        if mAirduck:GetValue() == true then
+            if flags & FL_ONGROUND == 0 then
+                pCmd:SetButtons(pCmd.buttons | IN_DUCK)
+            else
+                pCmd:SetButtons(pCmd.buttons & (~IN_DUCK))
+            end
+        end
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 
             -- bypass problem with prior attacking with shield not beeign able to reach target..
