@@ -3,12 +3,6 @@
 --[[          --Authors--           ]]--
 --[[           Terminator           ]]--
 --[[  (github.com/titaniummachine1  ]]--
---[[                                ]]--
---[[    credit to thoose people     ]]--
---[[      LNX (github.com/lnx00)    ]]--
---[[             Muqa1              ]]--
---[[   https://github.com/Muqa1     ]]--
---[[         SylveonBottle          ]]--
 
 local menuLoaded, MenuLib = pcall(require, "Menu")                                -- Load MenuLib
 assert(menuLoaded, "MenuLib not found, please install it!")                       -- If not found, throw error
@@ -39,12 +33,10 @@ local hitbox_min = Vector3(14, 14, 0)
 local hitbox_max = Vector3(-14, -14, 85)
 local vPlayerOrigin = nil
 local pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
-local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-local swingrange = pWeapon:GetSwingRange() -- + 11.17
 local tickRate = 66 -- game tick rate
-local pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
 local pLocalOrigin
 local closestPlayer
+local tick = 0
 
 function GetViewHeight()
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
@@ -59,9 +51,9 @@ function GetViewHeight()
 end
 
 
-function GetClosestEnemy(pLocal, pLocalOrigin, players)
-    local closestDistance = 1000
-    local maxDistance = 1000
+function GetClosestEnemy(pLocal, pLocalOrigin, players, tick)
+    local closestDistance = 2000
+    local maxDistance = 2000
     local closestPlayer = nil
     -- find closest enemy
     for _, vPlayer in ipairs(players) do
@@ -80,7 +72,28 @@ function GetClosestEnemy(pLocal, pLocalOrigin, players)
     return closestPlayer
 end
 
-function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time)
+local lastVectors = {}
+
+function interpolateVectors(current, last, t)
+    local totalIterations = 8
+    local iterations = t % totalIterations
+    local percent = iterations / totalIterations
+
+    -- Check if a last vector exists for this current vector, otherwise set it to the current vector
+    if lastVectors[current] == nil then
+        lastVectors[current] = current
+    end
+
+    local interpolated = lastVectors[current] + (last - lastVectors[current]) * percent
+
+    lastVectors[current] = interpolated
+
+    return interpolated
+end
+
+
+
+function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time, tick)
     -- If the origin of the target from the previous tick is nil, initialize it to a zero vector.
     if targetOriginLast == nil then
         targetOriginLast = Vector3(0, 0, 0)
@@ -138,9 +151,15 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
 
     -- Add the curve to the predicted future position of the target.
         local targetFuture = targetLastPos + (averageVelocity * tickRate * time) + curve
+    --smooth out output
+        if targetFuturelast ~= nil then
+        targetFuture = interpolateVectors(targetFuture[targetKey], targetFuturelast[targetKey], tick)
+        end
+        targetFutureLast = targetFuture
     -- Return the predicted future position.
     return targetFuture
 end
+
 
 local vhitbox_Height = 85
 local vhitbox_width = 18
@@ -190,15 +209,17 @@ function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vP
 end
 
 --[[ Code needed to run 66 times a second ]]--
-local function OnCreateMove(pCmd)
+local function OnCreateMove(pCmd, cmd)
     if not Swingpred:GetValue() then goto continue end -- enable or distable script
 
     local time = mtime:GetValue() * 0.001
     -- Use pLocal, pWeapon, pWeaponDefIndex, etc. as needed
     if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
+    pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
     if pLocalClass == nil then goto continue end
     if pLocalClass == 8 then return end
-
+    local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
+    local swingrange = pWeapon:GetSwingRange() -- + 11.17
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
@@ -217,9 +238,14 @@ if not isMelee then return end
 
         local Killaura = mKillaura:GetValue()
         --[[position prediction]]--
-        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, Killaura)
-        pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
-        targetFuture, targetVelocityTable = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time)
+        if tick % 8 == 0 or tick == nil then
+            tick = 0
+        end
+        tick = tick + 1
+      
+        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
+        pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
+        
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 
             -- bypass problem with prior attacking with shield not beeign able to reach target..
@@ -241,15 +267,15 @@ if not isMelee then return end
         local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
-            if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
-                warp.TriggerWarp()
-                --warp.TriggerDoubleTap()
-            end
         end
 
         --Attack when futere position is inside attack range triggerbox
             if isMelee and not stop and can_attack then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+                if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
+                    warp.TriggerWarp()
+                    --warp.TriggerDoubleTap()
+                end
             end
 
 -- Update last variables
@@ -276,6 +302,7 @@ local function doDraw()
         local w, h = draw.GetScreenSize()
         local screenPos = { w / 2 - 15, h / 2 + 35}
 
+        local vPlayerTargetPos = vPlayerFuture
 
 
         local screenPos = client.WorldToScreen(vPlayerOrigin)
@@ -288,7 +315,7 @@ local function doDraw()
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
             end
 
-            local screenPos = client.WorldToScreen(vPlayerFuture)
+            local screenPos = client.WorldToScreen(vPlayerTargetPos)
             if screenPos ~= nil then
                 local screenPos1 = client.WorldToScreen(vPlayerOrigin)
                 if screenPos1 ~= nil then
@@ -296,16 +323,16 @@ local function doDraw()
                 end
             end
             if vhitbox_Height_trigger == nil then return end
-
+            
             local vertices = {
-                client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)),
-                client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)),
-                client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger)),
-                client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger))
+                client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)),
+                client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)),
+                client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger)),
+                client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger))
             }
               -- check if not nil
             if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
