@@ -24,7 +24,8 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,250 , 250 ))
+local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,300 , 250 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
@@ -219,7 +220,7 @@ if not isMelee then goto continue end
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
         end
         swingrange = swingrange + 40
-        if fDistance <= (swingrange + 20) then
+        if fDistance <= (swingrange + 20) and rangepred then
             can_attack = true
         end
        
