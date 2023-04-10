@@ -25,7 +25,7 @@ end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
 local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,300 , 250 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,250 , 245 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
@@ -207,12 +207,11 @@ if not isMelee then goto continue end
                 stop = true
                 local dynamicstop = swingrange + 10
                 if (pCmd.forwardmove == 0) then dynamicstop = swingrange - 10 end -- case if you dont hold w when charging
-                
+              
                 if isMelee and pLocalClass == 4 and vdistance <= dynamicstop then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 end
             end
-        
         --wall check
         local can_attack = false
         local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
