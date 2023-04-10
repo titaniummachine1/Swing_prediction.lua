@@ -24,14 +24,20 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,250 , 250 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", false))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,330 , 300 ))
+local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", false))
+local mrangeCircle  = menu:AddComponent(MenuLib.Checkbox("draw range", true))
+local mcolor_close  = menu:AddComponent(MenuLib.Colorpicker("Color", color))
   --solution:GetSelectedIndex() -- Selected item index (number)
   
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
+if GetViewHeight ~= nil then
+    local mTHeightt     = GetViewHeight()
+end
+local mTHeightt = 85
 local msamples = 66
 local pastPredictions = {}
 local hitbox_min = Vector3(14, 14, 0)
@@ -44,6 +50,8 @@ local closestPlayer
 local closestDistance = 2000
 local tick = 0
 local pLocalClass
+local swingrange = 1
+local mresolution   = 128
 
 function GetViewHeight()
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
@@ -83,78 +91,6 @@ function GetClosestEnemy(pLocal, pLocalOrigin)
         return nil
     end
 end
-
-
-
-
-
---[[function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time, tick)
-    -- If the origin of the target from the previous tick is nil, initialize it to a zero vector.
-    if targetOriginLast == nil then
-        targetOriginLast = Vector3(0, 0, 0)
-    end
-
-    -- If either the target's last known position or previous origin is nil, return nil.
-    if targetOriginLast == nil or targetLastPos == nil then
-        return nil
-    end
-
-    -- Initialize targetVelocitySamples as a table if it doesn't exist.
-    if not targetVelocitySamples then
-        targetVelocitySamples = {}
-    end
-
-    -- Initialize the table for this target if it doesn't exist.
-    local targetKey = tostring(targetLastPos)
-    if not targetVelocitySamples[targetKey] then
-        targetVelocitySamples[targetKey] = {}
-    end
-
-    -- Insert the latest velocity sample into the table.
-    local targetVelocity = targetLastPos - targetOriginLast
-    table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
-
-    local samples = msamples
-    -- Remove the oldest sample if there are more than maxSamples.
-    if #targetVelocitySamples[targetKey] > samples then
-        table.remove(targetVelocitySamples[targetKey], samples + 1)
-    end
-
-    -- Calculate the average velocity from the samples.
-    local totalVelocity = Vector3(0, 0, 0)
-    for i = 1, #targetVelocitySamples[targetKey] do
-        totalVelocity = totalVelocity + targetVelocitySamples[targetKey][i]
-    end
-    local averageVelocity = totalVelocity / #targetVelocitySamples[targetKey]
-
-    -- Initialize the curve to a zero vector.
-    local curve = Vector3(0, 0, 0)
-
-    -- Calculate the curve of the path if there are enough samples.
-    if #targetVelocitySamples[targetKey] >= 2 then
-        local previousVelocity = targetVelocitySamples[targetKey][1]
-        for i = 2, #targetVelocitySamples[targetKey] do
-            local currentVelocity = targetVelocitySamples[targetKey][i]
-            curve = curve + (previousVelocity - currentVelocity)
-            previousVelocity = currentVelocity
-        end
-        curve = curve / (#targetVelocitySamples[targetKey] - 1)
-    end
-
-    -- Scale the curve by the tick rate and time to predict.
-    curve = curve * tickRate * time
-
-    -- Add the curve to the predicted future position of the target.
-        local targetFuture = targetLastPos + (averageVelocity * tickRate * time) + curve
-    --smooth out output
-        if targetFuturelast ~= nil then
-        targetFuture = interpolateVectors(targetFuture[targetKey], targetFuturelast[targetKey], tick)
-        end
-        targetFutureLast = targetFuture
-    -- Return the predicted future position.
-    return targetFuture
-end]]
-
 
 local vhitbox_Height = 85
 local vhitbox_width = 18
@@ -212,7 +148,7 @@ local function OnCreateMove(pCmd)
             if pLocalClass == nil then goto continue end --when local player did not chose class then skip code
             if pLocalClass == 8 then goto continue end --when local player is spy then skip code
             local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-            local swingrange = pWeapon:GetSwingRange() -- + 11.17
+            swingrange = pWeapon:GetSwingRange()
             local flags = pLocal:GetPropInt( "m_fFlags" )
             local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
             local time = mtime:GetValue() * 0.001
@@ -259,10 +195,11 @@ if closestPlayer == nil then goto continue end
         --[[position prediction]]--
             vPlayerFuture = (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)--TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
             pLocalFuture = (pLocalOrigin + pLocal:EstimateAbsVelocity() * time) --TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
-        
+            
+            fDistance = (vPlayerFuture - pLocalFuture):Length()
 
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
-
+if not isMelee then goto continue end
             -- bypass problem with prior attacking with shield not beeign able to reach target..
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
@@ -281,6 +218,11 @@ if closestPlayer == nil then goto continue end
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
         end
+        swingrange = swingrange + 40
+        if fDistance <= (swingrange + 20) then
+            can_attack = true
+        end
+       
         --Attack when futere position is inside attack range triggerbox
             if isMelee and not stop and can_attack then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
@@ -293,7 +235,6 @@ if closestPlayer == nil then goto continue end
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 elseif vdistance > 500 then
                     gui.SetValue("crit hack", "none");
-                   
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
@@ -316,8 +257,8 @@ local function doDraw()
     if vPlayerFuture == nil and pLocalFuture == nil then return end
 
     --local pLocal = entities.GetLocalPlayer()
-    if debug and debug:GetValue() == true then
-        if pLocalFuture == nil then return end
+if debug and debug:GetValue() == true then
+    if pLocalFuture == nil then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
         local w, h = draw.GetScreenSize()
@@ -374,6 +315,76 @@ local function doDraw()
             if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
             if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
             if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) 
+            end
+        end
+
+    if mrangeCircle:GetValue() == false then return end
+        -- Define the two colors to interpolate between
+        local color_close = {r = 255, g = 0, b = 0, a = 255} -- red
+        local color_far = {r = 0, g = 0, b = 255, a = 255} -- blue
+
+        -- Get the selected colors from the menu and convert them to the correct format
+        local selected_color = mcolor_close:GetColor()
+        color_close = {r = selected_color[1], g = selected_color[2], b = selected_color[3], a = selected_color[4]}
+
+        local selected_color1 = mcolor_close:GetColor()
+        color_far = {r = selected_color1[1], g = selected_color1[2], b = selected_color1[3], a = selected_color1[4]}
+
+        -- Calculate the target distance for the color to be completely at the close color
+        local target_distance = (swingrange)
+
+        -- Calculate the vertex positions around the circle
+        local center = vPlayerFuture
+        local radius = swingrange -- radius of the circle
+        local segments = mresolution -- number of segments to use for the circle
+        local vertices = {} -- table to store circle vertices
+        local colors = {} -- table to store colors for each vertex
+
+        for i = 1, segments do
+        local angle = math.rad(i * (360 / segments))
+        local direction = Vector3(math.cos(angle), math.sin(angle), 0)
+        local trace = engine.TraceLine(vPlayerFuture, center + direction * radius, MASK_SHOT_BRUSHONLY)
+        local distance = radius
+        
+        local x = center.x + math.cos(angle) * distance
+        local y = center.y + math.sin(angle) * distance
+        local z = center.z + 1
+        
+        -- adjust the height based on distance to trace hit point
+        local distance_to_hit = trace.fraction * radius -- calculate distance to hit point
+        if distance_to_hit > 0 then
+            local max_height_adjustment = mTHeightt -- adjust as needed
+            local height_adjustment = (1 - distance_to_hit / radius) * max_height_adjustment
+            z = z + height_adjustment
+        end
+        
+        vertices[i] = client.WorldToScreen(Vector3(x, y, z))
+        
+        -- calculate the color for this line based on the height of the point
+        local t = (z - center.z - target_distance) / (mTHeightt - target_distance)
+        if t < 0 then
+            t = 0
+        elseif t > 1 then
+            t = 1
+        end
+        local color = {}
+        for key, value in pairs(color_close) do
+            color[key] = math.floor((1 - t) * value + t * color_far[key])
+        end
+        colors[i] = color
+        end
+
+        -- Calculate the top vertex position
+        local top_height = mTHeightt -- adjust as needed
+        local top_vertex = client.WorldToScreen(Vector3(center.x, center.y, center.z + top_height))
+
+        -- Draw the circle and connect all the vertices to the top point
+        for i = 1, segments do
+            local j = i + 1
+            if j > segments then j = 1 end
+            if vertices[i] ~= nil and vertices[j] ~= nil then
+            draw.Color(colors[i].r, colors[i].g, colors[i].b, colors[i].a)
+            draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
             end
         end
     end
