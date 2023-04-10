@@ -28,18 +28,11 @@ local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", false))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,300 , 250 ))
-
-local solution = {
-    "default",
-    "strafe pred"
-  }
-
-local msolution = menu:AddComponent(MenuLib.Combo("Prediction Solution", solution))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 150 ,330 , 300 ))
   --solution:GetSelectedIndex() -- Selected item index (number)
   
 --amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
-local msamples      = 66
+local msamples = 66
 local pastPredictions = {}
 local hitbox_min = Vector3(14, 14, 0)
 local hitbox_max = Vector3(-14, -14, 85)
@@ -91,28 +84,11 @@ function GetClosestEnemy(pLocal, pLocalOrigin)
     end
 end
 
-local lastVectors = {}
-
-function interpolateVectors(current, last, t)
-    local totalIterations = 8
-    local iterations = t % totalIterations
-    local percent = iterations / totalIterations
-
-    -- Check if a last vector exists for this current vector, otherwise set it to the current vector
-    if lastVectors[current] == nil then
-        lastVectors[current] = current
-    end
-
-    local interpolated = lastVectors[current] + (last - lastVectors[current]) * percent
-
-    lastVectors[current] = interpolated
-
-    return interpolated
-end
 
 
 
-function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time, tick)
+
+--[[function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time, tick)
     -- If the origin of the target from the previous tick is nil, initialize it to a zero vector.
     if targetOriginLast == nil then
         targetOriginLast = Vector3(0, 0, 0)
@@ -138,7 +114,7 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     local targetVelocity = targetLastPos - targetOriginLast
     table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
 
-    local samples = msamples:GetValue()
+    local samples = msamples
     -- Remove the oldest sample if there are more than maxSamples.
     if #targetVelocitySamples[targetKey] > samples then
         table.remove(targetVelocitySamples[targetKey], samples + 1)
@@ -177,7 +153,7 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
         targetFutureLast = targetFuture
     -- Return the predicted future position.
     return targetFuture
-end
+end]]
 
 
 local vhitbox_Height = 85
@@ -229,19 +205,17 @@ end
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
-    if not Swingpred:GetValue() then goto continue end -- enable or distable script
+        if not Swingpred:GetValue() then goto continue end -- enable or distable script
+        if not pLocal then goto continue end  -- Immediately check if the local player exists. If it doesn't, return.
 
-    -- Use pLocal, pWeapon, pWeaponDefIndex, etc. as needed
-    if not pLocal then goto continue end  -- Immediately check if the local player exists. If it doesn't, return.
-    local pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
-    if pLocalClass == nil then goto continue end
-    if pLocalClass == 8 then goto continue end
-    local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-    local swingrange = pWeapon:GetSwingRange() -- + 11.17
-    local flags = pLocal:GetPropInt( "m_fFlags" )
-    local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-    local time = mtime:GetValue() * 0.001
-   
+            local pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
+            if pLocalClass == nil then goto continue end --when local player did not chose class then skip code
+            if pLocalClass == 8 then goto continue end --when local player is spy then skip code
+            local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
+            local swingrange = pWeapon:GetSwingRange() -- + 11.17
+            local flags = pLocal:GetPropInt( "m_fFlags" )
+            local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
+            local time = mtime:GetValue() * 0.001
 
     if mAutoGarden:GetValue() == true then
         local bhopping = false
@@ -283,19 +257,8 @@ if closestPlayer == nil then goto continue end
         local Killaura = mKillaura:GetValue()
 
         --[[position prediction]]--
-
-        
-        if msolution:IsSelected("default") then
             vPlayerFuture = (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)--TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
             pLocalFuture = (pLocalOrigin + pLocal:EstimateAbsVelocity() * time) --TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
-        else
-            if tick % 8 == 0 or tick == nil then
-                tick = 0
-            end
-            tick = tick + 1
-            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
-            pLocalFuture = TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
-        end
         
 
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
