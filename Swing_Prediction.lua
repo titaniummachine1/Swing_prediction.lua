@@ -23,7 +23,7 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("mp_teams_unbalance_limit", 1000)
 end, ItemFlags.FullWidth))]]
 
-local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true))
+local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,250 , 245 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
@@ -93,6 +93,68 @@ function GetClosestEnemy(pLocal, pLocalOrigin)
     else
         return nil
     end
+end
+
+function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time, targetEntity)
+    -- If the origin of the target from the previous tick is nil, initialize it to a zero vector.
+    if targetOriginLast == nil then
+        targetOriginLast = Vector3(0, 0, 0)
+    end
+
+    -- If either the target's last known position or previous origin is nil, return nil.
+    if targetOriginLast == nil or targetLastPos == nil then
+        return nil
+    end
+
+    -- Initialize targetVelocitySamples as a table if it doesn't exist.
+    if not targetVelocitySamples then
+        targetVelocitySamples = {}
+    end
+
+    -- Initialize the table for this target if it doesn't exist.
+    local targetKey = tostring(targetLastPos)
+    if not targetVelocitySamples[targetKey] then
+        targetVelocitySamples[targetKey] = {}
+    end
+
+    -- Insert the latest velocity sample into the table.
+    local targetVelocity = targetEntity:EstimateAbsVelocity()
+    table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
+
+    local samples = msamples
+    -- Remove the oldest sample if there are more than maxSamples.
+    if #targetVelocitySamples[targetKey] > samples then
+        table.remove(targetVelocitySamples[targetKey], samples + 1)
+    end
+
+    -- Calculate the average velocity from the samples.
+    local totalVelocity = Vector3(0, 0, 0)
+    for i = 1, #targetVelocitySamples[targetKey] do
+        totalVelocity = totalVelocity + targetVelocitySamples[targetKey][i]
+    end
+    local averageVelocity = totalVelocity / #targetVelocitySamples[targetKey]
+
+    -- Initialize the curve to a zero vector.
+    local curve = Vector3(0, 0, 0)
+
+    -- Calculate the curve of the path if there are enough samples.
+    if #targetVelocitySamples[targetKey] >= 2 then
+        local previousVelocity = targetVelocitySamples[targetKey][1]
+        for i = 2, #targetVelocitySamples[targetKey] do
+            local currentVelocity = targetVelocitySamples[targetKey][i]
+            curve = curve + (previousVelocity - currentVelocity)
+            previousVelocity = currentVelocity
+        end
+        curve = curve / (#targetVelocitySamples[targetKey] - 1)
+    end
+
+    -- Scale the curve by the tick rate and time to predict.
+    curve = curve * tickRate * time
+
+    -- Add the curve to the predicted future position of the target.
+        local targetFuture = targetLastPos + (averageVelocity * time) + curve
+    -- Return the predicted future position.
+    return targetFuture
 end
 
 local vhitbox_Height = 85
@@ -194,8 +256,10 @@ if closestPlayer == nil then goto continue end
         --local Killaura = mKillaura:GetValue()
 
         --[[position prediction]]--
-            vPlayerFuture = (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)--TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
-            pLocalFuture = (pLocalOrigin + pLocal:EstimateAbsVelocity() * time) --TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, tick)
+                -- old solution (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)
+                -- old solution (pLocalOrigin + pLocal:EstimateAbsVelocity() * time)
+            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, closestPlayer)
+            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, pLocal)
             
             fDistance = (vPlayerFuture - pLocalFuture):Length()
 
