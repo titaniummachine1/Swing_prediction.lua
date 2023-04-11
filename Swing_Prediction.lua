@@ -27,7 +27,7 @@ local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFla
 local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,250 , 240 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist(Rage)", false))
+local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 --local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local Visuals = {
@@ -58,8 +58,9 @@ local swingrange = 1
 local mresolution   = 128
 
 function GetViewHeight()
+    if pLocal == nil then return end
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
-    local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
+    local viewOffset = entities.GetLocalPlayer():GetPropVector( "localdata", "m_vecViewOffset[0]" )
     local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
     viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
         -- eye level 
@@ -245,7 +246,7 @@ local function OnCreateMove(pCmd)
         end
 
 
-        -- Do a ray trace to check if it's a valid location
+        --[[ Do a ray trace to check if it's a valid location
         local start = pLocalOrigin
         local down = Vector3(0, 0, -(viewheight + 50))
         local endpos = start + down
@@ -265,7 +266,7 @@ local function OnCreateMove(pCmd)
         if flags & FL_ONGROUND == 1 and not bhopping and input.IsButtonDown( KEY_SPACE ) or not bhopping and input.IsButtonDown( KEY_SPACE ) and nground then
             pCmd:SetButtons(pCmd.buttons | IN_JUMP)
             print("XD")
-        end
+        end]]
     end
 
     -- Initialize closest distance and closest player
