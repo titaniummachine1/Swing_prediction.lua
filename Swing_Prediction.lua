@@ -25,13 +25,14 @@ end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,250 , 245 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,250 , 240 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
+local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 --local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local Visuals = {
     ["Range Circle"] = true,
-    ["Prediction"] = false
+    ["Draw Trail"] = true
   }
 
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
@@ -281,7 +282,7 @@ if not isMelee then goto continue end
             end
         --wall check
         local can_attack = false
-        local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
+        local trace = engine.TraceLine(pLocalFuture, vPlayerFuture, MASK_SHOT_HULL)
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
             swingrange = swingrange + 40
@@ -324,7 +325,7 @@ local function doDraw()
     if vPlayerFuture == nil and pLocalFuture == nil then return end
 
     --local pLocal = entities.GetLocalPlayer()
-if mVisuals:IsSelected("Prediction") == false then return end
+if not mmVisuals:GetValue() then return end
     if pLocalFuture == nil then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
@@ -332,19 +333,14 @@ if mVisuals:IsSelected("Prediction") == false then return end
         local screenPos = { w / 2 - 15, h / 2 + 35}
 
         local vPlayerTargetPos = vPlayerFuture
-
-
-            local screenPos = client.WorldToScreen(vPlayerOrigin)
-            if screenPos ~= nil then
-                draw.Line( screenPos[1], screenPos[2], screenPos[1], screenPos[2] - 20)
-            end
-
+        -- draw predicted local position with strafe prediction
             local screenPos = client.WorldToScreen(pLocalFuture)
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
             end
 
+        -- draw predicted enemy position with strafe prediction connecting his local point and predicted position with line.
             local screenPos = client.WorldToScreen(vPlayerTargetPos)
             if screenPos ~= nil then
                 local screenPos1 = client.WorldToScreen(vPlayerOrigin)
@@ -352,6 +348,39 @@ if mVisuals:IsSelected("Prediction") == false then return end
                     draw.Line( screenPos1[1], screenPos1[2], screenPos[1], screenPos[2])
                 end
             end
+
+       
+        -- Strafe prediction visualization
+        if mVisuals:IsSelected("Draw Trail") then
+            local maxPositions = 20
+            if predictedPositions == nil then
+                predictedPositions = {}
+            end
+
+            -- Add the latest predicted position to the beginning of the table
+            table.insert(predictedPositions, 1, pLocalFuture)
+
+            -- Remove the last position in the table if there are more than 5
+            if #predictedPositions > maxPositions then
+                table.remove(predictedPositions, maxPositions + 1)
+            end
+
+            -- Draw lines between the past 5 positions
+            for i = 1, math.min(#predictedPositions - 1, maxPositions - 1) do
+                local pos1 = predictedPositions[i]
+                local pos2 = predictedPositions[i + 1]
+
+                local screenPos1 = client.WorldToScreen(pos1)
+                local screenPos2 = client.WorldToScreen(pos2)
+
+                if screenPos1 ~= nil and screenPos2 ~= nil then
+                    draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                end
+            end
+        end
+
+            
+
             if vhitbox_Height_trigger == nil then return end
             
             local vertices = {
