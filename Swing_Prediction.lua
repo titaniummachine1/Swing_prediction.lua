@@ -244,29 +244,6 @@ local function OnCreateMove(pCmd)
         else
             pCmd:SetButtons(pCmd.buttons & (~IN_DUCK))
         end
-
-
-        --[[ Do a ray trace to check if it's a valid location
-        local start = pLocalOrigin
-        local down = Vector3(0, 0, -(viewheight + 50))
-        local endpos = start + down
-
-        local trace = engine.TraceLine(start, endpos, MASK_SHOT_HULL)
-        local nground = false
-
-        if trace.fraction * 1000 <= 0.57 then
-            -- The future position is valid
-            nground = false
-        else
-            -- The future position is not valid
-            nground = true
-        end
-
-        --better bhopping
-        if flags & FL_ONGROUND == 1 and not bhopping and input.IsButtonDown( KEY_SPACE ) or not bhopping and input.IsButtonDown( KEY_SPACE ) and nground then
-            pCmd:SetButtons(pCmd.buttons | IN_JUMP)
-            print("XD")
-        end]]
     end
 
     -- Initialize closest distance and closest player
