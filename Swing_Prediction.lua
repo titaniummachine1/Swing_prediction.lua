@@ -55,12 +55,13 @@ local closestDistance = 2000
 local tick = 0
 local pLocalClass
 local swingrange = 1
-local mresolution   = 128
+local mresolution = 128
+local viewheight
 
-function GetViewHeight()
-    if pLocal == nil then return end
+--[[function GetViewHeight()
+    if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
-    local viewOffset = entities.GetLocalPlayer():GetPropVector( "localdata", "m_vecViewOffset[0]" )
+    local viewOffset = vector3(0, 0, 75)
     local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
     viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
         -- eye level 
@@ -68,7 +69,7 @@ function GetViewHeight()
         pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
 
     return pLocalOrigin
-end
+end]]
 
 
 function GetClosestEnemy(pLocal, pLocalOrigin)
@@ -251,7 +252,14 @@ local function OnCreateMove(pCmd)
 
     --try get vierwhegiht without crash
     if pLocalClass ~= pLocalClasslast then
-        pLocalOrigin = GetViewHeight()
+        if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
+        --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
+        local viewOffset = Vector3(0, 0, 75)
+        local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
+        viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
+            -- eye level 
+            local Vheight = Vector3(0, 0, viewheight)
+            pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
     end
 
     closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
