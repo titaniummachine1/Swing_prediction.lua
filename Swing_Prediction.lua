@@ -346,36 +346,6 @@ if not mmVisuals:GetValue() then return end
                 end
             end
 
-       
-        -- Strafe prediction visualization
-        if mVisuals:IsSelected("Draw Trail") then
-            local maxPositions = 20
-            if predictedPositions == nil then
-                predictedPositions = {}
-            end
-
-            -- Add the latest predicted position to the beginning of the table
-            table.insert(predictedPositions, 1, pLocalFuture)
-
-            -- Remove the last position in the table if there are more than 5
-            if #predictedPositions > maxPositions then
-                table.remove(predictedPositions, maxPositions + 1)
-            end
-
-            -- Draw lines between the past 5 positions
-            for i = 1, math.min(#predictedPositions - 1, maxPositions - 1) do
-                local pos1 = predictedPositions[i]
-                local pos2 = predictedPositions[i + 1]
-
-                local screenPos1 = client.WorldToScreen(pos1)
-                local screenPos2 = client.WorldToScreen(pos2)
-
-                if screenPos1 ~= nil and screenPos2 ~= nil then
-                    draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
-                end
-            end
-        end
-
             
 
             if vhitbox_Height_trigger == nil then return end
@@ -410,6 +380,35 @@ if not mmVisuals:GetValue() then return end
             if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
             if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) 
             end
+        end
+
+                -- Strafe prediction visualization
+                if mVisuals:IsSelected("Draw Trail") then
+                    local maxPositions = 20
+                    if predictedPositions == nil then
+                        predictedPositions = {}
+                    end
+        
+                    -- Add the latest predicted position to the beginning of the table
+                    table.insert(predictedPositions, 1, pLocalFuture)
+        
+                    -- Remove the last position in the table if there are more than 5
+                    if #predictedPositions > maxPositions then
+                        table.remove(predictedPositions, maxPositions + 1)
+                    end
+        
+                    -- Draw lines between the past 5 positions
+                    for i = 1, math.min(#predictedPositions - 1, maxPositions - 1) do
+                        local pos1 = predictedPositions[i]
+                        local pos2 = predictedPositions[i + 1]
+        
+                        local screenPos1 = client.WorldToScreen(pos1)
+                        local screenPos2 = client.WorldToScreen(pos2)
+        
+                        if screenPos1 ~= nil and screenPos2 ~= nil then
+                            draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                        end
+                    end
         end
 
     if mVisuals:IsSelected("Range Circle") == false then return end
