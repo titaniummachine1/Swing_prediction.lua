@@ -158,15 +158,13 @@ local function OnCreateMove(pCmd)
         local bhopping = false
         local state = ""
         local downheight = Vector3(0, 0, -250)
-            if pCmd:GetButtons(pCmd.buttons | ~IN_DUCK) == 10 then
+            if input.IsButtonDown( KEY_SPACE ) then
                 bhopping = true
             end
         if flags & FL_ONGROUND == 0 or bhopping then
             state = "slot3"
-        elseif not bhopping then
-            state = "slot1"
         else
-            bhopping = false
+            state = "slot1"
         end
         if state then
             client.Command(state, true)
@@ -343,7 +341,9 @@ if debug and debug:GetValue() == true then
         for i = 1, segments do
         local angle = math.rad(i * (360 / segments))
         local direction = Vector3(math.cos(angle), math.sin(angle), 0)
-        local trace = engine.TraceLine(vPlayerFuture, center + direction * radius, MASK_SHOT_BRUSHONLY)
+            if vPlayerFuture ~= nil then
+                local trace = engine.TraceLine(vPlayerFuture, center + direction * radius, MASK_SHOT_BRUSHONLY)
+            end
         local distance = radius
         
         local x = center.x + math.cos(angle) * distance
@@ -351,6 +351,8 @@ if debug and debug:GetValue() == true then
         local z = center.z + 1
         
         -- adjust the height based on distance to trace hit point
+        if trace.fraction == nil then return end
+        
         local distance_to_hit = trace.fraction * radius -- calculate distance to hit point
         if distance_to_hit > 0 then
             local max_height_adjustment = mTHeightt -- adjust as needed
