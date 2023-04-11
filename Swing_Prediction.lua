@@ -119,6 +119,9 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
 
     -- Insert the latest velocity sample into the table.
     local targetVelocity = targetEntity:EstimateAbsVelocity()
+    if targetVelocity == nil then
+        targetVelocity = targetLastPos - targetOriginLast
+    end
     table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
 
     local samples = msamples
@@ -281,11 +284,12 @@ if not isMelee then goto continue end
         local trace = engine.TraceLine(pLocalFuture, vPlayerOrigin, MASK_SHOT_HULL)
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
+            swingrange = swingrange + 40
+            if fDistance <= (swingrange + 20) then
+                can_attack = true
+            end
         end
-        swingrange = swingrange + 40
-        if fDistance <= (swingrange + 20) and mVisuals:IsSelected("Range Circle") then
-            can_attack = true
-        end
+        
        
         --Attack when futere position is inside attack range triggerbox
             if isMelee and not stop and can_attack then
@@ -295,10 +299,9 @@ if not isMelee then goto continue end
                     --warp.TriggerDoubleTap()
                 end]]
             elseif isMelee and not stop and pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
-                if vdistance > 400 then
+                if vdistance > 400 and can_attack then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 elseif vdistance > 500 then
-                    gui.SetValue("crit hack", "none");
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
@@ -331,11 +334,12 @@ if mVisuals:IsSelected("Prediction") == false then return end
         local vPlayerTargetPos = vPlayerFuture
 
 
-        local screenPos = client.WorldToScreen(vPlayerOrigin)
-        if screenPos ~= nil then
-            draw.Line( screenPos[1], screenPos[2], screenPos[1], screenPos[2] - 20)
-        end
-        local screenPos = client.WorldToScreen(pLocalFuture)
+            local screenPos = client.WorldToScreen(vPlayerOrigin)
+            if screenPos ~= nil then
+                draw.Line( screenPos[1], screenPos[2], screenPos[1], screenPos[2] - 20)
+            end
+
+            local screenPos = client.WorldToScreen(pLocalFuture)
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
