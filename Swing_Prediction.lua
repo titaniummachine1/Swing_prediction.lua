@@ -27,7 +27,7 @@ local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFla
 local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,250 , 240 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
+local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist(Rage)", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 --local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local Visuals = {
@@ -243,6 +243,29 @@ local function OnCreateMove(pCmd)
         else
             pCmd:SetButtons(pCmd.buttons & (~IN_DUCK))
         end
+
+
+        -- Do a ray trace to check if it's a valid location
+        local start = pLocalOrigin
+        local down = Vector3(0, 0, -(viewheight + 50))
+        local endpos = start + down
+
+        local trace = engine.TraceLine(start, endpos, MASK_SHOT_HULL)
+        local nground = false
+
+        if trace.fraction * 1000 <= 0.57 then
+            -- The future position is valid
+            nground = false
+        else
+            -- The future position is not valid
+            nground = true
+        end
+
+        --better bhopping
+        if flags & FL_ONGROUND == 1 and not bhopping and input.IsButtonDown( KEY_SPACE ) or not bhopping and input.IsButtonDown( KEY_SPACE ) and nground then
+            pCmd:SetButtons(pCmd.buttons | IN_JUMP)
+            print("XD")
+        end
     end
 
     -- Initialize closest distance and closest player
@@ -258,10 +281,6 @@ if closestPlayer == nil then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         --local Killaura = mKillaura:GetValue()
-
-        --[[position prediction]]--
-                -- old solution (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)
-                -- old solution (pLocalOrigin + pLocal:EstimateAbsVelocity() * time)
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, closestPlayer)
             pLocalFuture =  TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, pLocal)
             
