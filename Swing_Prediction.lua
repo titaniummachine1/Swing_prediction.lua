@@ -288,11 +288,21 @@ if not isMelee then goto continue end
         --wall check
         local can_attack = false
         local trace = engine.TraceLine(pLocalFuture, vPlayerFuture, MASK_SHOT_HULL)
-        if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
-            can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
-            swingrange = swingrange + 40
-            if fDistance <= (swingrange + 20) then
-                can_attack = true
+            if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
+                if mAutoGarden:GetValue() == true then
+                    if flags & FL_ONGROUND == 0 then
+                        can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
+                        swingrange = swingrange + 40
+                        if fDistance <= (swingrange + 20) then
+                            can_attack = true
+                        end
+                    end
+                else
+                    can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
+                    swingrange = swingrange + 40
+                    if fDistance <= (swingrange + 20) then
+                        can_attack = true
+                    end
             end
         end
         
