@@ -28,13 +28,15 @@ local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", tru
 local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,250 , 245 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
-local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
-local debug         = menu:AddComponent(MenuLib.Checkbox("Visuals", false))
-local mrangeCircle  = menu:AddComponent(MenuLib.Checkbox("draw range", true))
+--local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
+local Visuals = {
+    ["Range Circle"] = true,
+    ["Prediction"] = false
+  }
+
+local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
 local mcolor_close  = menu:AddComponent(MenuLib.Colorpicker("Color", color))
-  --solution:GetSelectedIndex() -- Selected item index (number)
-  
---amples    = menu:AddComponent(MenuLib.Slider("movement ahead", 1 ,25 , 200 ))
+
 if GetViewHeight ~= nil then
     local mTHeightt     = GetViewHeight()
 end
@@ -189,7 +191,7 @@ local function OnCreateMove(pCmd)
 if closestPlayer == nil then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
-        local Killaura = mKillaura:GetValue()
+        --local Killaura = mKillaura:GetValue()
 
         --[[position prediction]]--
             vPlayerFuture = (vPlayerOrigin + closestPlayer:EstimateAbsVelocity() * time)--TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, tick)
@@ -217,17 +219,17 @@ if not isMelee then goto continue end
             can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
         end
         swingrange = swingrange + 40
-        if fDistance <= (swingrange + 20) and rangepred then
+        if fDistance <= (swingrange + 20) and mVisuals:IsSelected("Range Circle") then
             can_attack = true
         end
        
         --Attack when futere position is inside attack range triggerbox
             if isMelee and not stop and can_attack then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
+                --[[if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
                     warp.TriggerWarp()
                     --warp.TriggerDoubleTap()
-                end
+                end]]
             elseif isMelee and not stop and pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
                 if vdistance > 400 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
@@ -255,7 +257,7 @@ local function doDraw()
     if vPlayerFuture == nil and pLocalFuture == nil then return end
 
     --local pLocal = entities.GetLocalPlayer()
-if debug and debug:GetValue() == true then
+if mVisuals:IsSelected("Prediction") == false then return end
     if pLocalFuture == nil then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
@@ -316,7 +318,9 @@ if debug and debug:GetValue() == true then
             end
         end
 
-    if mrangeCircle:GetValue() == false then return end
+    if mVisuals:IsSelected("Range Circle") == false then return end
+    if vPlayerFuture == nil then return end
+    if not isMelee then return end
         -- Define the two colors to interpolate between
         local color_close = {r = 255, g = 0, b = 0, a = 255} -- red
         local color_far = {r = 0, g = 0, b = 255, a = 255} -- blue
@@ -341,19 +345,16 @@ if debug and debug:GetValue() == true then
         for i = 1, segments do
         local angle = math.rad(i * (360 / segments))
         local direction = Vector3(math.cos(angle), math.sin(angle), 0)
-            if vPlayerFuture ~= nil then
-                local trace = engine.TraceLine(vPlayerFuture, center + direction * radius, MASK_SHOT_BRUSHONLY)
-            end
+        local trace = engine.TraceLine(vPlayerFuture, center + direction * radius, MASK_SHOT_BRUSHONLY)
         local distance = radius
-        
         local x = center.x + math.cos(angle) * distance
         local y = center.y + math.sin(angle) * distance
         local z = center.z + 1
         
-        -- adjust the height based on distance to trace hit point
-        if trace.fraction == nil then return end
-        
+    if trace == nil then return end
         local distance_to_hit = trace.fraction * radius -- calculate distance to hit point
+    if  distance_to_hit == nil then return end
+
         if distance_to_hit > 0 then
             local max_height_adjustment = mTHeightt -- adjust as needed
             local height_adjustment = (1 - distance_to_hit / radius) * max_height_adjustment
@@ -387,7 +388,6 @@ if debug and debug:GetValue() == true then
             if vertices[i] ~= nil and vertices[j] ~= nil then
             draw.Color(colors[i].r, colors[i].g, colors[i].b, colors[i].a)
             draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
-            end
         end
     end
 end
