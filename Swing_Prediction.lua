@@ -57,9 +57,9 @@ local pLocalClass
 local swingrange = 1
 local mresolution = 128
 local viewheight
+local tick_count = 0
 
---[[function GetViewHeight()
-    if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
+function UpdateLocals()
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
     local viewOffset = vector3(0, 0, 75)
     local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
@@ -67,9 +67,8 @@ local viewheight
         -- eye level 
         local Vheight = Vector3(0, 0, viewheight)
         pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
-
     return pLocalOrigin
-end]]
+end
 
 
 function GetClosestEnemy(pLocal, pLocalOrigin)
@@ -212,6 +211,8 @@ end
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
+        pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
+
         if not Swingpred:GetValue() then goto continue end -- enable or distable script
         if not pLocal then goto continue end  -- Immediately check if the local player exists. If it doesn't, return.
 
@@ -245,6 +246,12 @@ local function OnCreateMove(pCmd)
         else
             pCmd:SetButtons(pCmd.buttons & (~IN_DUCK))
         end
+    end
+
+    --every 2 seconds it will update pLocalOrigin and values in function to prevent crash.
+    tick_count = tick_count + 1
+    if tick_count % 132 == 0 then
+        pLocalOrigin = UpdateLocals()
     end
 
     -- Initialize closest distance and closest player
