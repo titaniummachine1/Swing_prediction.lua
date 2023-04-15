@@ -67,7 +67,7 @@ function UpdateLocals()
         -- eye level 
         local Vheight = Vector3(0, 0, viewheight)
         pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
-    return pLocalOrigin
+    return viewheight
 end
 
 
@@ -251,11 +251,13 @@ local function OnCreateMove(pCmd)
     --every 2 seconds it will update pLocalOrigin and values in function to prevent crash.
     tick_count = tick_count + 1
     if tick_count % 132 == 0 then
-        pLocalOrigin = UpdateLocals()
+        --pLocalOrigin = UpdateLocals()
     end
 
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
+    
+    
 
     --try get vierwhegiht without crash
     if pLocalClass ~= pLocalClasslast then
