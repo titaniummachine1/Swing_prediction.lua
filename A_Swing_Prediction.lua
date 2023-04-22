@@ -39,7 +39,7 @@ local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemF
 local mcolor_close  = menu:AddComponent(MenuLib.Colorpicker("Color", color))
 
 if GetViewHeight ~= nil then
-    local mTHeightt     = GetViewHeight()
+    local mTHeightt = GetViewHeight()
 end
 local mTHeightt = 85
 local msamples = 66
@@ -255,7 +255,7 @@ local function OnCreateMove(pCmd)
     if pLocalClass ~= pLocalClasslast then
         if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
         --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
-        local viewOffset = Vector3(0, 0, 75)
+        local viewOffset = Vector3(0, 0, 70)
         local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
         viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
             -- eye level 
