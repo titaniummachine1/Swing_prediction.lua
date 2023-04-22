@@ -97,14 +97,9 @@ function GetClosestEnemy(pLocal, pLocalOrigin)
     end
 end
 
-function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time, targetEntity)
-    -- If the origin of the target from the previous tick is nil, initialize it to a zero vector.
-    if targetOriginLast == nil then
-        targetOriginLast = Vector3(0, 0, 0)
-    end
-
-    -- If either the target's last known position or previous origin is nil, return nil.
-    if targetOriginLast == nil or targetLastPos == nil then
+function TargetPositionPrediction(targetLastPos, tickRate, time, targetEntity)
+    -- If the last known position of the target is nil, return nil.
+    if targetLastPos == nil then
         return nil
     end
 
@@ -122,11 +117,11 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     -- Insert the latest velocity sample into the table.
     local targetVelocity = targetEntity:EstimateAbsVelocity()
     if targetVelocity == nil then
-        targetVelocity = targetLastPos - targetOriginLast
+        targetVelocity = targetLastPos - targetEntity:GetOrigin()
     end
     table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
 
-    local samples = msamples
+    local samples = 2
     -- Remove the oldest sample if there are more than maxSamples.
     if #targetVelocitySamples[targetKey] > samples then
         table.remove(targetVelocitySamples[targetKey], samples + 1)
@@ -156,11 +151,14 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     -- Scale the curve by the tick rate and time to predict.
     curve = curve * tickRate * time
 
-    -- Add the curve to the predicted future position of the target.
-        local targetFuture = targetLastPos + (averageVelocity * time) + curve
+    -- Calculate the current predicted position.
+    local targetFuture = targetLastPos + (averageVelocity * time) + curve
+
     -- Return the predicted future position.
     return targetFuture
 end
+
+
 
 local vhitbox_Height = 85
 local vhitbox_width = 18
@@ -268,8 +266,8 @@ if closestPlayer == nil then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         --local Killaura = mKillaura:GetValue()
-            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, closestPlayer)
-            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, pLocal)
+            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, tickRate, time, closestPlayer)
+            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, tickRate, time, pLocal)
             
             fDistance = (vPlayerFuture - pLocalFuture):Length()
 
