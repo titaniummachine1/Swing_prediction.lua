@@ -8,6 +8,20 @@ local menuLoaded, MenuLib = pcall(require, "Menu")                              
 assert(menuLoaded, "MenuLib not found, please install it!")                       -- If not found, throw error
 assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!")  -- If version is too old, throw error
 
+if UnloadLib then UnloadLib() end
+
+---@alias AimTarget { entity : Entity, pos : Vector3, angles : EulerAngles, factor : number }
+
+---@type boolean, lnxLib
+local libLoaded, lnxLib = pcall(require, "lnxLib")
+assert(libLoaded, "lnxLib not found, please install it!")
+assert(lnxLib.GetVersion() >= 0.981, "LNXlib version is too old, please update it!")
+
+local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
+local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
+local Helpers, Prediction = lnxLib.TF2.Helpers, lnxLib.TF2.Prediction
+local Fonts = lnxLib.UI.Fonts
+
 --[[ Menu ]]--
 local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
@@ -52,12 +66,13 @@ local tickRate = 66 -- game tick rate
 local pLocalOrigin
 local closestPlayer
 local closestDistance = 2000
-local tick = 0
+local tick
 local pLocalClass
-local swingrange = 1
+local swingrange
 local mresolution = 128
 local viewheight
 local tick_count = 0
+local pred = Prediction.new()
 
 function UpdateLocals()
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
@@ -121,7 +136,7 @@ function TargetPositionPrediction(targetLastPos, tickRate, time, targetEntity)
     end
     table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
 
-    local samples = 2
+    local samples = 3
     -- Remove the oldest sample if there are more than maxSamples.
     if #targetVelocitySamples[targetKey] > samples then
         table.remove(targetVelocitySamples[targetKey], samples + 1)
@@ -209,7 +224,8 @@ local function OnCreateMove(pCmd)
             if pLocalClass == nil then goto continue end --when local player did not chose class then skip code
             if pLocalClass == 8 then goto continue end --when local player is spy then skip code
             local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-            swingrange = pWeapon:GetSwingRange()
+
+            swingrange = pWeapon:GetSwingRange() - 10
             local flags = pLocal:GetPropInt( "m_fFlags" )
             local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
             local time = mtime:GetValue() * 0.001
@@ -229,7 +245,7 @@ local function OnCreateMove(pCmd)
         if state then
             client.Command(state, true)
         end
-        flags = player:GetPropInt( "m_fFlags" )
+        flags = pLocal:GetPropInt( "m_fFlags" )
         
         if flags & FL_ONGROUND == 0 and not bhopping then
             pCmd:SetButtons(pCmd.buttons | IN_DUCK)
@@ -238,11 +254,11 @@ local function OnCreateMove(pCmd)
         end
     end
 
-    --every 2 seconds it will update pLocalOrigin and values in function to prevent crash.
+    --[[every 2 seconds it will update pLocalOrigin and values in function to prevent crash.
     tick_count = tick_count + 1
     if tick_count % 132 == 0 then
         --pLocalOrigin = UpdateLocals()
-    end
+    end]]
 
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
@@ -266,6 +282,8 @@ if closestPlayer == nil then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         --local Killaura = mKillaura:GetValue()
+      
+
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, tickRate, time, closestPlayer)
             pLocalFuture =  TargetPositionPrediction(pLocalOrigin, tickRate, time, pLocal)
             
@@ -273,6 +291,7 @@ if closestPlayer == nil then goto continue end
 
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 if not isMelee then goto continue end
+closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
             -- bypass problem with prior attacking with shield not beeign able to reach target..
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
@@ -282,16 +301,24 @@ if not isMelee then goto continue end
               
                 if isMelee and pLocalClass == 4 and vdistance <= dynamicstop then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+                    stop = false
                 end
             end
         --wall check
         local can_attack = false
-        local trace = engine.TraceLine(pLocalFuture, vPlayerFuture, MASK_SHOT_HULL)
-            if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
+        local trace = engine.TraceLine(vPlayerOrigin, pLocalOrigin, MASK_SHOT_HULL)
+
+        local visible = false
+            if (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
                     can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
-                    swingrange = swingrange + 40
-                    if fDistance <= (swingrange + 20) then
+                    swingrange = swingrange
+                    if fDistance <= (swingrange + 40) then
                         can_attack = true
+                    elseif vdistance <= (swingrange + 40) then
+                        can_attack = true
+                    end
+                    if can_attack == false then
+                        can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerOrigin), GetTriggerboxMax(swingrange, vPlayerOrigin), pLocalOrigin, vPlayerOrigin)
                     end
             end
         
@@ -437,7 +464,7 @@ if not mmVisuals:GetValue() then return end
 
         -- Calculate the vertex positions around the circle
         local center = vPlayerFuture
-        local radius = swingrange -- radius of the circle
+        local radius = swingrange + 40 -- radius of the circle
         local segments = mresolution -- number of segments to use for the circle
         local vertices = {} -- table to store circle vertices
         local colors = {} -- table to store colors for each vertex
