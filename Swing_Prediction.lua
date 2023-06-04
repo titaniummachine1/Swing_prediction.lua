@@ -39,7 +39,7 @@ end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,275 , 240 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,300 , 275 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
@@ -225,7 +225,6 @@ local function OnCreateMove(pCmd)
             if pLocalClass == 8 then goto continue end --when local player is spy then skip code
             local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
 
-            swingrange = pWeapon:GetSwingRange() - 10
             local flags = pLocal:GetPropInt( "m_fFlags" )
             local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
             local time = mtime:GetValue() * 0.001
@@ -291,6 +290,7 @@ if closestPlayer == nil then goto continue end
 
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
 if not isMelee then goto continue end
+            swingrange = pWeapon:GetSwingRange() - 10
             -- bypass problem with prior attacking with shield not beeign able to reach target..
             local stop = false
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
@@ -305,10 +305,9 @@ if not isMelee then goto continue end
             end
         --wall check
         local can_attack = false
-        local trace = engine.TraceLine(vPlayerOrigin, pLocalOrigin, MASK_SHOT_HULL)
+        local trace = engine.TraceLine(pLocalFuture, vPlayerFuture, MASK_SHOT_HULL)
+        if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
 
-        local visible = false
-            if (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
                     can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
                     swingrange = swingrange
                     if fDistance <= (swingrange + 40) then
@@ -319,6 +318,7 @@ if not isMelee then goto continue end
                     if can_attack == false then
                         can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerOrigin), GetTriggerboxMax(swingrange, vPlayerOrigin), pLocalOrigin, vPlayerOrigin)
                     end
+                  
             end
         
        
@@ -344,7 +344,7 @@ if not isMelee then goto continue end
     ::continue::
 end
 
--- debug command: ent_fire !picker Addoutput "health 99"
+-- debug command: ent_fire !picker Addoutput "health 99999"
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
