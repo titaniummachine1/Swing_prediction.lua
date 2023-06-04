@@ -8,6 +8,20 @@ local menuLoaded, MenuLib = pcall(require, "Menu")                              
 assert(menuLoaded, "MenuLib not found, please install it!")                       -- If not found, throw error
 assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!")  -- If version is too old, throw error
 
+if UnloadLib then UnloadLib() end
+
+---@alias AimTarget { entity : Entity, pos : Vector3, angles : EulerAngles, factor : number }
+
+---@type boolean, lnxLib
+local libLoaded, lnxLib = pcall(require, "lnxLib")
+assert(libLoaded, "lnxLib not found, please install it!")
+assert(lnxLib.GetVersion() >= 0.981, "LNXlib version is too old, please update it!")
+
+local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
+local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
+local Helpers, Prediction = lnxLib.TF2.Helpers, lnxLib.TF2.Prediction
+local Fonts = lnxLib.UI.Fonts
+
 --[[ Menu ]]--
 local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
 menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
@@ -25,7 +39,7 @@ end, ItemFlags.FullWidth))]]
 
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,250 , 240 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,275 , 240 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
@@ -39,7 +53,7 @@ local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemF
 local mcolor_close  = menu:AddComponent(MenuLib.Colorpicker("Color", color))
 
 if GetViewHeight ~= nil then
-    local mTHeightt     = GetViewHeight()
+    local mTHeightt = GetViewHeight()
 end
 local mTHeightt = 85
 local msamples = 66
@@ -52,12 +66,13 @@ local tickRate = 66 -- game tick rate
 local pLocalOrigin
 local closestPlayer
 local closestDistance = 2000
-local tick = 0
+local tick
 local pLocalClass
-local swingrange = 1
+local swingrange
 local mresolution = 128
 local viewheight
 local tick_count = 0
+local pred = Prediction.new()
 
 function UpdateLocals()
     --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
@@ -73,9 +88,9 @@ end
 
 function GetClosestEnemy(pLocal, pLocalOrigin)
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-    local closestDistance = 2000
+    closestDistance = 2000
     local maxDistance = 2000
-    local closestPlayer = nil
+    closestPlayer = nil
     -- find closest enemy
     for _, vPlayer in ipairs(players) do
         if vPlayer ~= nil and vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
@@ -97,14 +112,9 @@ function GetClosestEnemy(pLocal, pLocalOrigin)
     end
 end
 
-function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, time, targetEntity)
-    -- If the origin of the target from the previous tick is nil, initialize it to a zero vector.
-    if targetOriginLast == nil then
-        targetOriginLast = Vector3(0, 0, 0)
-    end
-
-    -- If either the target's last known position or previous origin is nil, return nil.
-    if targetOriginLast == nil or targetLastPos == nil then
+function TargetPositionPrediction(targetLastPos, tickRate, time, targetEntity)
+    -- If the last known position of the target is nil, return nil.
+    if targetLastPos == nil then
         return nil
     end
 
@@ -122,11 +132,11 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     -- Insert the latest velocity sample into the table.
     local targetVelocity = targetEntity:EstimateAbsVelocity()
     if targetVelocity == nil then
-        targetVelocity = targetLastPos - targetOriginLast
+        targetVelocity = targetLastPos - targetEntity:GetOrigin()
     end
     table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
 
-    local samples = msamples
+    local samples = 3
     -- Remove the oldest sample if there are more than maxSamples.
     if #targetVelocitySamples[targetKey] > samples then
         table.remove(targetVelocitySamples[targetKey], samples + 1)
@@ -156,11 +166,14 @@ function TargetPositionPrediction(targetLastPos, targetOriginLast, tickRate, tim
     -- Scale the curve by the tick rate and time to predict.
     curve = curve * tickRate * time
 
-    -- Add the curve to the predicted future position of the target.
-        local targetFuture = targetLastPos + (averageVelocity * time) + curve
+    -- Calculate the current predicted position.
+    local targetFuture = targetLastPos + (averageVelocity * time) + curve
+
     -- Return the predicted future position.
     return targetFuture
 end
+
+
 
 local vhitbox_Height = 85
 local vhitbox_width = 18
@@ -184,30 +197,21 @@ function GetTriggerboxMax(swingrange, vPlayerFuture)
     end
 end
 
-function isWithinHitbox(hitbox_min_trigger, hitbox_max_trigger, pLocalFuture, vPlayerFuture)
-    if pLocalFuture == nil or hitbox_min_trigger == nil or hitbox_max_trigger == nil then
+function isWithinHitbox(hitboxMinTrigger, hitboxMaxTrigger, pLocalFuture, vPlayerFuture)
+    if not pLocalFuture or not hitboxMinTrigger or not hitboxMaxTrigger then
         return false
     end
+    
     -- Unpack hitbox vectors
-    local hitbox_min_trigger_x, hitbox_min_trigger_y, hitbox_min_trigger_z = hitbox_min_trigger:Unpack()
-    local hitbox_max_trigger_x, hitbox_max_trigger_y, hitbox_max_trigger_z = hitbox_max_trigger:Unpack()
+    local minX, minY, minZ = hitboxMinTrigger:Unpack()
+    local maxX, maxY, maxZ = hitboxMaxTrigger:Unpack()
   
     -- Check if pLocalFuture is within the hitbox
-    if pLocalFuture.x < hitbox_min_trigger_x or pLocalFuture.x > hitbox_max_trigger_x then
-        return false
-    end
-    if pLocalFuture.y < hitbox_min_trigger_y or pLocalFuture.y > hitbox_max_trigger_y then
-        return false
-    end
-    if pLocalFuture.z < hitbox_min_trigger_z or pLocalFuture.z > hitbox_max_trigger_z then
-        return false
-    end
-     -- Check if vPlayerFuture is within distanceThreshold distance from pLocalFuture
-     if (vPlayerFuture - pLocalFuture):Length() > 200 then
-        return false
-    end
-    return true
+    return pLocalFuture.x >= minX and pLocalFuture.x <= maxX and
+           pLocalFuture.y >= minY and pLocalFuture.y <= maxY and
+           pLocalFuture.z >= minZ and pLocalFuture.z <= maxZ
 end
+
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
@@ -216,11 +220,12 @@ local function OnCreateMove(pCmd)
         if not Swingpred:GetValue() then goto continue end -- enable or distable script
         if not pLocal then goto continue end  -- Immediately check if the local player exists. If it doesn't, return.
 
-            local pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
+            pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
             if pLocalClass == nil then goto continue end --when local player did not chose class then skip code
             if pLocalClass == 8 then goto continue end --when local player is spy then skip code
             local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-            swingrange = pWeapon:GetSwingRange()
+
+            swingrange = pWeapon:GetSwingRange() - 10
             local flags = pLocal:GetPropInt( "m_fFlags" )
             local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
             local time = mtime:GetValue() * 0.001
@@ -240,7 +245,8 @@ local function OnCreateMove(pCmd)
         if state then
             client.Command(state, true)
         end
-
+        flags = pLocal:GetPropInt( "m_fFlags" )
+        
         if flags & FL_ONGROUND == 0 and not bhopping then
             pCmd:SetButtons(pCmd.buttons | IN_DUCK)
         else
@@ -248,11 +254,11 @@ local function OnCreateMove(pCmd)
         end
     end
 
-    --every 2 seconds it will update pLocalOrigin and values in function to prevent crash.
+    --[[every 2 seconds it will update pLocalOrigin and values in function to prevent crash.
     tick_count = tick_count + 1
     if tick_count % 132 == 0 then
         --pLocalOrigin = UpdateLocals()
-    end
+    end]]
 
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
@@ -263,7 +269,7 @@ local function OnCreateMove(pCmd)
     if pLocalClass ~= pLocalClasslast then
         if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
         --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
-        local viewOffset = Vector3(0, 0, 75)
+        local viewOffset = Vector3(0, 0, 70)
         local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
         viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
             -- eye level 
@@ -276,8 +282,10 @@ if closestPlayer == nil then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         --local Killaura = mKillaura:GetValue()
-            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, vPlayerOriginLast, tickRate, time, closestPlayer)
-            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, pLocalOriginLast, tickRate, time, pLocal)
+      
+
+            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, tickRate, time, closestPlayer)
+            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, tickRate, time, pLocal)
             
             fDistance = (vPlayerFuture - pLocalFuture):Length()
 
@@ -292,28 +300,26 @@ if not isMelee then goto continue end
               
                 if isMelee and pLocalClass == 4 and vdistance <= dynamicstop then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+                    stop = false
                 end
             end
         --wall check
         local can_attack = false
-        local trace = engine.TraceLine(pLocalFuture, vPlayerFuture, MASK_SHOT_HULL)
-            if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
-                if mAutoGarden:GetValue() == true then
-                    if flags & FL_ONGROUND == 0 then
-                        can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
-                        swingrange = swingrange + 40
-                        if fDistance <= (swingrange + 20) then
-                            can_attack = true
-                        end
-                    end
-                else
+        local trace = engine.TraceLine(vPlayerOrigin, pLocalOrigin, MASK_SHOT_HULL)
+
+        local visible = false
+            if (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
                     can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
-                    swingrange = swingrange + 40
-                    if fDistance <= (swingrange + 20) then
+                    swingrange = swingrange
+                    if fDistance <= (swingrange + 40) then
+                        can_attack = true
+                    elseif vdistance <= (swingrange + 40) then
                         can_attack = true
                     end
+                    if can_attack == false then
+                        can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerOrigin), GetTriggerboxMax(swingrange, vPlayerOrigin), pLocalOrigin, vPlayerOrigin)
+                    end
             end
-        end
         
        
         --Attack when futere position is inside attack range triggerbox
@@ -358,14 +364,14 @@ if not mmVisuals:GetValue() then return end
 
         local vPlayerTargetPos = vPlayerFuture
         -- draw predicted local position with strafe prediction
-            local screenPos = client.WorldToScreen(pLocalFuture)
+            screenPos = client.WorldToScreen(pLocalFuture)
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
             end
 
         -- draw predicted enemy position with strafe prediction connecting his local point and predicted position with line.
-            local screenPos = client.WorldToScreen(vPlayerTargetPos)
+            screenPos = client.WorldToScreen(vPlayerTargetPos)
             if screenPos ~= nil then
                 local screenPos1 = client.WorldToScreen(vPlayerOrigin)
                 if screenPos1 ~= nil then
@@ -457,7 +463,7 @@ if not mmVisuals:GetValue() then return end
 
         -- Calculate the vertex positions around the circle
         local center = vPlayerFuture
-        local radius = swingrange -- radius of the circle
+        local radius = swingrange + 40 -- radius of the circle
         local segments = mresolution -- number of segments to use for the circle
         local vertices = {} -- table to store circle vertices
         local colors = {} -- table to store colors for each vertex
