@@ -272,7 +272,6 @@ local function OnCreateMove(pCmd)
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     if not isMelee then goto continue end -- if not melee then skip code
-
     --try get vierwhegiht without crash
     if pLocalClass ~= pLocalClasslast then
         if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
@@ -286,8 +285,13 @@ local function OnCreateMove(pCmd)
     end
 
     closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
-if closestPlayer == nil then goto continue end
-        vPlayerOrigin = closestPlayer:GetAbsOrigin()
+if closestPlayer == nil then
+    if pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
+    end
+    goto continue end
+
+    vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
     --[--------------AutoAim-------------------]
     if Maimbot:GetValue() then
