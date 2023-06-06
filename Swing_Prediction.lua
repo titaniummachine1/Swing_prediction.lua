@@ -214,38 +214,26 @@ local Hitbox = {
     Chest = 7
 }
 
-local options = {
-    AutoShoot = true,
-    Silent = false,
-    AimPos = Hitbox.Pelvis,
-    AimFov = 360
-}
-
-local currentTarget = nil
-
-local function CalculateAngle(fromPos, toPos)
-    local delta = toPos - fromPos
-    local angle = math.atan(delta.y, delta.x) * 180 / math.pi
-    return angle
-end
-
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
     if not Swingpred:GetValue() then goto continue end -- enable or distable script
-
+--[--if we are not existign then stop code--]
         pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
         if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
 
-            pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
+--[--Check local player class if spy or none then stop code--]
+
+        pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
             if pLocalClass == nil then goto continue end --when local player did not chose class then skip code
             if pLocalClass == 8 then goto continue end --when local player is spy then skip code
-            local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
 
-            local flags = pLocal:GetPropInt( "m_fFlags" )
-            local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-            local time = mtime:GetValue()
-
+--[--obtain secondary information after confirming we need it for fps boost whe nnot using script]
+                local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
+                local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
+                local time = mtime:GetValue()
+--[--if we enabled trodlier assist run auto weapon script]
     if mAutoGarden:GetValue() == true then
+        local flags = pLocal:GetPropInt( "m_fFlags" )
         local bhopping = false
         local state = ""
         local downheight = Vector3(0, 0, -250)
@@ -268,11 +256,14 @@ local function OnCreateMove(pCmd)
             pCmd:SetButtons(pCmd.buttons & (~IN_DUCK))
         end
     end
+    
+--[-Don`t run script below when not usign melee--]
 
-    -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     if not isMelee then goto continue end -- if not melee then skip code
-    --try get vierwhegiht without crash
+
+--[-------get vierwhegiht Optymised--------]
+
     if pLocalClass ~= pLocalClasslast then
         if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
         --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
@@ -284,8 +275,10 @@ local function OnCreateMove(pCmd)
             pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
     end
 
+--[-----Get closestPlayer------------------]
     closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
--- handle lack of enemies
+--[-----Refil and skip code when alone-----]
+
 if closestPlayer == nil then
     if mAutoRefill:GetValue() and pWeapon:GetCritTokenBucket() <= 27 then
         pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
@@ -294,7 +287,7 @@ end
 
     vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
-    --[--------------AutoAim-------------------]
+--[--------------AutoAim-------------------]
     if Maimbot:GetValue() then
         --get hitbox of ennmy pelwis(jittery but works)
         local hitboxes = closestPlayer:GetHitboxes()
@@ -308,15 +301,18 @@ end
                 --end]]
     end
 
-        --get current distance between local player and closest player
-            vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
-        -- predict both players position after swing
+--[--------------Prediction-------------------] -- predict both players position after swing
+        
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, tickRate, time, closestPlayer)
             pLocalFuture =  TargetPositionPrediction(pLocalOrigin, tickRate, time, pLocal)
         
+--[--------------Distance check-------------------]
+        --get current distance between local player and closest player
+        vdistance = (vPlayerOrigin - pLocalOrigin):Length()
+
         -- get distance between local player and closest player after swing
-            fDistance = (vPlayerFuture - pLocalFuture):Length()
+        fDistance = (vPlayerFuture - pLocalFuture):Length()
 
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
             local can_attack = false
