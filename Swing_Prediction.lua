@@ -9,13 +9,12 @@ assert(menuLoaded, "MenuLib not found, please install it!")                     
 assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!")  -- If version is too old, throw error
 
 if UnloadLib then UnloadLib() end
-
----@alias AimTarget { entity : Entity, pos : Vector3, angles : EulerAngles, factor : number }
-
 ---@type boolean, lnxLib
 local libLoaded, lnxLib = pcall(require, "lnxLib")
 assert(libLoaded, "lnxLib not found, please install it!")
 assert(lnxLib.GetVersion() >= 0.981, "LNXlib version is too old, please update it!")
+
+---@alias AimTarget { entity : Entity, pos : Vector3, angles : EulerAngles, factor : number }
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
@@ -36,18 +35,16 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("mp_respawnwavetime", -1)
     client.SetConVar("mp_teams_unbalance_limit", 1000)
 end, ItemFlags.FullWidth))]]
-
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
-local rangepred     = menu:AddComponent(MenuLib.Checkbox("range prediction", true))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack distance", 200 ,300 , 275 ))
+local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Rage)", true, ItemFlags.FullWidth))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack delay(ticks)",6 ,30 ,17 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
---local mKillaura     = menu:AddComponent(MenuLib.Checkbox("Killaura (soon)", false))
 local Visuals = {
     ["Range Circle"] = true,
-    ["Draw Trail"] = true
-  }
+    ["Draw Trail"] = false
+}
 
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
 local mcolor_close  = menu:AddComponent(MenuLib.Colorpicker("Color", color))
@@ -72,19 +69,11 @@ local swingrange
 local mresolution = 128
 local viewheight
 local tick_count = 0
-local pred = Prediction.new()
-
-function UpdateLocals()
-    --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
-    local viewOffset = vector3(0, 0, 75)
-    local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
-    viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
-        -- eye level 
-        local Vheight = Vector3(0, 0, viewheight)
-        pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
-    return viewheight
-end
-
+local isMelee = false
+local vdistance
+local fDistance
+local vPlayerFuture
+local pLocalFuture
 
 function GetClosestEnemy(pLocal, pLocalOrigin)
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
@@ -163,6 +152,11 @@ function TargetPositionPrediction(targetLastPos, tickRate, time, targetEntity)
         curve = curve / (#targetVelocitySamples[targetKey] - 1)
     end
 
+    --if time is more then 5 then expect ticks and convert ticks into decimal of time
+    if time > 5 then
+        time = time / tickRate
+    end
+
     -- Scale the curve by the tick rate and time to predict.
     curve = curve * tickRate * time
 
@@ -212,13 +206,35 @@ function isWithinHitbox(hitboxMinTrigger, hitboxMaxTrigger, pLocalFuture, vPlaye
            pLocalFuture.z >= minZ and pLocalFuture.z <= maxZ
 end
 
+local Hitbox = {
+    Head = 1,
+    Neck = 2,
+    Pelvis = 4,
+    Body = 5,
+    Chest = 7
+}
+
+local options = {
+    AutoShoot = true,
+    Silent = false,
+    AimPos = Hitbox.Pelvis,
+    AimFov = 360
+}
+
+local currentTarget = nil
+
+local function CalculateAngle(fromPos, toPos)
+    local delta = toPos - fromPos
+    local angle = math.atan(delta.y, delta.x) * 180 / math.pi
+    return angle
+end
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
-        pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
+    if not Swingpred:GetValue() then goto continue end -- enable or distable script
 
-        if not Swingpred:GetValue() then goto continue end -- enable or distable script
-        if not pLocal then goto continue end  -- Immediately check if the local player exists. If it doesn't, return.
+        pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
+        if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
 
             pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
             if pLocalClass == nil then goto continue end --when local player did not chose class then skip code
@@ -227,7 +243,7 @@ local function OnCreateMove(pCmd)
 
             local flags = pLocal:GetPropInt( "m_fFlags" )
             local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-            local time = mtime:GetValue() * 0.001
+            local time = mtime:GetValue()
 
     if mAutoGarden:GetValue() == true then
         local bhopping = false
@@ -253,16 +269,9 @@ local function OnCreateMove(pCmd)
         end
     end
 
-    --[[every 2 seconds it will update pLocalOrigin and values in function to prevent crash.
-    tick_count = tick_count + 1
-    if tick_count % 132 == 0 then
-        --pLocalOrigin = UpdateLocals()
-    end]]
-
     -- Initialize closest distance and closest player
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
-    
-    
+    if not isMelee then goto continue end -- if not melee then skip code
 
     --try get vierwhegiht without crash
     if pLocalClass ~= pLocalClasslast then
@@ -279,23 +288,40 @@ local function OnCreateMove(pCmd)
     closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
 if closestPlayer == nil then goto continue end
         vPlayerOrigin = closestPlayer:GetAbsOrigin()
-        vdistance = (vPlayerOrigin - pLocalOrigin):Length()
-        --local Killaura = mKillaura:GetValue()
-      
 
+    --[--------------AutoAim-------------------]
+    if Maimbot:GetValue() then
+        --get hitbox of ennmy pelwis(jittery but works)
+        local hitboxes = closestPlayer:GetHitboxes()
+        local hitbox = hitboxes[4]
+        local angles = (hitbox[1] + hitbox[2]) * 0.5
+    -- Aim at the target
+            angles = Math.PositionAngles(pLocalOrigin, angles)
+            pCmd:SetViewAngles(angles:Unpack())
+                --[[if not options.Silent then
+                    engine.SetViewAngles(angles)
+                --end]]
+    end
+
+        --get current distance between local player and closest player
+            vdistance = (vPlayerOrigin - pLocalOrigin):Length()
+
+        -- predict both players position after swing
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, tickRate, time, closestPlayer)
             pLocalFuture =  TargetPositionPrediction(pLocalOrigin, tickRate, time, pLocal)
-            
+        
+        -- get distance between local player and closest player after swing
             fDistance = (vPlayerFuture - pLocalFuture):Length()
 
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
-if not isMelee then goto continue end
-            swingrange = pWeapon:GetSwingRange() - 10
-            -- bypass problem with prior attacking with shield not beeign able to reach target..
+            local can_attack = false
             local stop = false
+            swingrange = pWeapon:GetSwingRange()
+
+            -- bypass problem with prior attacking with shield not beeign able to reach target..
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
-                local dynamicstop = swingrange + 10
+                local dynamicstop = swingrange
                 if (pCmd.forwardmove == 0) then dynamicstop = swingrange - 10 end -- case if you dont hold w when charging
               
                 if isMelee and pLocalClass == 4 and vdistance <= dynamicstop then
@@ -303,36 +329,34 @@ if not isMelee then goto continue end
                     stop = false
                 end
             end
+
         --wall check
-        local can_attack = false
         local trace = engine.TraceLine(pLocalFuture, vPlayerFuture, MASK_SHOT_HULL)
         if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
 
                     can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
-                    swingrange = swingrange
-                    if fDistance <= (swingrange + 40) then
+
+                    if fDistance <= (swingrange + 50) then
                         can_attack = true
-                    elseif vdistance <= (swingrange + 40) then
+                    elseif vdistance <= (swingrange + 50) then
                         can_attack = true
-                    end
-                    if can_attack == false then
+                    elseif can_attack == false then
                         can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerOrigin), GetTriggerboxMax(swingrange, vPlayerOrigin), pLocalOrigin, vPlayerOrigin)
                     end
-                  
             end
         
        
         --Attack when futere position is inside attack range triggerbox
             if isMelee and not stop and can_attack then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                --[[if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
-                    warp.TriggerWarp()
-                    --warp.TriggerDoubleTap()
-                end]]
+
+                    --[[if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
+                        warp.TriggerWarp()
+                        --warp.TriggerDoubleTap()
+                    end]]
+
             elseif isMelee and not stop and pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
-                if vdistance > 400 and can_attack then
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
-                elseif vdistance > 500 then
+                if fDistance > 400 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
@@ -465,7 +489,7 @@ if not mmVisuals:GetValue() then return end
         local center = vPlayerFuture
         local radius = swingrange + 40 -- radius of the circle
         local segments = mresolution -- number of segments to use for the circle
-        local vertices = {} -- table to store circle vertices
+        vertices = {} -- table to store circle vertices
         local colors = {} -- table to store colors for each vertex
 
         for i = 1, segments do
