@@ -285,11 +285,12 @@ local function OnCreateMove(pCmd)
     end
 
     closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
+-- handle lack of enemies
 if closestPlayer == nil then
-    if pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
-    end
-    goto continue end
+    if mAutoRefill:GetValue() and pWeapon:GetCritTokenBucket() <= 27 then
+        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+    end goto continue 
+end
 
     vPlayerOrigin = closestPlayer:GetAbsOrigin()
 
@@ -359,8 +360,8 @@ if closestPlayer == nil then
                         --warp.TriggerDoubleTap()
                     end]]
 
-            elseif isMelee and not stop and pWeapon:GetCritTokenBucket() <= 27 and mAutoRefill:GetValue() == true then
-                if fDistance > 400 then
+            elseif mAutoRefill:GetValue() and isMelee and not stop then
+                if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 400 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
