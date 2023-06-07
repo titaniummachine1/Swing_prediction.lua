@@ -79,38 +79,72 @@ local ping = 0
 ---@param me WPlayer
 ---@return AimTarget? target
 local function GetBestTarget(me)
-    local players = entities.FindByClass("CTFPlayer")
-    local target = nil
-    local lastFov = math.huge
-
-    for _, entity in pairs(players) do
-        if not entity then goto continue end
-        if not entity:IsAlive() then goto continue end
-        if entity:GetTeamNumber() == entities.GetLocalPlayer():GetTeamNumber() then goto continue end
-
-        local player = WPlayer.FromEntity(entity)
-
-        local aimPos = entity:GetAbsOrigin()
-        local angles = Math.PositionAngles(pLocalOrigin, aimPos)
-        local fov = Math.AngleFov(angles, engine.GetViewAngles())
-        if fov > 360 then goto continue end
-
-        -- Visiblity Check
-        if not Helpers.VisPos(entity, pLocalOrigin, aimPos) then goto continue end
-
-        -- Add valid target
-        if fov < lastFov then
-            lastFov = fov
-            target = { entity = entity, pos = aimPos, angles = angles, factor = fov }
+    local settings = {
+        MinDistance = 150,
+        MaxDistance = 1000,
+        MinHealth = 10,
+        MaxHealth = 100,
+        MinFOV = 10,
+        MaxFOV = 360,
+    }
+    
+        local players = entities.FindByClass("CTFPlayer")
+        local localPlayer = entities.GetLocalPlayer()
+        if not localPlayer then return end
+    
+        ---@type Target[]
+        local targetList = {}
+    
+        -- Calculate target factors
+        for entIdx, player in pairs(players) do
+            if entIdx == localPlayer:GetIndex() then goto continue end
+    
+            local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
+            local health = player:GetHealth()
+    
+            local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), player:GetAbsOrigin())
+            local fov = Math.AngleFov(engine.GetViewAngles(), angles)
+    
+            local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.1)
+            local healthFactor = Math.RemapValClamped(health, settings.MinHealth, settings.MaxHealth, 1, 0.5)
+            local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.5)
+    
+            local factor = distanceFactor * healthFactor * fovFactor
+            table.insert(targetList, { player = player, factor = factor })
+    
+            ::continue::
         end
-
-        ::continue::
+    
+        -- Sort target list by factor
+        table.sort(targetList, function(a, b)
+            return a.factor > b.factor
+        end)
+    
+        local bestTarget = nil
+    
+        for _, target in ipairs(targetList) do
+            local player = target.player
+            local aimPos = player:GetAbsOrigin()
+            local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), aimPos)
+            local fov = Math.AngleFov(angles, engine.GetViewAngles())
+            if fov > 360 then goto continue end
+    
+            -- Visibility Check
+            if not Helpers.VisPos(player, pLocalOrigin, aimPos) then goto continue end
+            if target.player == nil or not target.player:IsAlive() or target.player:GetTeamNumber() == pLocal:GetTeamNumber() then goto continue end
+            
+            -- Set as best target
+            bestTarget = { entity = player, pos = aimPos, angles = angles, factor = target.factor }
+            break
+    
+            ::continue::
+        end
+    
+        return bestTarget
     end
+    
 
-    return target
-end
-
-function TargetPositionPrediction(targetLastPos, tickRate, time, targetEntity)
+function TargetPositionPrediction(targetLastPos, time, targetEntity)
     -- If the last known position of the target is nil, return nil.
     if targetLastPos == nil then
         return nil
@@ -286,7 +320,7 @@ local function OnCreateMove(pCmd)
     end
 
 --[-----Get best target------------------]
-if GetBestTarget(pLocal).entity ~= nil then
+if GetBestTarget(pLocal) ~= nil then
     closestPlayer = GetBestTarget(pLocal).entity --GetClosestEnemy(pLocal, pLocalOrigin, players)
 end
 --[-----Refil and skip code when alone-----]
@@ -301,8 +335,8 @@ end
 
 --[--------------Prediction-------------------] -- predict both players position after swing
         
-            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, tickRate, time, closestPlayer)
-            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, tickRate, time, pLocal)
+            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer)
+            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, time, pLocal)
 
 --[--------------Distance check-------------------]
         --get current distance between local player and closest player
