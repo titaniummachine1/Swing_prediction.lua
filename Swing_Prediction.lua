@@ -80,11 +80,11 @@ local ping = 0
 ---@return AimTarget? target
 local function GetBestTarget(me)
     local settings = {
-        MinDistance = 150,
+        MinDistance = 200,
         MaxDistance = 1000,
         MinHealth = 10,
         MaxHealth = 100,
-        MinFOV = 10,
+        MinFOV = 0,
         MaxFOV = 360,
     }
     
