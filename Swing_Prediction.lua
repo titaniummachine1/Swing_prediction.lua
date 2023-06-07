@@ -76,30 +76,38 @@ local vPlayerFuture
 local pLocalFuture
 local ping = 0
 
-function GetClosestEnemy(pLocal, pLocalOrigin)
-    local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-    closestDistance = 2000
-    local maxDistance = 2000
-    closestPlayer = nil
-    -- find closest enemy
-    for _, vPlayer in ipairs(players) do
-        if vPlayer ~= nil and vPlayer:IsAlive() and vPlayer:GetTeamNumber() ~= pLocal:GetTeamNumber() then
-            local vPlayerOrigin = vPlayer:GetAbsOrigin()
-            local distanceX = math.abs(vPlayerOrigin.x - pLocalOrigin.x)
-            local distanceY = math.abs(vPlayerOrigin.y - pLocalOrigin.y)
-            local distanceZ = math.abs(vPlayerOrigin.z - pLocalOrigin.z)
-            local distance = math.sqrt(distanceX * distanceX + distanceY * distanceY + distanceZ * distanceZ)
-            if distance < closestDistance and distance <= maxDistance then
-                closestPlayer = vPlayer
-                closestDistance = distance
-            end
+---@param me WPlayer
+---@return AimTarget? target
+local function GetBestTarget(me)
+    local players = entities.FindByClass("CTFPlayer")
+    local target = nil
+    local lastFov = math.huge
+
+    for _, entity in pairs(players) do
+        if not entity then goto continue end
+        if not entity:IsAlive() then goto continue end
+        if entity:GetTeamNumber() == entities.GetLocalPlayer():GetTeamNumber() then goto continue end
+
+        local player = WPlayer.FromEntity(entity)
+
+        local aimPos = entity:GetAbsOrigin()
+        local angles = Math.PositionAngles(pLocalOrigin, aimPos)
+        local fov = Math.AngleFov(angles, engine.GetViewAngles())
+        if fov > 360 then goto continue end
+
+        -- Visiblity Check
+        if not Helpers.VisPos(entity, pLocalOrigin, aimPos) then goto continue end
+
+        -- Add valid target
+        if fov < lastFov then
+            lastFov = fov
+            target = { entity = entity, pos = aimPos, angles = angles, factor = fov }
         end
+
+        ::continue::
     end
-    if closestDistance < 2000 then
-    return closestPlayer
-    else
-        return nil
-    end
+
+    return target
 end
 
 function TargetPositionPrediction(targetLastPos, tickRate, time, targetEntity)
@@ -215,6 +223,7 @@ local Hitbox = {
     Chest = 7
 }
 
+
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
     if not Swingpred:GetValue() then goto continue end -- enable or distable script
@@ -276,8 +285,10 @@ local function OnCreateMove(pCmd)
             pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
     end
 
---[-----Get closestPlayer------------------]
-    closestPlayer = GetClosestEnemy(pLocal, pLocalOrigin, players)
+--[-----Get best target------------------]
+if GetBestTarget(pLocal).entity ~= nil then
+    closestPlayer = GetBestTarget(pLocal).entity --GetClosestEnemy(pLocal, pLocalOrigin, players)
+end
 --[-----Refil and skip code when alone-----]
 
 if closestPlayer == nil then
@@ -286,7 +297,7 @@ if closestPlayer == nil then
     end goto continue
 end
 
-    vPlayerOrigin = closestPlayer:GetAbsOrigin()
+    vPlayerOrigin = closestPlayer:GetAbsOrigin() -- get closest player origin
 
 --[--------------Prediction-------------------] -- predict both players position after swing
         
