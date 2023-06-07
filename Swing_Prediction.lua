@@ -337,9 +337,9 @@ end
 
                     can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
 
-                    if fDistance <= (swingrange + 50) then
+                    if fDistance <= (swingrange + 60) then
                         can_attack = true
-                    elseif vdistance <= (swingrange + 50) then
+                    elseif vdistance <= (swingrange + 60) then
                         can_attack = true
                     elseif can_attack == false then
                         can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerOrigin), GetTriggerboxMax(swingrange, vPlayerOrigin), pLocalOrigin, vPlayerOrigin)
