@@ -37,7 +37,7 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Rage)", true, ItemFlags.FullWidth))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack delay(ticks)",6 ,30 ,17 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("attack delay(ticks)",3 ,20 ,14 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
@@ -74,6 +74,7 @@ local vdistance
 local fDistance
 local vPlayerFuture
 local pLocalFuture
+local ping = 0
 
 function GetClosestEnemy(pLocal, pLocalOrigin)
     local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
@@ -153,7 +154,7 @@ function TargetPositionPrediction(targetLastPos, tickRate, time, targetEntity)
     end
 
     --if time is more then 5 then expect ticks and convert ticks into decimal of time
-    if time > 5 then
+    if time > 2 then
         time = time / tickRate
     end
 
@@ -220,8 +221,8 @@ local function OnCreateMove(pCmd)
 --[--if we are not existign then stop code--]
         pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
         if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
-
---[--Check local player class if spy or none then stop code--]
+        ping = entities.GetPlayerResources():GetPropDataTableInt("m_iPing")[pLocal:GetIndex()]
+        --[--Check local player class if spy or none then stop code--]
 
         pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
             if pLocalClass == nil then goto continue end --when local player did not chose class then skip code
@@ -282,31 +283,16 @@ local function OnCreateMove(pCmd)
 if closestPlayer == nil then
     if mAutoRefill:GetValue() and pWeapon:GetCritTokenBucket() <= 27 then
         pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-    end goto continue 
+    end goto continue
 end
 
     vPlayerOrigin = closestPlayer:GetAbsOrigin()
-
---[--------------AutoAim-------------------]
-    if Maimbot:GetValue() then
-        --get hitbox of ennmy pelwis(jittery but works)
-        local hitboxes = closestPlayer:GetHitboxes()
-        local hitbox = hitboxes[4]
-        local angles = (hitbox[1] + hitbox[2]) * 0.5
-    -- Aim at the target
-            angles = Math.PositionAngles(pLocalOrigin, angles)
-            pCmd:SetViewAngles(angles:Unpack())
-                --[[if not options.Silent then
-                    engine.SetViewAngles(angles)
-                --end]]
-    end
-
 
 --[--------------Prediction-------------------] -- predict both players position after swing
         
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, tickRate, time, closestPlayer)
             pLocalFuture =  TargetPositionPrediction(pLocalOrigin, tickRate, time, pLocal)
-        
+
 --[--------------Distance check-------------------]
         --get current distance between local player and closest player
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
@@ -319,7 +305,7 @@ end
             local stop = false
             swingrange = pWeapon:GetSwingRange()
 
-            -- bypass problem with prior attacking with shield not beeign able to reach target..
+        --[bypass problem with prior attacking with shield not beeign able to reach target]..
             if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
                 stop = true
                 local dynamicstop = swingrange
@@ -331,10 +317,32 @@ end
                 end
             end
 
-        --wall check
-        local trace = engine.TraceLine(pLocalFuture, vPlayerFuture, MASK_SHOT_HULL)
-        if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
+--[--------------AimBot-------------------]
+        if Maimbot:GetValue() and Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then
+                --get hitbox of ennmy pelwis(jittery but works)
+                local hitboxes = closestPlayer:GetHitboxes()
+                local hitbox = hitboxes[4]
+                local aimpos = (hitbox[1] + hitbox[2]) * 0.5
 
+            if pLocal:InCond(17) then -- if can hit then aimbot
+                -- change angles at target
+                aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 60))
+                pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos) 
+
+            else -- if predicted position is visible then aim at it
+                -- change angles at target
+                aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+                pCmd:SetViewAngles(aimpos:Unpack())
+            end
+        end
+
+--[----------------wall check Future-------------]
+
+        --trace = engine.TraceLine(pLocalFuture, vPlayerFuture + Vector3(0, 0, 150), MASK_SHOT_HULL)
+        --if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
+-- Visiblity Check
+if Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then
+                --[[check if can hit after swing]]
                     can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
 
                     if fDistance <= (swingrange + 60) then
@@ -344,7 +352,7 @@ end
                     elseif can_attack == false then
                         can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerOrigin), GetTriggerboxMax(swingrange, vPlayerOrigin), pLocalOrigin, vPlayerOrigin)
                     end
-            end
+           end
         
        
         --Attack when futere position is inside attack range triggerbox
