@@ -37,11 +37,12 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Rage)", true, ItemFlags.FullWidth))
-local mFov         = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
+local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
 local mtime         = menu:AddComponent(MenuLib.Slider("prediction(ticks)",3 ,20 ,14 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
+local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
 local Visuals = {
     ["Range Circle"] = true,
     ["Draw Trail"] = false
@@ -332,9 +333,12 @@ local function OnCreateMove(pCmd)
     end
 
 --[-----Get best target------------------]
-if GetBestTarget(pLocal) ~= nil then
-    closestPlayer = GetBestTarget(pLocal).entity --GetClosestEnemy(pLocal, pLocalOrigin, players)
-end
+local keybind = mKeyOverrite:GetValue()
+    if (keybind == KEY_NONE) and GetBestTarget(pLocal) ~= nil then -- check if player had no key bound
+        closestPlayer = GetBestTarget(pLocal).entity --GetClosestEnemy(pLocal, pLocalOrigin, players)
+    elseif input.IsButtonDown(keybind) and GetBestTarget(pLocal) ~= nil then -- if player boudn key for aimbot then only work when its on.
+        closestPlayer = GetBestTarget(pLocal).entity
+    end
 --[-----Refil and skip code when alone-----]
 
 if closestPlayer == nil then
