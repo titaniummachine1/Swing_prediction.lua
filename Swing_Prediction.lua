@@ -138,7 +138,7 @@ local function GetBestTarget(me)
         local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), aimPos)
         local fov = Math.AngleFov(angles, engine.GetViewAngles())
         if fov > settings.MaxFOV then goto continue end
-        if gui.GetValue("ignore cloaked") and (target.player:InCond(4)) then goto continue end
+        if gui.GetValue("ignore cloaked") == 1 and (target.player:InCond(4)) then goto continue end
 
         -- Visibility Check
         if not Helpers.VisPos(player, pLocalOrigin, aimPos) then goto continue end
