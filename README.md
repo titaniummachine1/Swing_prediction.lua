@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/YouTube%20Showcase-red?style=for-the-badge&logo=youtube" alt="YouTube Showcase Badge">
 </a>
 
-
+# Downlaod required luas first or it will not work
 [![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 
 ## Requirements
