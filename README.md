@@ -21,9 +21,9 @@ https://user-images.githubusercontent.com/78664175/230738710-c0c385d0-dcb3-4c50-
 
 ## Requirements
 
-[![](https://img.shields.io/badge/Download-Latest-blue?style=for-the-badge&logo=github)](https://github.com/lnx00/Lmaobox-Library/releases/latest/) and copy the `lnxLib.lua` file to your `%localappdata%` folder.
+[![LuaLib.lua](https://img.shields.io/badge/Download-Latest-blue?style=for-the-badge&logo=github)](https://github.com/lnx00/Lmaobox-Library/releases/latest/) and copy the `lnxLib.lua` file to your `%localappdata%` folder.
 
-[![Download](https://img.shields.io/badge/Download-Menu.lua_lnx00-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua) and copy the `Menu.lua` file to your `%localappdata%` folder.
+[![Menulib.lua](https://img.shields.io/badge/Download-Menu.lua_lnx00-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua) and copy the `Menu.lua` file to your `%localappdata%` folder.
 
 
 
