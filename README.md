@@ -5,7 +5,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/stargazers)
 
 
-![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/1fe0d8a4-f71c-4d4c-b0e4-165325658bc6)
+![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/eb2e36b0-dac2-458f-8bf9-31d3fd138d91)
 
 <a href="https://www.youtube.com/watch?v=T8TRa1C5T2I&t=25s" target="_blank">
   <img src="https://img.shields.io/badge/YouTube%20Showcase-red?style=for-the-badge&logo=youtube" alt="YouTube Showcase Badge">
