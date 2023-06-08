@@ -54,6 +54,8 @@ local mcolor_close  = menu:AddComponent(MenuLib.Colorpicker("Color", color))
 if GetViewHeight ~= nil then
     local mTHeightt = GetViewHeight()
 end
+local vPlayerOriginLast
+local pLocalOriginLast
 local mTHeightt = 85
 local msamples = 66
 local pastPredictions = {}
@@ -76,6 +78,7 @@ local fDistance
 local vPlayerFuture
 local pLocalFuture
 local ping = 0
+local Safe_Strafe = false
 
 local settings = {
     MinDistance = 200,
@@ -214,7 +217,6 @@ function TargetPositionPrediction(targetLastPos, time, targetEntity)
 
     -- Scale the curve by the tick rate and time to predict.
     curve = curve * tickRate * time
-
     -- Calculate the current predicted position.
     local targetFuture = targetLastPos + (averageVelocity * time) + curve
 
@@ -396,7 +398,10 @@ end
                 -- change angles at target
                 aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
                 pCmd:SetViewAngles(aimpos:Unpack()) --  engine.SetViewAngles(aimpos) --
-
+        elseif flags & FL_ONGROUND == 0 then -- if we are in air then aim at target
+                -- change angles at target
+                aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+                engine.SetViewAngles(aimpos) --pCmd:SetViewAngles(aimpos:Unpack())
         end
 
 --[----------------wall check Future-------------]
@@ -437,6 +442,7 @@ if Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture
 -- Update last variables
             vPlayerOriginLast = vPlayerOrigin
             pLocalOriginLast = pLocalOrigin
+            Safe_Strafe = false -- reset safe strafe
     ::continue::
 end
 
