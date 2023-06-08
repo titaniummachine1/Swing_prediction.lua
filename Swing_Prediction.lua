@@ -38,7 +38,7 @@ end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Rage)", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
-local mtime         = menu:AddComponent(MenuLib.Slider("prediction(ticks)",3 ,20 ,14 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("predicted ticks",3 ,20 ,14 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
@@ -384,16 +384,18 @@ end
                 local hitboxes = closestPlayer:GetHitboxes()
                 local hitbox = hitboxes[4]
                 local aimpos = (hitbox[1] + hitbox[2]) * 0.5
+
+                local flags = pLocal:GetPropInt( "m_fFlags" )
         if Maimbot:GetValue() and Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17) then
 
                 -- change angles at target
                 aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 60))
                 pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos) 
 
-        else -- if predicted position is visible then aim at it
+        elseif flags & FL_ONGROUND == 1 then -- if predicted position is visible then aim at it
                 -- change angles at target
                 aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-                pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos) 
+                pCmd:SetViewAngles(aimpos:Unpack()) --  engine.SetViewAngles(aimpos) --
 
         end
 
