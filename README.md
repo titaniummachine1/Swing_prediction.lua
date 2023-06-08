@@ -43,7 +43,7 @@ https://user-images.githubusercontent.com/78664175/230738710-c0c385d0-dcb3-4c50-
 
 ⏱️ it checks if the user's eye position.
 
-  then gets enemy hitbox size and adjsuts it with swign range of weapon you have.
+⏱️  then gets enemy hitbox size and adjsuts it with swing range of weapon you have.
 
 👊 when the predicted position of a user eyes is inside the area of predicted position of the enemy then it attacks
 
