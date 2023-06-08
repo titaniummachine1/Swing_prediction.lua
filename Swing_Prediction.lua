@@ -37,7 +37,8 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Rage)", true, ItemFlags.FullWidth))
-local mtime         = menu:AddComponent(MenuLib.Slider("attack delay(ticks)",3 ,20 ,14 ))
+local mFov         = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("prediction(ticks)",3 ,20 ,14 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
@@ -61,7 +62,6 @@ local vPlayerOrigin = nil
 local pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
 local tickRate = 66 -- game tick rate
 local pLocalOrigin
-local closestPlayer
 local closestDistance = 2000
 local tick
 local pLocalClass
@@ -76,72 +76,82 @@ local vPlayerFuture
 local pLocalFuture
 local ping = 0
 
+local settings = {
+    MinDistance = 200,
+    MaxDistance = 1000,
+    MinHealth = 10,
+    MaxHealth = 100,
+    MinFOV = 0,
+    MaxFOV = mFov:GetValue(),
+}
+
 ---@param me WPlayer
 ---@return AimTarget? target
 local function GetBestTarget(me)
-    local settings = {
+    settings = {
         MinDistance = 200,
         MaxDistance = 1000,
         MinHealth = 10,
         MaxHealth = 100,
         MinFOV = 0,
-        MaxFOV = 360,
+        MaxFOV = mFov:GetValue(),
     }
     
-        local players = entities.FindByClass("CTFPlayer")
-        local localPlayer = entities.GetLocalPlayer()
-        if not localPlayer then return end
-    
-        ---@type Target[]
-        local targetList = {}
-    
-        -- Calculate target factors
-        for entIdx, player in pairs(players) do
-            if entIdx == localPlayer:GetIndex() then goto continue end
-    
-            local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
-            local health = player:GetHealth()
-    
-            local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), player:GetAbsOrigin())
-            local fov = Math.AngleFov(engine.GetViewAngles(), angles)
-    
-            local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.1)
-            local healthFactor = Math.RemapValClamped(health, settings.MinHealth, settings.MaxHealth, 1, 0.5)
-            local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.5)
-    
-            local factor = distanceFactor * healthFactor * fovFactor
-            table.insert(targetList, { player = player, factor = factor })
-    
-            ::continue::
-        end
-    
-        -- Sort target list by factor
-        table.sort(targetList, function(a, b)
-            return a.factor > b.factor
-        end)
-    
-        local bestTarget = nil
-    
-        for _, target in ipairs(targetList) do
-            local player = target.player
-            local aimPos = player:GetAbsOrigin()
-            local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), aimPos)
-            local fov = Math.AngleFov(angles, engine.GetViewAngles())
-            if fov > 360 then goto continue end
-    
-            -- Visibility Check
-            if not Helpers.VisPos(player, pLocalOrigin, aimPos) then goto continue end
-            if target.player == nil or not target.player:IsAlive() or target.player:GetTeamNumber() == pLocal:GetTeamNumber() then goto continue end
-            
-            -- Set as best target
-            bestTarget = { entity = player, pos = aimPos, angles = angles, factor = target.factor }
-            break
-    
-            ::continue::
-        end
-    
-        return bestTarget
+    local players = entities.FindByClass("CTFPlayer")
+    local localPlayer = entities.GetLocalPlayer()
+    if not localPlayer then return end
+
+    ---@type Target[]
+    local targetList = {}
+
+    -- Calculate target factors
+    for entIdx, player in pairs(players) do
+        if entIdx == localPlayer:GetIndex() then goto continue end
+
+        local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
+        local health = player:GetHealth()
+
+        local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), player:GetAbsOrigin())
+        local fov = Math.AngleFov(engine.GetViewAngles(), angles)
+
+        local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.1)
+        local healthFactor = Math.RemapValClamped(health, settings.MinHealth, settings.MaxHealth, 1, 0.5)
+        local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.5)
+
+        local factor = distanceFactor * healthFactor * fovFactor
+        table.insert(targetList, { player = player, factor = factor})
+
+        ::continue::
     end
+
+    -- Sort target list by factor
+    table.sort(targetList, function(a, b)
+        return a.factor > b.factor
+    end)
+
+    local bestTarget = nil
+
+    for _, target in ipairs(targetList) do
+        local player = target.player
+        local aimPos = player:GetAbsOrigin()
+        local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), aimPos)
+        local fov = Math.AngleFov(angles, engine.GetViewAngles())
+        if fov > settings.MaxFOV then goto continue end
+
+        -- Visibility Check
+        if not Helpers.VisPos(player, pLocalOrigin, aimPos) then goto continue end
+        if target.player == nil or not target.player:IsAlive() or target.player:GetTeamNumber() == pLocal:GetTeamNumber() then goto continue end
+        
+        -- Set as best target
+        bestTarget = { entity = player, pos = aimPos, angles = angles, factor = target.factor }
+        break
+
+        ::continue::
+    end
+
+    return bestTarget
+end
+
     
 
 function TargetPositionPrediction(targetLastPos, time, targetEntity)
@@ -275,6 +285,8 @@ local function OnCreateMove(pCmd)
                 local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
                 local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
                 local time = mtime:GetValue()
+                local closestPlayer
+                if #players == 0 then return end  -- Immediately check if there are any players in the game. If there aren't, return.
 --[--if we enabled trodlier assist run auto weapon script]
     if mAutoGarden:GetValue() == true then
         local flags = pLocal:GetPropInt( "m_fFlags" )
@@ -346,6 +358,7 @@ end
         fDistance = (vPlayerFuture - pLocalFuture):Length()
 
 --[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
+
             local can_attack = false
             local stop = false
             swingrange = pWeapon:GetSwingRange()
@@ -362,23 +375,21 @@ end
                 end
             end
 
---[--------------AimBot-------------------]
-        if Maimbot:GetValue() and Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then
-                --get hitbox of ennmy pelwis(jittery but works)
+--[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
                 local hitboxes = closestPlayer:GetHitboxes()
                 local hitbox = hitboxes[4]
                 local aimpos = (hitbox[1] + hitbox[2]) * 0.5
+        if Maimbot:GetValue() and Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17) then
 
-            if pLocal:InCond(17) then -- if can hit then aimbot
                 -- change angles at target
                 aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 60))
                 pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos) 
 
-            else -- if predicted position is visible then aim at it
+        else -- if predicted position is visible then aim at it
                 -- change angles at target
                 aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-                pCmd:SetViewAngles(aimpos:Unpack())
-            end
+                pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos) 
+
         end
 
 --[----------------wall check Future-------------]
