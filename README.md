@@ -16,14 +16,14 @@
 
 [![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 
-https://user-images.githubusercontent.com/78664175/230738710-c0c385d0-dcb3-4c50-b707-436808db31aa.mp4
-
-
 ## Requirements
 
 [![LuaLib](https://img.shields.io/badge/Download-Latest-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-Library/releases/latest/) and copy the `lnxLib.lua` file to your `%localappdata%` folder.
 
 [![Menulib](https://img.shields.io/badge/Download-Menu.lua_lnx00-blue?style=for-the-badge&logo=github)](https://github.com/lnx00/Lmaobox-LUA/blob/main/Menu.lua) and copy the `Menu.lua` file to your `%localappdata%` folder.
+
+https://user-images.githubusercontent.com/78664175/230738710-c0c385d0-dcb3-4c50-b707-436808db31aa.mp4
+
 
 
 
