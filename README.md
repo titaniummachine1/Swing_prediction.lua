@@ -39,17 +39,19 @@ https://user-images.githubusercontent.com/78664175/230738710-c0c385d0-dcb3-4c50-
 
 
 ## describtion
-👥 The script finds the closest enemy player on the opposing team and calculates their Velocity.
+👥 The script finds best target taking into account distance, fov, health.
 
-⏱️ it checks if the user's eye position is going to be inside the range hitbox of the enemy that is always at the predicted position of the enemy.
+⏱️ it checks if the user's eye position.
 
-👊 when the predicted position of a user is inside the area of predicted position of the enemy then it attacks
+  then gets enemy hitbox size and adjsuts it with swign range of weapon you have.
+
+👊 when the predicted position of a user eyes is inside the area of predicted position of the enemy then it attacks
 
 💻 predicts enemy's movement and hit's them with their melee weapon as soon as it is possible.
 
 # Setup
 Put all required files in your %localappdata% folder.
-including Menulib Folder from repos files.
+including Menu.lua and Lualib.lua
 
 How to run Swing_prediction.lua:
   1. Create a .bat file in the same directory as lmaobox.exe.
