@@ -37,6 +37,7 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Rage)", true, ItemFlags.FullWidth))
+local MAirboneAim       = menu:AddComponent(MenuLib.Checkbox("Airbone Aimbot(Rage)", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
 local mtime         = menu:AddComponent(MenuLib.Slider("predicted ticks",3 ,20 ,14 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
@@ -398,10 +399,10 @@ end
                 -- change angles at target
                 aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
                 pCmd:SetViewAngles(aimpos:Unpack()) --  engine.SetViewAngles(aimpos) --
-        elseif flags & FL_ONGROUND == 0 then -- if we are in air then aim at target
+        elseif flags & FL_ONGROUND == 0 and MAirboneAim:GetValue() == true then -- if we are in air then aim at target
                 -- change angles at target
                 aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-                engine.SetViewAngles(aimpos) --pCmd:SetViewAngles(aimpos:Unpack())
+                engine.SetViewAngles(aimpos) --set angle at aim position manualy not silent aimbot
         end
 
 --[----------------wall check Future-------------]
