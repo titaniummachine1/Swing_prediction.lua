@@ -39,7 +39,7 @@ local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFla
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Rage)", true, ItemFlags.FullWidth))
 local MAirboneAim       = menu:AddComponent(MenuLib.Checkbox("Airbone Aimbot(Rage)", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
-local mtime         = menu:AddComponent(MenuLib.Slider("predicted ticks",3 ,20 ,14 ))
+local mtime         = menu:AddComponent(MenuLib.Slider("predicted ticks",3 ,20 ,16 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
@@ -229,39 +229,50 @@ end
 
 local vhitbox_Height = 85
 local vhitbox_width = 18
-function GetTriggerboxMin(swingrange, vPlayerFuture)
+
+-- Define function to check collision between the hitbox and the sphere
+local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
     if vPlayerFuture ~= nil and isMelee then
-        vhitbox_Height_trigger_bottom = swingrange
-        vhitbox_width_trigger = (vhitbox_width + swingrange)
+        local vhitbox_Height_trigger_bottom = Vector3(0,0,0) --swingrange
+        vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
         local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
+        local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)
         local hitbox_min_trigger = (vPlayerFuture + vhitbox_min)
-        return hitbox_min_trigger
-    end
-end
-
-function GetTriggerboxMax(swingrange, vPlayerFuture)
-    if vPlayerFuture ~= nil and isMelee then
-        vhitbox_Height_trigger = (vhitbox_Height + swingrange)
-        vhitbox_width_trigger = (vhitbox_width + swingrange)
-        local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)
         local hitbox_max_trigger = (vPlayerFuture + vhitbox_max)
-        return hitbox_max_trigger
-    end
-end
 
-function isWithinHitbox(hitboxMinTrigger, hitboxMaxTrigger, pLocalFuture, vPlayerFuture)
-    if not pLocalFuture or not hitboxMinTrigger or not hitboxMaxTrigger then
-        return false
+        -- Calculate the closest point on the hitbox to the sphere
+        local closestPoint = Vector3(
+            math.max(hitbox_min_trigger.x, math.min(spherePos.x, hitbox_max_trigger.x)),
+            math.max(hitbox_min_trigger.y, math.min(spherePos.y, hitbox_max_trigger.y)),
+            math.max(hitbox_min_trigger.z, math.min(spherePos.z, hitbox_max_trigger.z))
+        )
+
+        -- Calculate the vector from the closest point to the sphere center
+        local closestToPointVector = spherePos - closestPoint
+
+        -- Calculate the distance along the vector from the closest point to the sphere center
+        local distanceAlongVector = math.sqrt(closestToPointVector.x^2 + closestToPointVector.y^2 + closestToPointVector.z^2)
+
+        -- Compare the distance along the vector to the sum of the radii
+        if sphereRadius == 0 then
+            -- Treat the sphere as a single point
+            if distanceAlongVector <= 0 then
+                -- Collision detected
+                return true
+            else
+                -- No collision
+                return false
+            end
+        else
+            if distanceAlongVector <= sphereRadius or distanceAlongVector <= sphereRadius + 0.5 then
+                -- Collision detected (including intersecting or touching)
+                return true
+            else
+                -- No collision
+                return false
+            end
+        end
     end
-    
-    -- Unpack hitbox vectors
-    local minX, minY, minZ = hitboxMinTrigger:Unpack()
-    local maxX, maxY, maxZ = hitboxMaxTrigger:Unpack()
-  
-    -- Check if pLocalFuture is within the hitbox
-    return pLocalFuture.x >= minX and pLocalFuture.x <= maxX and
-           pLocalFuture.y >= minY and pLocalFuture.y <= maxY and
-           pLocalFuture.z >= minZ and pLocalFuture.z <= maxZ
 end
 
 local Hitbox = {
@@ -383,28 +394,6 @@ end
                 end
             end
 
---[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
-                local hitboxes = closestPlayer:GetHitboxes()
-                local hitbox = hitboxes[4]
-                local aimpos = (hitbox[1] + hitbox[2]) * 0.5
-
-                local flags = pLocal:GetPropInt( "m_fFlags" )
-        if Maimbot:GetValue() and Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17) then
-
-                -- change angles at target
-                aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 60))
-                pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos) 
-
-        elseif flags & FL_ONGROUND == 1 then -- if predicted position is visible then aim at it
-                -- change angles at target
-                aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-                pCmd:SetViewAngles(aimpos:Unpack()) --  engine.SetViewAngles(aimpos) --
-        elseif flags & FL_ONGROUND == 0 and MAirboneAim:GetValue() == true then -- if we are in air then aim at target
-                -- change angles at target
-                aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-                engine.SetViewAngles(aimpos) --set angle at aim position manualy not silent aimbot
-        end
-
 --[----------------wall check Future-------------]
 
         --trace = engine.TraceLine(pLocalFuture, vPlayerFuture + Vector3(0, 0, 150), MASK_SHOT_HULL)
@@ -412,17 +401,36 @@ end
 -- Visiblity Check
 if Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then
                 --[[check if can hit after swing]]
-                    can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
+                    can_attack = checkCollision(vPlayerFuture, pLocalFuture, swingrange) --isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
 
                     if fDistance <= (swingrange + 60) then
                         can_attack = true
                     elseif vdistance <= (swingrange + 60) then
                         can_attack = true
                     elseif can_attack == false then
-                        can_attack = isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerOrigin), GetTriggerboxMax(swingrange, vPlayerOrigin), pLocalOrigin, vPlayerOrigin)
+                        can_attack = checkCollision(vPlayerOrigin, pLocalOrigin, swingrange) --isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
                     end
            end
-        
+
+--[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
+    local hitboxes = closestPlayer:GetHitboxes()
+    local hitbox = hitboxes[4]
+    local aimpos = (hitbox[1] + hitbox[2]) * 0.5
+
+    local flags = pLocal:GetPropInt("m_fFlags")
+    if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17) then
+        -- change angles at target
+        aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 60))
+        pCmd:SetViewAngles(aimpos:Unpack())      --engine.SetViewAngles(aimpos)
+    elseif flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
+        -- change angles at target
+        aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+        pCmd:SetViewAngles(aimpos:Unpack())                                         --  engine.SetViewAngles(aimpos) --
+    elseif flags & FL_ONGROUND == 0 and MAirboneAim:GetValue() == true and can_attack then         -- if we are in air then aim at target
+        -- change angles at target
+        aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+        engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
+    end
        
         --Attack when futere position is inside attack range triggerbox
             if isMelee and not stop and can_attack then
@@ -446,6 +454,15 @@ if Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture
             Safe_Strafe = false -- reset safe strafe
     ::continue::
 end
+
+            -- Define function to get the triggerbox dimensions
+                local function GetTriggerboxDimensions()
+                    vhitbox_Height = 85
+                    vhitbox_width = 18
+                    local vhitbox_Height_trigger_bottom = Vector3(0,0,0) --swingrange
+                    local vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
+                    return vhitbox_width_trigger, vhitbox_Height_trigger_bottom
+                end
 
 -- debug command: ent_fire !picker Addoutput "health 99999"
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
@@ -482,41 +499,39 @@ if not mmVisuals:GetValue() then return end
                 end
             end
 
-            
 
-            if vhitbox_Height_trigger == nil then return end
-            
-            local vertices = {
-                client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)),
-                client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height_trigger)),
-                client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger)),
-                client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height_trigger))
-            }
-              -- check if not nil
-            if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
-            -- Front face
-            draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
-            draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
-            draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
-            draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
-            
-            -- Back face
-            draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
-            draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
-            draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
-            draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
-            
-            -- Connecting lines
-            if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
-            if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
-            if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
-            if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) 
-            end
-        end
+            -- Define function to draw the triggerbox
+                local vhitbox_width_trigger, vhitbox_Height_trigger_bottom = GetTriggerboxDimensions()
+                local vertices = {
+                    client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                    client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                    client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                    client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                    client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)),
+                    client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)),
+                    client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height)),
+                    client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height))
+                }
+                -- check if not nil
+                if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
+                    -- Front face
+                    draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
+                    draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
+                    draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
+                    draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
+                    
+                    -- Back face
+                    draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
+                    draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
+                    draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
+                    draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
+                    
+                    -- Connecting lines
+                    if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
+                    if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
+                    if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
+                    if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
+                end
 
                 -- Strafe prediction visualization
                 if mVisuals:IsSelected("Draw Trail") then
@@ -548,77 +563,83 @@ if not mmVisuals:GetValue() then return end
         end
 
     if mVisuals:IsSelected("Range Circle") == false then return end
-    if vPlayerFuture == nil then return end
-    if not isMelee then return end
-        -- Define the two colors to interpolate between
-        local color_close = {r = 255, g = 0, b = 0, a = 255} -- red
-        local color_far = {r = 0, g = 0, b = 255, a = 255} -- blue
+if vPlayerFuture == nil then return end
+if not isMelee then return end
 
-        -- Get the selected colors from the menu and convert them to the correct format
-        local selected_color = mcolor_close:GetColor()
-        color_close = {r = selected_color[1], g = selected_color[2], b = selected_color[3], a = selected_color[4]}
+-- Define the two colors to interpolate between
+local color_close = {r = 255, g = 0, b = 0, a = 255} -- red
+local color_far = {r = 0, g = 0, b = 255, a = 255} -- blue
 
-        local selected_color1 = mcolor_close:GetColor()
-        color_far = {r = selected_color1[1], g = selected_color1[2], b = selected_color1[3], a = selected_color1[4]}
+-- Get the selected colors from the menu and convert them to the correct format
+local selected_color = mcolor_close:GetColor()
+color_close = {r = selected_color[1], g = selected_color[2], b = selected_color[3], a = selected_color[4]}
 
-        -- Calculate the target distance for the color to be completely at the close color
-        local target_distance = (swingrange)
+local selected_color1 = mcolor_close:GetColor()
+color_far = {r = selected_color1[1], g = selected_color1[2], b = selected_color1[3], a = selected_color1[4]}
 
-        -- Calculate the vertex positions around the circle
-        local center = vPlayerFuture
-        local radius = swingrange + 40 -- radius of the circle
-        local segments = mresolution -- number of segments to use for the circle
-        vertices = {} -- table to store circle vertices
-        local colors = {} -- table to store colors for each vertex
+-- Calculate the target distance for the color to be completely at the close color
+local target_distance = swingrange
 
-        for i = 1, segments do
-        local angle = math.rad(i * (360 / segments))
-        local direction = Vector3(math.cos(angle), math.sin(angle), 0)
-        local trace = engine.TraceLine(vPlayerFuture, center + direction * radius, MASK_SHOT_BRUSHONLY)
-        local distance = radius
-        local x = center.x + math.cos(angle) * distance
-        local y = center.y + math.sin(angle) * distance
-        local z = center.z + 1
-        
-    if trace == nil then return end
-        local distance_to_hit = trace.fraction * radius -- calculate distance to hit point
-    if  distance_to_hit == nil then return end
+-- Calculate the vertex positions around the circle
+local center = pLocalFuture + Vector3(0, 0, -70) -- center of the circle
+local radius = swingrange + 40 -- radius of the circle
+local segments = 64 -- number of segments to use for the circle
+vertices = {} -- table to store circle vertices
+local colors = {} -- table to store colors for each vertex
 
-        if distance_to_hit > 0 then
-            local max_height_adjustment = mTHeightt -- adjust as needed
-            local height_adjustment = (1 - distance_to_hit / radius) * max_height_adjustment
-            z = z + height_adjustment
-        end
-        
-        vertices[i] = client.WorldToScreen(Vector3(x, y, z))
-        
-        -- calculate the color for this line based on the height of the point
-        local t = (z - center.z - target_distance) / (mTHeightt - target_distance)
-        if t < 0 then
-            t = 0
-        elseif t > 1 then
-            t = 1
-        end
-        local color = {}
-        for key, value in pairs(color_close) do
-            color[key] = math.floor((1 - t) * value + t * color_far[key])
-        end
-        colors[i] = color
-        end
+for i = 1, segments do
+  local angle = math.rad(i * (360 / segments))
+  local direction = Vector3(math.cos(angle), math.sin(angle), 0)
+  local endpos = center + direction * radius
+  local trace = engine.TraceLine(vPlayerFuture, endpos, MASK_SHOT_HULL)
 
-        -- Calculate the top vertex position
-        local top_height = mTHeightt -- adjust as needed
-        local top_vertex = client.WorldToScreen(Vector3(center.x, center.y, center.z + top_height))
+  local distance_to_hit = (trace.endpos - center):Length()
+  if distance_to_hit > radius then
+    distance_to_hit = radius
+  end
 
-        -- Draw the circle and connect all the vertices to the top point
-        for i = 1, segments do
-            local j = i + 1
-            if j > segments then j = 1 end
-            if vertices[i] ~= nil and vertices[j] ~= nil then
-            draw.Color(colors[i].r, colors[i].g, colors[i].b, colors[i].a)
-            draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
-        end
-    end
+  local x = center.x + math.cos(angle) * distance_to_hit
+  local y = center.y + math.sin(angle) * distance_to_hit
+  local z = center.z + 1
+
+  -- adjust the height based on distance to trace hit point
+  if distance_to_hit > 0 then
+    local max_height_adjustment = mTHeightt -- adjust as needed
+    local height_adjustment = (1 - distance_to_hit / radius) * max_height_adjustment
+    z = z + height_adjustment
+  end
+
+  vertices[i] = client.WorldToScreen(Vector3(x, y, z))
+
+  -- calculate the color for this line based on the height of the point
+  local t = (z - center.z - target_distance) / (mTHeightt - target_distance)
+  if t < 0 then
+    t = 0
+  elseif t > 1 then
+    t = 1
+  end
+  local color = {}
+  for key, value in pairs(color_close) do
+    color[key] = math.floor((1 - t) * value + t * color_far[key])
+  end
+  colors[i] = color
+end
+
+-- Calculate the top vertex position
+local top_height = mTHeightt -- adjust as needed
+local top_vertex = client.WorldToScreen(Vector3(center.x, center.y, center.z + top_height))
+
+-- Draw the circle and connect all the vertices to the top point
+for i = 1, segments do
+  local j = i + 1
+  if j > segments then j = 1 end
+  if vertices[i] ~= nil and vertices[j] ~= nil then
+    draw.Color(colors[i].r, colors[i].g, colors[i].b, colors[i].a)
+    draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
+      --draw.Line(vertices[i][1], vertices[i][2], top_vertex[1], top_vertex[2])
+    
+  end
+end
 end
 
 --[[ Remove the menu when unloaded ]]--
