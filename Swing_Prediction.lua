@@ -9,16 +9,18 @@ assert(menuLoaded, "MenuLib not found, please install it!")                     
 assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!")  -- If version is too old, throw error
 
 if UnloadLib then UnloadLib() end
+
+---@alias AimTarget { entity : Entity, angles : EulerAngles, factor : number }
+
 ---@type boolean, lnxLib
 local libLoaded, lnxLib = pcall(require, "lnxLib")
 assert(libLoaded, "lnxLib not found, please install it!")
-assert(lnxLib.GetVersion() >= 0.981, "LNXlib version is too old, please update it!")
-
----@alias AimTarget { entity : Entity, pos : Vector3, angles : EulerAngles, factor : number }
+assert(lnxLib.GetVersion() >= 0.987, "lnxLib version is too old, please update it!")
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
-local Helpers, Prediction = lnxLib.TF2.Helpers, lnxLib.TF2.Prediction
+local Helpers = lnxLib.TF2.Helpers
+local Prediction = lnxLib.TF2.Prediction
 local Fonts = lnxLib.UI.Fonts
 
 --[[ Menu ]]--
@@ -36,10 +38,8 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("mp_teams_unbalance_limit", 1000)
 end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
-local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Rage)", true, ItemFlags.FullWidth))
-local MAirboneAim       = menu:AddComponent(MenuLib.Checkbox("Airbone Aimbot(Rage)", true, ItemFlags.FullWidth))
+local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Silent)", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
-local mtime         = menu:AddComponent(MenuLib.Slider("predicted ticks",3 ,20 ,16 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
@@ -80,6 +80,8 @@ local vPlayerFuture
 local pLocalFuture
 local ping = 0
 local Safe_Strafe = false
+local latency = 0
+local lerp = 0
 
 local settings = {
     MinDistance = 200,
@@ -159,71 +161,23 @@ local function GetBestTarget(me)
 end
 
     
+  -- those parrams are super important!!! dont change them
+---@param player WPlayer
+---@return AimTarget?
+local function TargetPositionPrediction(targetLastPos, time, targetEntity) -- predicts player position after set amount of ticks
 
-function TargetPositionPrediction(targetLastPos, time, targetEntity)
-    -- If the last known position of the target is nil, return nil.
-    if targetLastPos == nil then
-        return nil
-    end
+   local player = WPlayer.FromEntity(targetEntity)
 
-    -- Initialize targetVelocitySamples as a table if it doesn't exist.
-    if not targetVelocitySamples then
-        targetVelocitySamples = {}
-    end
+    local predData = Prediction.Player(player, time)
+    if not predData then return nil end
 
-    -- Initialize the table for this target if it doesn't exist.
-    local targetKey = tostring(targetLastPos)
-    if not targetVelocitySamples[targetKey] then
-        targetVelocitySamples[targetKey] = {}
-    end
+    local pos = predData.pos[time]
 
-    -- Insert the latest velocity sample into the table.
-    local targetVelocity = targetEntity:EstimateAbsVelocity()
-    if targetVelocity == nil then
-        targetVelocity = targetLastPos - targetEntity:GetOrigin()
-    end
-    table.insert(targetVelocitySamples[targetKey], 1, targetVelocity)
+        return pos
 
-    local samples = 3
-    -- Remove the oldest sample if there are more than maxSamples.
-    if #targetVelocitySamples[targetKey] > samples then
-        table.remove(targetVelocitySamples[targetKey], samples + 1)
-    end
-
-    -- Calculate the average velocity from the samples.
-    local totalVelocity = Vector3(0, 0, 0)
-    for i = 1, #targetVelocitySamples[targetKey] do
-        totalVelocity = totalVelocity + targetVelocitySamples[targetKey][i]
-    end
-    local averageVelocity = totalVelocity / #targetVelocitySamples[targetKey]
-
-    -- Initialize the curve to a zero vector.
-    local curve = Vector3(0, 0, 0)
-
-    -- Calculate the curve of the path if there are enough samples.
-    if #targetVelocitySamples[targetKey] >= 2 then
-        local previousVelocity = targetVelocitySamples[targetKey][1]
-        for i = 2, #targetVelocitySamples[targetKey] do
-            local currentVelocity = targetVelocitySamples[targetKey][i]
-            curve = curve + (previousVelocity - currentVelocity)
-            previousVelocity = currentVelocity
-        end
-        curve = curve / (#targetVelocitySamples[targetKey] - 1)
-    end
-
-    --if time is more then 5 then expect ticks and convert ticks into decimal of time
-    if time > 2 then
-        time = time / tickRate
-    end
-
-    -- Scale the curve by the tick rate and time to predict.
-    curve = curve * tickRate * time
-    -- Calculate the current predicted position.
-    local targetFuture = targetLastPos + (averageVelocity * time) + curve
-
-    -- Return the predicted future position.
-    return targetFuture
 end
+
+
 
 
 
@@ -233,7 +187,7 @@ local vhitbox_width = 18
 -- Define function to check collision between the hitbox and the sphere
 local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
     if vPlayerFuture ~= nil and isMelee then
-        local vhitbox_Height_trigger_bottom = Vector3(0,0,0) --swingrange
+        local vhitbox_Height_trigger_bottom = Vector3(0, 0, 0) --swingrange
         vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
         local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
         local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)
@@ -258,22 +212,23 @@ local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
             -- Treat the sphere as a single point
             if distanceAlongVector <= 0 then
                 -- Collision detected
-                return true
+                return true, closestPoint
             else
                 -- No collision
-                return false
+                return false, nil
             end
         else
             if distanceAlongVector <= sphereRadius or distanceAlongVector <= sphereRadius + 0.5 then
                 -- Collision detected (including intersecting or touching)
-                return true
+                return true, closestPoint
             else
                 -- No collision
-                return false
+                return false, nil
             end
         end
     end
 end
+
 
 local Hitbox = {
     Head = 1,
@@ -300,7 +255,7 @@ local function OnCreateMove(pCmd)
 --[--obtain secondary information after confirming we need it for fps boost whe nnot using script]
                 local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
                 local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-                local time = mtime:GetValue()
+                local time = 16
                 local closestPlayer
                 if #players == 0 then return end  -- Immediately check if there are any players in the game. If there aren't, return.
 --[--if we enabled trodlier assist run auto weapon script]
@@ -335,7 +290,7 @@ local function OnCreateMove(pCmd)
     if not isMelee then goto continue end -- if not melee then skip code
 
 --[-------get vierwhegiht Optymised--------]
-
+local Vheight
     if pLocalClass ~= pLocalClasslast then
         if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
         --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
@@ -343,7 +298,7 @@ local function OnCreateMove(pCmd)
         local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
         viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
             -- eye level 
-            local Vheight = Vector3(0, 0, viewheight)
+            Vheight = Vector3(0, 0, viewheight)
             pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
     end
 
@@ -365,9 +320,21 @@ end
     vPlayerOrigin = closestPlayer:GetAbsOrigin() -- get closest player origin
 
 --[--------------Prediction-------------------] -- predict both players position after swing
-        
+
+            -- Get current latency
+            local latIn, latOut = clientstate.GetLatencyIn(), clientstate.GetLatencyOut()
+            if latIn and latOut then
+                latency = latIn + latOut
+            else
+                latency = 0
+            end
+                -- Get current lerp
+            lerp = client.GetConVar("cl_interp") or 0
+
+            time = math.floor(time + latency + lerp)
+
             vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer)
-            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, time, pLocal)
+            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, time, pLocal) + Vheight
 
 --[--------------Distance check-------------------]
         --get current distance between local player and closest player
@@ -399,23 +366,32 @@ end
         --trace = engine.TraceLine(pLocalFuture, vPlayerFuture + Vector3(0, 0, 150), MASK_SHOT_HULL)
         --if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
 -- Visiblity Check
-if Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then
+if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then goto continue end
                 --[[check if can hit after swing]]
-                    can_attack = checkCollision(vPlayerFuture, pLocalFuture, swingrange) --isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
+                -- Call the checkCollision function and store the result
+                local collisionPoint
+                local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
+                    can_attack = collision
 
                     if fDistance <= (swingrange + 60) then
                         can_attack = true
                     elseif vdistance <= (swingrange + 60) then
                         can_attack = true
                     elseif can_attack == false then
-                        can_attack = checkCollision(vPlayerOrigin, pLocalOrigin, swingrange) --isWithinHitbox(GetTriggerboxMin(swingrange, vPlayerFuture), GetTriggerboxMax(swingrange, vPlayerFuture), pLocalFuture, vPlayerFuture)
+                        collision, collisionPoint = checkCollision(vPlayerOrigin, pLocalOrigin, swingrange)
+                        can_attack = collision
                     end
-           end
+
 
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = closestPlayer:GetHitboxes()
     local hitbox = hitboxes[4]
-    local aimpos = (hitbox[1] + hitbox[2]) * 0.5
+    local aimpos
+    if collisionPoint ~= nil then
+        aimpos = collisionPoint
+    else
+        aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no collision point accesable then aim at defualt hitbox
+    end
 
     local flags = pLocal:GetPropInt("m_fFlags")
     if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17) then
@@ -426,10 +402,10 @@ if Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack())                                         --  engine.SetViewAngles(aimpos) --
-    elseif flags & FL_ONGROUND == 0 and MAirboneAim:GetValue() == true and can_attack then         -- if we are in air then aim at target
+    elseif flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-        engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
+        pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
     end
        
         --Attack when futere position is inside attack range triggerbox
