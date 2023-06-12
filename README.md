@@ -4,8 +4,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/network)
 [![GitHub stars](https://img.shields.io/github/stars/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/stargazers)
 
-
-![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/66ae9453-73fc-4719-b529-259def4852c4)
+![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/3390dfc9-3d47-4c75-b56b-91f6c9c58ca9)
 
 <a href="https://www.youtube.com/watch?v=T8TRa1C5T2I&t=25s" target="_blank">
   <img src="https://img.shields.io/badge/YouTube%20Showcase-red?style=for-the-badge&logo=youtube" alt="YouTube Showcase Badge">
