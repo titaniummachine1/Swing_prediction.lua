@@ -188,7 +188,7 @@ local vhitbox_width = 18
 local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
     if vPlayerFuture ~= nil and isMelee then
         local vhitbox_Height_trigger_bottom = Vector3(0, 0, 0) --swingrange
-        vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
+        local vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
         local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
         local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)
         local hitbox_min_trigger = (vPlayerFuture + vhitbox_min)
@@ -228,6 +228,11 @@ local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
         end
     end
 end
+
+    
+    
+    
+    
 
 
 local Hitbox = {
@@ -349,39 +354,25 @@ end
             local stop = false
             swingrange = pWeapon:GetSwingRange()
 
-        --[bypass problem with prior attacking with shield not beeign able to reach target]..
-            if (pLocal:InCond(17)) and pLocalClass == 4 or pLocalClass == 8 then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
-                stop = true
-                local dynamicstop = swingrange
-                if (pCmd.forwardmove == 0) then dynamicstop = swingrange - 10 end -- case if you dont hold w when charging
-              
-                if isMelee and pLocalClass == 4 and vdistance <= dynamicstop then
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                    stop = false
-                end
-            end
-
 --[----------------wall check Future-------------]
 
-        --trace = engine.TraceLine(pLocalFuture, vPlayerFuture + Vector3(0, 0, 150), MASK_SHOT_HULL)
-        --if (trace.entity:GetClass() == "CTFPlayer") and (trace.entity:GetTeamNumber() ~= pLocal:GetTeamNumber()) then
 -- Visiblity Check
-if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then goto continue end
-                --[[check if can hit after swing]]
-                -- Call the checkCollision function and store the result
+if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then goto continue end-- Visiblity Check
+
+--[[check if can hit after swing]]
+                -- Simulate swing and return result
                 local collisionPoint
                 local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
                     can_attack = collision
 
-                    if fDistance <= (swingrange + 60) then
+                    if collision then
                         can_attack = true
-                    elseif vdistance <= (swingrange + 60) then
-                        can_attack = true
-                    elseif can_attack == false then
+                    elseif collision == false then
                         collision, collisionPoint = checkCollision(vPlayerOrigin, pLocalOrigin, swingrange)
-                        can_attack = collision
+                        if collision then
+                            can_attack = true
+                        end
                     end
-
 
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = closestPlayer:GetHitboxes()
@@ -394,9 +385,10 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
     end
 
     local flags = pLocal:GetPropInt("m_fFlags")
-    if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17) then
+    if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17) 
+    and vdistance > 100 then
         -- change angles at target
-        aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 60))
+        aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
         pCmd:SetViewAngles(aimpos:Unpack())      --engine.SetViewAngles(aimpos)
     elseif flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
         -- change angles at target
@@ -408,21 +400,27 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
         pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
     end
        
+    --[shield bashing strat]
+
+    if pLocalClass == 4 and (pLocal:InCond(17)) then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
+        local collision1 = checkCollision(vPlayerFuture, pLocalOrigin, 18)
+
+        if not collision1 then -- if demoknight bashed on enemy
+            can_attack = false
+            goto continue
+        end
+    end
+
         --Attack when futere position is inside attack range triggerbox
-            if isMelee and not stop and can_attack then
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            if can_attack then
+                
+               pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
 
-                    --[[if mKillaura:GetValue() == true and warp.GetChargedTicks() >= 22 then
-                        warp.TriggerWarp()
-                        --warp.TriggerDoubleTap()
-                    end]]
-
-            elseif mAutoRefill:GetValue() and isMelee and not stop then
+            elseif mAutoRefill:GetValue() then
                 if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 400 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
-
 
 -- Update last variables
             vPlayerOriginLast = vPlayerOrigin
