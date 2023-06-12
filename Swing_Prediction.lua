@@ -546,19 +546,12 @@ if not isMelee then return end
 local color_close = {r = 255, g = 0, b = 0, a = 255} -- red
 local color_far = {r = 0, g = 0, b = 255, a = 255} -- blue
 
--- Get the selected colors from the menu and convert them to the correct format
-local selected_color = mcolor_close:GetColor()
-color_close = {r = selected_color[1], g = selected_color[2], b = selected_color[3], a = selected_color[4]}
-
-local selected_color1 = mcolor_close:GetColor()
-color_far = {r = selected_color1[1], g = selected_color1[2], b = selected_color1[3], a = selected_color1[4]}
-
 -- Calculate the target distance for the color to be completely at the close color
 local target_distance = swingrange
 
 -- Calculate the vertex positions around the circle
 local center = pLocalFuture + Vector3(0, 0, -70) -- center of the circle
-local radius = swingrange + 40 -- radius of the circle
+local radius = swingrange -- radius of the circle
 local segments = 64 -- number of segments to use for the circle
 vertices = {} -- table to store circle vertices
 local colors = {} -- table to store colors for each vertex
