@@ -39,6 +39,7 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Silent)", true, ItemFlags.FullWidth))
+local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("charge steer", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
@@ -412,7 +413,7 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
     
-    elseif pLocal:InCond(17) then
+    elseif Mchargebot:GetValue() and pLocal:InCond(17) then
 
 -- Calculate the source and destination vectors
     -- Get the current view angles
