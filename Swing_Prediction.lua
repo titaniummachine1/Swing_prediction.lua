@@ -50,7 +50,6 @@ local Visuals = {
 }
 
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
-local mcolor_close  = menu:AddComponent(MenuLib.Colorpicker("Color", color))
 
 if GetViewHeight ~= nil then
     local mTHeightt = GetViewHeight()
@@ -82,6 +81,7 @@ local ping = 0
 local Safe_Strafe = false
 local latency = 0
 local lerp = 0
+local pivot
 
 local settings = {
     MinDistance = 200,
@@ -251,6 +251,7 @@ local function OnCreateMove(pCmd)
         pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
         if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
         ping = entities.GetPlayerResources():GetPropDataTableInt("m_iPing")[pLocal:GetIndex()]
+        local chargeLeft = pLocal:GetPropFloat( "m_flChargeMeter" )
         --[--Check local player class if spy or none then stop code--]
 
         pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
@@ -338,9 +339,19 @@ end
 
             time = math.floor(time + latency + lerp)
 
-            vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer)
-            pLocalFuture =  TargetPositionPrediction(pLocalOrigin, time, pLocal) + Vheight
+            if pLocal:EstimateAbsVelocity() == 0 then
+                -- If the local player is not accelerating, set the predicted position to the current position
+                pLocalFuture = pLocalOrigin
+            else
+                -- If the local player is accelerating, predict the future position
+                pLocalFuture = TargetPositionPrediction(pLocalOrigin, time, pLocal) + Vheight
+            end
 
+            if pLocal:EstimateAbsVelocity() == 0 then
+                vPlayerFuture = closestPlayer
+            else 
+                vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer)
+            end
 --[--------------Distance check-------------------]
         --get current distance between local player and closest player
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
@@ -385,20 +396,39 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
     end
 
     local flags = pLocal:GetPropInt("m_fFlags")
-    if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17) 
-    and vdistance > 100 then
+    if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17)
+    and not collision then
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
         pCmd:SetViewAngles(aimpos:Unpack())      --engine.SetViewAngles(aimpos)
-    elseif flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
+    
+    elseif Maimbot:GetValue() and flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack())                                         --  engine.SetViewAngles(aimpos) --
-    elseif flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
+    
+    elseif Maimbot:GetValue() and flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
-    end
+    
+    elseif pLocal:InCond(17) then
+
+-- Calculate the source and destination vectors
+    -- Get the current view angles
+    local currentAngles = engine.GetViewAngles()
+    local sensetivity = client.GetConVar("sensitivity") --mSensetivity:GetValue() / 10 --0.4
+    -- Get the mouse motion
+    local mouseDeltaX = -(pCmd.mousedx * sensetivity / 100)
+    -- Calculate the new yaw angle
+    local newYaw = currentAngles.yaw + mouseDeltaX
+
+    -- Create the new view angles
+    local newAngles = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
+
+    -- Set the new view angles
+    engine.SetViewAngles(newAngles)
+end
        
     --[shield bashing strat]
 
@@ -411,10 +441,10 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
         end
     end
 
-        --Attack when futere position is inside attack range triggerbox
+        --Check if attack simulation was succesfull
             if can_attack then
                 
-               pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+               pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
 
             elseif mAutoRefill:GetValue() then
                 if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 400 then
@@ -462,6 +492,15 @@ if not mmVisuals:GetValue() then return end
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+            end
+
+            -- draw turn angle
+            if pivot ~= nil then
+                screenPos = client.WorldToScreen(pivot)
+                if screenPos ~= nil then
+                    draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
+                    draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+                end
             end
 
         -- draw predicted enemy position with strafe prediction connecting his local point and predicted position with line.
