@@ -42,6 +42,7 @@ local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Silent)", true,
 local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("charge steer", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
+local Achargebot     = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
@@ -83,7 +84,7 @@ local Safe_Strafe = false
 local latency = 0
 local lerp = 0
 local pivot
-
+local can_charge = false
 local settings = {
     MinDistance = 200,
     MaxDistance = 1000,
@@ -374,18 +375,31 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
 --[[check if can hit after swing]]
                 -- Simulate swing and return result
                 local collisionPoint
+                
                 local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
                     can_attack = collision
+                    can_charge = false
 
                     if collision then
                         can_attack = true
-                    elseif collision == false then
+                    elseif not collision then
                         collision, collisionPoint = checkCollision(vPlayerOrigin, pLocalOrigin, swingrange)
                         if collision then
                             can_attack = true
                         end
                     end
 
+                    if Achargebot:GetValue() and chargeLeft >= 100.0 then
+                        collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, (swingrange * 1.5)) --increased range when in charge
+                        if collision then              
+                            can_attack = true
+                            tick_count = tick_count + 1
+                            if tick_count % 6 == 0 then
+                                can_charge = true
+                            end
+                        end
+                    end
+                    
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = closestPlayer:GetHitboxes()
     local hitbox = hitboxes[4]
@@ -452,6 +466,12 @@ end
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
             end
+
+            if can_charge then
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
+            end
+        
+
 
 -- Update last variables
             vPlayerOriginLast = vPlayerOrigin
