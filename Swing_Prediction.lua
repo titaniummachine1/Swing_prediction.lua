@@ -258,7 +258,7 @@ local function OnCreateMove(pCmd)
         local time = 16
             local latIn, latOut = clientstate.GetLatencyIn(), clientstate.GetLatencyOut()
             local lerp = client.GetConVar("cl_interp") or 0
-            local Tolerance = 2
+            local Tolerance = 1
             --print(lerp)
             -- Define the reaction time in seconds
             local Latency = (latOut + lerp )
@@ -463,7 +463,6 @@ end
             end
 
             if can_charge then
-                pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
             end
         
