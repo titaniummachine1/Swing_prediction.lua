@@ -260,7 +260,7 @@ local function OnCreateMove(pCmd)
         local time = 16
             local latIn, latOut = clientstate.GetLatencyIn(), clientstate.GetLatencyOut()
             local lerp = client.GetConVar("cl_interp") or 0
-            local Tolerance = 1
+            local Tolerance = 2
             --print(lerp)
             -- Define the reaction time in seconds
             local Latency = (latOut + lerp )
@@ -381,7 +381,7 @@ end
                         end
                     end
 
-                    if Achargebot:GetValue() and chargeLeft >= 100.0 then
+                    if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100.0 then
                         collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5)) --increased range when in charge
                         local Tolerance1 = time - 16
                         if collision then
@@ -653,7 +653,7 @@ if not mmVisuals:GetValue() then return end
     end
 
     -- Draw a second circle if Achargebot is enabled
-    if Achargebot:GetValue() and chargeLeft >= 100 then
+    if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100 then
         -- Define the color for the second circle
         local color = {r = 0, g = 0, b = 255, a = 255} -- blue
 
