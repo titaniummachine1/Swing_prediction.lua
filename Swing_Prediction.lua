@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Silent)", true, ItemFlags.FullWidth))
 local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("charge steer", true, ItemFlags.FullWidth))
-local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,180 ,180 ))
+local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local Achargebot     = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
@@ -48,7 +48,7 @@ local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
 local Visuals = {
     ["Range Circle"] = true,
-    ["Draw Trail"] = false
+    ["Visualization"] = true
 }
 
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
@@ -68,15 +68,19 @@ local pLocalOrigin
 local ping = 0
 local Safe_Strafe = false
 local swingrange
+local time = 16
 local tick
 local tickRate = 66
 local tick_count = 0
 local viewheight
+local Vheight
 local vdistance
 local vPlayerFuture
+local vPlayer
 local vPlayerOrigin
 local vPlayerOriginLast
 local chargeLeft
+local target_strafeAngle
 
 local pivot
 local can_charge = false
@@ -88,6 +92,45 @@ local settings = {
     MinFOV = 0,
     MaxFOV = mFov:GetValue(),
 }
+
+local latency = 0
+local lerp = 0
+local lastAngles = {} ---@type EulerAngles[]
+local strafeAngles = {} ---@type number[]
+
+---@param me WPlayer
+local function CalcStrafe(me)
+    local players = entities.FindByClass("CTFPlayer")
+    for idx, entity in ipairs(players) do
+        if entity:IsDormant() or not entity:IsAlive() then
+            lastAngles[idx] = nil
+            strafeAngles[idx] = nil
+            goto continue
+        end
+
+        -- Ignore teammates (for now)
+        if entity:GetTeamNumber() == me:GetTeamNumber() then
+            goto continue
+        end
+
+        local v = entity:EstimateAbsVelocity()
+        local angle = v:Angles()
+
+        -- Play doesn't have a last angle
+        if lastAngles[idx] == nil then
+            lastAngles[idx] = angle
+            goto continue
+        end
+
+        -- Calculate the delta angle
+        if angle.y ~= lastAngles[idx].y then
+            strafeAngles[idx] = angle.y - lastAngles[idx].y
+        end
+        lastAngles[idx] = angle
+
+        ::continue::
+    end
+end
 
 ---@param me WPlayer
 ---@return AimTarget? target
@@ -162,11 +205,11 @@ end
   -- those parrams are super important!!! dont change them
 ---@param player WPlayer
 ---@return AimTarget?
-local function TargetPositionPrediction(targetLastPos, time, targetEntity) -- predicts player position after set amount of ticks
+local function TargetPositionPrediction(targetLastPos, time, targetEntity, strafeAngle) -- predicts player position after set amount of ticks
 
    local player = WPlayer.FromEntity(targetEntity)
 
-    local predData = Prediction.Player(player, time)
+    local predData = Prediction.Player(player, time, strafeAngle)
     if not predData then return nil end
 
     local pos = predData.pos[time]
@@ -257,9 +300,9 @@ local function OnCreateMove(pCmd)
             if pLocalClass == 8 then goto continue end --when local player is spy then skip code
 
  -- Get current latency and lerp
-        local time = 16
+        time = 16
             local latIn, latOut = clientstate.GetLatencyIn(), clientstate.GetLatencyOut()
-            local lerp = client.GetConVar("cl_interp") or 0
+            lerp = client.GetConVar("cl_interp") or 0
             local Tolerance = 2
             --print(lerp)
             -- Define the reaction time in seconds
@@ -270,6 +313,7 @@ local function OnCreateMove(pCmd)
             -- Add the ticks to the current time
             time = time + Latency - Tolerance
 
+            settings.MaxDistance = time * pLocal:EstimateAbsVelocity():Length()
 --[--obtain secondary information after confirming we need it for fps boost whe nnot using script]
                 local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
                 local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
@@ -307,7 +351,6 @@ local function OnCreateMove(pCmd)
     if not isMelee then goto continue end -- if not melee then skip code
 
 --[-------get vierwhegiht Optymised--------]
-local Vheight
     if pLocalClass ~= pLocalClasslast then
         if pLocal == nil then pLocalOrigin = pLocal:GetAbsOrigin() return pLocalOrigin end
         --get pLocal eye level and set vector at our eye level to ensure we cehck distance from eyes
@@ -323,8 +366,10 @@ local Vheight
 local keybind = mKeyOverrite:GetValue()
     if (keybind == KEY_NONE) and GetBestTarget(pLocal) ~= nil then -- check if player had no key bound
         closestPlayer = GetBestTarget(pLocal).entity --GetClosestEnemy(pLocal, pLocalOrigin, players)
+        vPlayer = closestPlayer
     elseif input.IsButtonDown(keybind) and GetBestTarget(pLocal) ~= nil then -- if player boudn key for aimbot then only work when its on.
         closestPlayer = GetBestTarget(pLocal).entity
+        vPlayer = closestPlayer
     end
 --[-----Refil and skip code when alone-----]
 
@@ -342,14 +387,21 @@ end
                 -- If the local player is not accelerating, set the predicted position to the current position
                 pLocalFuture = pLocalOrigin
             else
+                CalcStrafe(pLocal)
+
+                local strafeAngle = strafeAngles[pLocal:GetIndex()]
                 -- If the local player is accelerating, predict the future position
-                pLocalFuture = TargetPositionPrediction(pLocalOrigin, time, pLocal) + Vheight
+                pLocalFuture = TargetPositionPrediction(pLocalOrigin, time, pLocal, strafeAngle) + Vheight
             end
 
             if pLocal:EstimateAbsVelocity() == 0 then
-                vPlayerFuture = closestPlayer
-            else 
-                vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer)
+                vPlayerFuture = closestPlayer:GetAbsOrigin()
+            else
+                CalcStrafe(closestPlayer)
+
+                local strafeAngle = strafeAngles[closestPlayer:GetIndex()]
+                target_strafeAngle = strafeAngle
+                vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer, strafeAngle)
             end
 --[--------------Distance check-------------------]
         --get current distance between local player and closest player
@@ -375,14 +427,26 @@ end
                     if collision then
                         can_attack = true
                     elseif not collision then
-                        collision, collisionPoint = checkCollision(vPlayerOrigin, pLocalOrigin, swingrange)
+                        collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
                         if collision then
                             can_attack = true
                         end
+
+                        --[[if not collision then -- test for attacks without lag compensation
+                            local temp_pLocalFuture = TargetPositionPrediction(pLocalOrigin, time - Latency, pLocal) + Vheight
+                            local temp_vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time - Latency, closestPlayer)
+                            local collision1
+                            local collisionPoint1
+                            collision1 = checkCollision(temp_vPlayerFuture , temp_pLocalFuture, swingrange)
+                            if collision1 then
+                                can_attack = true
+                            end
+                        end]]
                     end
 
                     if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100.0 then
                         collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5)) --increased range when in charge
+                        
                         local Tolerance1 = time - 16
                         if collision then
                             can_attack = true
@@ -422,20 +486,20 @@ end
     
     elseif Mchargebot:GetValue() and pLocal:InCond(17) and not Maimbot:GetValue() then
 
--- Calculate the source and destination vectors
-    -- Get the current view angles
-    local currentAngles = engine.GetViewAngles()
-    local sensetivity = client.GetConVar("sensitivity") --mSensetivity:GetValue() / 10 --0.4
-    -- Get the mouse motion
-    local mouseDeltaX = -(pCmd.mousedx * sensetivity / 100)
-    -- Calculate the new yaw angle
-    local newYaw = currentAngles.yaw + mouseDeltaX
+    -- Calculate the source and destination vectors
+        -- Get the current view angles
+        local currentAngles = engine.GetViewAngles()
+        local sensetivity = client.GetConVar("sensitivity") --mSensetivity:GetValue() / 10 --0.4
+        -- Get the mouse motion
+        local mouseDeltaX = -(pCmd.mousedx * sensetivity / 100)
+        -- Calculate the new yaw angle
+        local newYaw = currentAngles.yaw + mouseDeltaX
 
-    -- Create the new view angles
-    local newAngles = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
+        -- Create the new view angles
+        local newAngles = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
 
-    -- Set the new view angles
-    engine.SetViewAngles(newAngles)
+        -- Set the new view angles
+        engine.SetViewAngles(newAngles)
 end
        
     --[shield bashing strat]
@@ -501,30 +565,13 @@ if not mmVisuals:GetValue() then return end
         local screenPos = { w / 2 - 15, h / 2 + 35}
 
         local vPlayerTargetPos = vPlayerFuture
-        -- draw predicted local position with strafe prediction
+        
+            --[[ draw predicted local position with strafe prediction
             screenPos = client.WorldToScreen(pLocalFuture)
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
-            end
-
-            -- draw turn angle
-            if pivot ~= nil then
-                screenPos = client.WorldToScreen(pivot)
-                if screenPos ~= nil then
-                    draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
-                    draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
-                end
-            end
-
-        -- draw predicted enemy position with strafe prediction connecting his local point and predicted position with line.
-            screenPos = client.WorldToScreen(vPlayerTargetPos)
-            if screenPos ~= nil then
-                local screenPos1 = client.WorldToScreen(vPlayerOrigin)
-                if screenPos1 ~= nil then
-                    draw.Line( screenPos1[1], screenPos1[2], screenPos[1], screenPos[2])
-                end
-            end
+            end]]
 
 
             -- Define function to draw the triggerbox
@@ -560,34 +607,61 @@ if not mmVisuals:GetValue() then return end
                     if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
                 end
 
-                -- Strafe prediction visualization
-                if mVisuals:IsSelected("Draw Trail") then
-                    local maxPositions = 20
-                    if predictedPositions == nil then
-                        predictedPositions = {}
-                    end
-        
-                    -- Add the latest predicted position to the beginning of the table
-                    table.insert(predictedPositions, 1, pLocalFuture)
-        
-                    -- Remove the last position in the table if there are more than 5
-                    if #predictedPositions > maxPositions then
-                        table.remove(predictedPositions, maxPositions + 1)
-                    end
-        
-                    -- Draw lines between the past 5 positions
-                    for i = 1, math.min(#predictedPositions - 1, maxPositions - 1) do
-                        local pos1 = predictedPositions[i]
-                        local pos2 = predictedPositions[i + 1]
-        
-                        local screenPos1 = client.WorldToScreen(pos1)
-                        local screenPos2 = client.WorldToScreen(pos2)
-        
-                        if screenPos1 ~= nil and screenPos2 ~= nil then
-                            draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
-                        end
-                    end
-        end
+        -- Strafe prediction visualization
+        if mVisuals:IsSelected("Visualization") then
+            CalcStrafe(pLocal)
+
+            local strafeAngle = strafeAngles[pLocal:GetIndex()]
+
+            local predictedPositions = {} -- table to store all predicted positions
+            -- Predict the position for each tick until we reach the final tick we want to predict
+            for i = 1, time do
+                local tickTime = i
+                local pos = TargetPositionPrediction(pLocalOrigin, tickTime, pLocal, strafeAngle)
+
+                -- Add the predicted position to the table
+                table.insert(predictedPositions, pos)
+            end
+
+            -- Draw lines between the predicted positions
+            for i = 1, #predictedPositions - 1 do
+                local pos1 = predictedPositions[i]
+                local pos2 = predictedPositions[i + 1]
+
+                local screenPos1 = client.WorldToScreen(pos1)
+                local screenPos2 = client.WorldToScreen(pos2)
+
+                if screenPos1 ~= nil and screenPos2 ~= nil then
+                    draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                end
+            end
+
+            -- enemy
+
+            local predictedPositions1 = {} -- table to store all predicted positions
+            -- Predict the position for each tick until we reach the final tick we want to predict
+            for i = 1, time do
+                local tickTime = i
+                local pos = TargetPositionPrediction(vPlayerOrigin, tickTime, vPlayer, target_strafeAngle)
+
+                -- Add the predicted position to the table
+                table.insert(predictedPositions1, pos)
+            end
+
+            -- Draw lines between the predicted positions
+            for i = 1, #predictedPositions1 - 1 do
+                local pos1 = predictedPositions1[i]
+                local pos2 = predictedPositions1[i + 1]
+
+                local screenPos3 = client.WorldToScreen(pos1)
+                local screenPos4 = client.WorldToScreen(pos2)
+
+                if screenPos3 ~= nil and screenPos4 ~= nil then
+                    draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                end
+            end
+                
+            end
 
         -- Check if the range circle is selected, the player future is not nil, and the player is melee
     if not mVisuals:IsSelected("Range Circle") or not vPlayerFuture or not isMelee then
@@ -605,7 +679,7 @@ if not mmVisuals:GetValue() then return end
     local center = pLocalFuture + Vector3(0, 0, -70) -- center of the circle
     local radius = swingrange -- radius of the circle
     local segments = 64 -- number of segments to use for the circle
-    local vertices = {} -- table to store circle vertices
+    vertices = {} -- table to store circle vertices
     local colors = {} -- table to store colors for each vertex
 
     for i = 1, segments do
