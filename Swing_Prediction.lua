@@ -81,6 +81,7 @@ local vPlayerOrigin
 local vPlayerOriginLast
 local chargeLeft
 local target_strafeAngle
+local onGround
 
 local pivot
 local can_charge = false
@@ -203,19 +204,22 @@ end
 
     
   -- those parrams are super important!!! dont change them
----@param player WPlayer
----@return AimTarget?
-local function TargetPositionPrediction(targetLastPos, time, targetEntity, strafeAngle) -- predicts player position after set amount of ticks
-
-   local player = WPlayer.FromEntity(targetEntity)
-
+-- Predicts player position after set amount of ticks
+---@param targetLastPos Vector3
+---@param time integer
+---@param targetEntity number
+---@param strafeAngle number
+---@return Vector3?, boolean?
+local function TargetPositionPrediction(targetLastPos, time, targetEntity, strafeAngle)
+    local player = WPlayer.FromEntity(targetEntity)
     local predData = Prediction.Player(player, time, strafeAngle)
     if not predData then return nil end
 
     local pos = predData.pos[time]
-
-        return pos
-
+    if targetEntity == pLocal then
+        onGround = (predData.onGround[time])
+    end
+    return pos
 end
 
 
@@ -380,29 +384,48 @@ if closestPlayer == nil then
 end
 
     vPlayerOrigin = closestPlayer:GetAbsOrigin() -- get closest player origin
+        local ONGround
+        local Target_ONGround
+        local flags = pLocal:GetPropInt( "m_fFlags" )
 
 --[--------------Prediction-------------------] -- predict both players position after swing
-
             if pLocal:EstimateAbsVelocity() == 0 then
                 -- If the local player is not accelerating, set the predicted position to the current position
                 pLocalFuture = pLocalOrigin
+                ONGround = (flags & FL_ONGROUND == 1)
             else
+                ONGround = (flags & FL_ONGROUND == 1)
                 CalcStrafe(pLocal)
 
-                local strafeAngle = strafeAngles[pLocal:GetIndex()]
-                -- If the local player is accelerating, predict the future position
+                if not ONGround then
+                    local strafeAngle = strafeAngles[pLocal:GetIndex()]
+                else
+                    local strafeAngle = 0
+                end
+                
+                -- If the local player is accelerating, predict the future position   
                 pLocalFuture = TargetPositionPrediction(pLocalOrigin, time, pLocal, strafeAngle) + Vheight
+                
             end
 
             if pLocal:EstimateAbsVelocity() == 0 then
                 vPlayerFuture = closestPlayer:GetAbsOrigin()
+                Target_ONGround = (flags & FL_ONGROUND == 1)
             else
                 CalcStrafe(closestPlayer)
+                Target_ONGround = (flags & FL_ONGROUND == 1)
 
-                local strafeAngle = strafeAngles[closestPlayer:GetIndex()]
+                if not ONGround then
+                    local strafeAngle = strafeAngles[closestPlayer:GetIndex()]
+                else
+                    local strafeAngle = 0
+                end
+
                 target_strafeAngle = strafeAngle
                 vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer, strafeAngle)
             end
+
+            
 --[--------------Distance check-------------------]
         --get current distance between local player and closest player
         vdistance = (vPlayerOrigin - pLocalOrigin):Length()
@@ -419,7 +442,100 @@ end
 --[[check if can hit after swing]]
                 -- Simulate swing and return result
                 local collisionPoint
-                
+                local pUsingMargetGarden = false
+                   --[[ Features that require access to the weapon ]]--
+        pWeapon               = pLocal:GetPropEntity( "m_hActiveWeapon" )            -- Set "pWeapon" to the local player's active weapon
+        local pWeaponDefIndex = pWeapon:GetPropInt( "m_iItemDefinitionIndex" )       -- Set "pWeaponDefIndex" to the "pWeapon"'s item definition index
+        local pWeaponDef      = itemschema.GetItemDefinitionByID( pWeaponDefIndex )  -- Set "pWeaponDef" to the local "pWeapon"'s item definition
+        local pWeaponName     = pWeaponDef:GetName()
+
+        if pWeaponDefIndex == 416 then                                               -- If "pWeapon" is not set, break
+            pUsingMargetGarden = true                                             -- Set "pUsingProjectileWeapon" to true
+        end                                          -- Set "pUsingProjectileWeapon" to false
+        
+        
+--[[Hit Detection -------------------------------------------------]]
+            if pUsingMargetGarden == true then
+                if pLocal:InCond(81) and not onGround then
+                    local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
+                        can_attack = collision
+                        can_charge = false
+                    
+                        if collision and pLocal:InCond(81) then
+                            can_attack = true
+                        elseif not collision then
+                            collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
+                            if collision then
+                                can_attack = true
+                            end
+
+                            --[[if not collision then -- test for attacks without lag compensation
+                                local temp_pLocalFuture = TargetPositionPrediction(pLocalOrigin, time - Latency, pLocal) + Vheight
+                                local temp_vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time - Latency, closestPlayer)
+                                local collision1
+                                local collisionPoint1
+                                collision1 = checkCollision(temp_vPlayerFuture , temp_pLocalFuture, swingrange)
+                                if collision1 then
+                                    can_attack = true
+                                end
+                            end]]
+                        end
+
+                        if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100.0 then
+                            collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5)) --increased range when in charge
+                            
+                            local Tolerance1 = time - 16
+                            if collision then
+                                can_attack = true
+                                tick_count = tick_count + 1
+                                if tick_count % Tolerance1 == 0 then
+                                    can_charge = true
+                                end
+                            end
+                        end
+
+                elseif not pLocal:InCond(81) and onGround then
+
+                        local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
+                        can_attack = collision
+                        can_charge = false
+                    
+                        if collision and pLocal:InCond(81) then
+                            can_attack = true
+                        elseif not collision then
+                            collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
+                            if collision then
+                                can_attack = true
+                            end
+
+                            --[[if not collision then -- test for attacks without lag compensation
+                                local temp_pLocalFuture = TargetPositionPrediction(pLocalOrigin, time - Latency, pLocal) + Vheight
+                                local temp_vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time - Latency, closestPlayer)
+                                local collision1
+                                local collisionPoint1
+                                collision1 = checkCollision(temp_vPlayerFuture , temp_pLocalFuture, swingrange)
+                                if collision1 then
+                                    can_attack = true
+                                end
+                            end]]
+                        end
+
+                        if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100.0 then
+                            collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5)) --increased range when in charge
+                            
+                            local Tolerance1 = time - 16
+                            if collision then
+                                can_attack = true
+                                tick_count = tick_count + 1
+                                if tick_count % Tolerance1 == 0 then
+                                    can_charge = true
+                                end
+                            end
+                        end
+                end
+                  
+            else
+
                 local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
                     can_attack = collision
                     can_charge = false
@@ -456,6 +572,7 @@ end
                             end
                         end
                     end
+            end
                     
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = closestPlayer:GetHitboxes()
