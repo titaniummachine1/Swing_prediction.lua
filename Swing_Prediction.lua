@@ -40,7 +40,7 @@ end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Silent)", true, ItemFlags.FullWidth))
 local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("charge steer", true, ItemFlags.FullWidth))
-local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
+local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,180 ,180 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local Achargebot     = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
@@ -76,6 +76,7 @@ local vdistance
 local vPlayerFuture
 local vPlayerOrigin
 local vPlayerOriginLast
+local chargeLeft
 
 local pivot
 local can_charge = false
@@ -116,6 +117,7 @@ local function GetBestTarget(me)
 
         local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), player:GetAbsOrigin())
         local fov = Math.AngleFov(engine.GetViewAngles(), angles)
+        if fov > settings.MaxFOV then goto continue end
 
         local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.1)
         local healthFactor = Math.RemapValClamped(health, settings.MinHealth, settings.MaxHealth, 1, 0.5)
@@ -139,11 +141,11 @@ local function GetBestTarget(me)
         local aimPos = player:GetAbsOrigin()
         local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), aimPos)
         local fov = Math.AngleFov(angles, engine.GetViewAngles())
-        if fov > settings.MaxFOV then goto continue end
         if gui.GetValue("ignore cloaked") == 1 and (target.player:InCond(4)) then goto continue end
 
         -- Visibility Check
         if not Helpers.VisPos(player, pLocalOrigin, aimPos) then goto continue end
+
         if target.player == nil or not target.player:IsAlive() or target.player:GetTeamNumber() == pLocal:GetTeamNumber() then goto continue end
         
         -- Set as best target
@@ -247,7 +249,7 @@ local function OnCreateMove(pCmd)
         pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
         if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
         ping = entities.GetPlayerResources():GetPropDataTableInt("m_iPing")[pLocal:GetIndex()]
-        local chargeLeft = pLocal:GetPropFloat( "m_flChargeMeter" )
+        chargeLeft = pLocal:GetPropFloat( "m_flChargeMeter" )
         --[--Check local player class if spy or none then stop code--]
 
         pLocalClass = pLocal:GetPropInt("m_iClass") --getlocalclass
@@ -362,11 +364,6 @@ end
             local stop = false
             swingrange = pWeapon:GetSwingRange()
 
---[----------------wall check Future-------------]
-
--- Visiblity Check
-if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) then goto continue end-- Visiblity Check
-
 --[[check if can hit after swing]]
                 -- Simulate swing and return result
                 local collisionPoint
@@ -386,10 +383,11 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
 
                     if Achargebot:GetValue() and chargeLeft >= 100.0 then
                         collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5)) --increased range when in charge
+                        local Tolerance1 = time - 16
                         if collision then
                             can_attack = true
                             tick_count = tick_count + 1
-                            if tick_count % 6 == 0 then
+                            if tick_count % Tolerance1 == 0 then
                                 can_charge = true
                             end
                         end
@@ -591,77 +589,111 @@ if not mmVisuals:GetValue() then return end
                     end
         end
 
-    if mVisuals:IsSelected("Range Circle") == false then return end
-if vPlayerFuture == nil then return end
-if not isMelee then return end
+        -- Check if the range circle is selected, the player future is not nil, and the player is melee
+    if not mVisuals:IsSelected("Range Circle") or not vPlayerFuture or not isMelee then
+        return
+    end
 
--- Define the two colors to interpolate between
-local color_close = {r = 255, g = 0, b = 0, a = 255} -- red
-local color_far = {r = 0, g = 0, b = 255, a = 255} -- blue
+    -- Define the two colors to interpolate between
+    local color_close = {r = 255, g = 0, b = 0, a = 255} -- red
+    local color_far = {r = 0, g = 0, b = 255, a = 255} -- blue
 
--- Calculate the target distance for the color to be completely at the close color
-local target_distance = swingrange
+    -- Calculate the target distance for the color to be completely at the close color
+    local target_distance = swingrange
 
--- Calculate the vertex positions around the circle
-local center = pLocalFuture + Vector3(0, 0, -70) -- center of the circle
-local radius = swingrange -- radius of the circle
-local segments = 64 -- number of segments to use for the circle
-vertices = {} -- table to store circle vertices
-local colors = {} -- table to store colors for each vertex
+    -- Calculate the vertex positions around the circle
+    local center = pLocalFuture + Vector3(0, 0, -70) -- center of the circle
+    local radius = swingrange -- radius of the circle
+    local segments = 64 -- number of segments to use for the circle
+    local vertices = {} -- table to store circle vertices
+    local colors = {} -- table to store colors for each vertex
 
-for i = 1, segments do
-  local angle = math.rad(i * (360 / segments))
-  local direction = Vector3(math.cos(angle), math.sin(angle), 0)
-  local endpos = center + direction * radius
-  local trace = engine.TraceLine(vPlayerFuture, endpos, MASK_SHOT_HULL)
+    for i = 1, segments do
+        local angle = math.rad(i * (360 / segments))
+        local direction = Vector3(math.cos(angle), math.sin(angle), 0)
+        local endpos = center + direction * radius
+        local trace = engine.TraceLine(vPlayerFuture, endpos, MASK_SHOT_HULL)
 
-  local distance_to_hit = (trace.endpos - center):Length()
-  if distance_to_hit > radius then
-    distance_to_hit = radius
-  end
+        local distance_to_hit = math.min((trace.endpos - center):Length(), radius)
 
-  local x = center.x + math.cos(angle) * distance_to_hit
-  local y = center.y + math.sin(angle) * distance_to_hit
-  local z = center.z + 1
+        local x = center.x + math.cos(angle) * distance_to_hit
+        local y = center.y + math.sin(angle) * distance_to_hit
+        local z = center.z + 1
 
-  -- adjust the height based on distance to trace hit point
-  if distance_to_hit > 0 then
-    local max_height_adjustment = mTHeightt -- adjust as needed
-    local height_adjustment = (1 - distance_to_hit / radius) * max_height_adjustment
-    z = z + height_adjustment
-  end
+        -- adjust the height based on distance to trace hit point
+        if distance_to_hit > 0 then
+            local max_height_adjustment = mTHeightt -- adjust as needed
+            local height_adjustment = (1 - distance_to_hit / radius) * max_height_adjustment
+            z = z + height_adjustment
+        end
 
-  vertices[i] = client.WorldToScreen(Vector3(x, y, z))
+        vertices[i] = client.WorldToScreen(Vector3(x, y, z))
 
-  -- calculate the color for this line based on the height of the point
-  local t = (z - center.z - target_distance) / (mTHeightt - target_distance)
-  if t < 0 then
-    t = 0
-  elseif t > 1 then
-    t = 1
-  end
-  local color = {}
-  for key, value in pairs(color_close) do
-    color[key] = math.floor((1 - t) * value + t * color_far[key])
-  end
-  colors[i] = color
-end
+        -- calculate the color for this line based on the height of the point
+        local t = math.max(math.min((z - center.z - target_distance) / (mTHeightt - target_distance), 1), 0)
+        local color = {}
+        for key, value in pairs(color_close) do
+            color[key] = math.floor((1 - t) * value + t * color_far[key])
+        end
+        colors[i] = color
+    end
 
--- Calculate the top vertex position
-local top_height = mTHeightt -- adjust as needed
-local top_vertex = client.WorldToScreen(Vector3(center.x, center.y, center.z + top_height))
+    -- Calculate the top vertex position
+    local top_height = mTHeightt -- adjust as needed
+    local top_vertex = client.WorldToScreen(Vector3(center.x, center.y, center.z + top_height))
 
--- Draw the circle and connect all the vertices to the top point
-for i = 1, segments do
-  local j = i + 1
-  if j > segments then j = 1 end
-  if vertices[i] ~= nil and vertices[j] ~= nil then
-    draw.Color(colors[i].r, colors[i].g, colors[i].b, colors[i].a)
-    draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
-      --draw.Line(vertices[i][1], vertices[i][2], top_vertex[1], top_vertex[2])
-    
-  end
-end
+    -- Draw the circle and connect all the vertices to the top point
+    for i = 1, segments do
+        local j = i + 1
+        if j > segments then j = 1 end
+        if vertices[i] and vertices[j] then
+            draw.Color(colors[i].r, colors[i].g, colors[i].b, colors[i].a)
+            draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
+        end
+    end
+
+    -- Draw a second circle if Achargebot is enabled
+    if Achargebot:GetValue() and chargeLeft >= 100 then
+        -- Define the color for the second circle
+        local color = {r = 0, g = 0, b = 255, a = 255} -- blue
+
+        -- Calculate the radius for the second circle
+        local radius2 = radius * 1.5
+
+        -- Calculate the vertex positions around the second circle
+        local vertices2 = {} -- table to store circle vertices
+        for i = 1, segments do
+            local angle = math.rad(i * (360 / segments))
+            local direction = Vector3(math.cos(angle), math.sin(angle), 0)
+            local endpos = center + direction * radius2
+            local trace = engine.TraceLine(vPlayerFuture, endpos, MASK_SHOT_HULL)
+
+            local distance_to_hit = math.min((trace.endpos - center):Length(), radius2)
+
+            local x = center.x + math.cos(angle) * distance_to_hit
+            local y = center.y + math.sin(angle) * distance_to_hit
+            local z = center.z + 1
+
+            -- adjust the height based on distance to trace hit point
+            if distance_to_hit > 0 then
+                local max_height_adjustment = mTHeightt -- adjust as needed
+                local height_adjustment = (1 - distance_to_hit / radius2) * max_height_adjustment
+                z = z + height_adjustment
+            end
+
+            vertices2[i] = client.WorldToScreen(Vector3(x, y, z))
+        end
+
+        -- Draw the second circle and connect all the vertices to the top point
+        for i = 1, segments do
+            local j = i + 1
+            if j > segments then j = 1 end
+            if vertices2[i] and vertices2[j] then
+                draw.Color(color.r, color.g, color.b, color.a)
+                draw.Line(vertices2[i][1], vertices2[i][2], vertices2[j][1], vertices2[j][2])
+            end
+        end
+    end
 end
 
 --[[ Remove the menu when unloaded ]]--
