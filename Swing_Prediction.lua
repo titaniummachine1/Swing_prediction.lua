@@ -52,37 +52,31 @@ local Visuals = {
 }
 
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
-
-if GetViewHeight ~= nil then
-    local mTHeightt = GetViewHeight()
-end
-local vPlayerOriginLast
-local pLocalOriginLast
+local closestDistance = 2000
+local fDistance
+local hitbox_max = Vector3(-14, -14, 85)
+local hitbox_min = Vector3(14, 14, 0)
+local isMelee = false
+local mresolution = 128
 local mTHeightt = 85
 local msamples = 66
 local pastPredictions = {}
-local hitbox_min = Vector3(14, 14, 0)
-local hitbox_max = Vector3(-14, -14, 85)
-local vPlayerOrigin = nil
-local pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
-local tickRate = 66 -- game tick rate
-local pLocalOrigin
-local closestDistance = 2000
-local tick
+local pLocal = entities.GetLocalPlayer()
 local pLocalClass
-local swingrange
-local mresolution = 128
-local viewheight
-local tick_count = 0
-local isMelee = false
-local vdistance
-local fDistance
-local vPlayerFuture
 local pLocalFuture
+local pLocalOrigin
 local ping = 0
 local Safe_Strafe = false
-local latency = 0
-local lerp = 0
+local swingrange
+local tick
+local tickRate = 66
+local tick_count = 0
+local viewheight
+local vdistance
+local vPlayerFuture
+local vPlayerOrigin
+local vPlayerOriginLast
+
 local pivot
 local can_charge = false
 local settings = {
@@ -260,10 +254,23 @@ local function OnCreateMove(pCmd)
             if pLocalClass == nil then goto continue end --when local player did not chose class then skip code
             if pLocalClass == 8 then goto continue end --when local player is spy then skip code
 
+ -- Get current latency and lerp
+        local time = 16
+            local latIn, latOut = clientstate.GetLatencyIn(), clientstate.GetLatencyOut()
+            local lerp = client.GetConVar("cl_interp") or 0
+            local Tolerance = 2
+            --print(lerp)
+            -- Define the reaction time in seconds
+            local Latency = (latOut + lerp )
+            -- Convert the delay to ticks
+            Latency = math.floor( Latency * tickRate )
+            
+            -- Add the ticks to the current time
+            time = time + Latency - Tolerance
+
 --[--obtain secondary information after confirming we need it for fps boost whe nnot using script]
                 local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
                 local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
-                local time = 16
                 local closestPlayer
                 if #players == 0 then return end  -- Immediately check if there are any players in the game. If there aren't, return.
 --[--if we enabled trodlier assist run auto weapon script]
@@ -329,18 +336,6 @@ end
 
 --[--------------Prediction-------------------] -- predict both players position after swing
 
-            -- Get current latency
-            local latIn, latOut = clientstate.GetLatencyIn(), clientstate.GetLatencyOut()
-            if latIn and latOut then
-                latency = latIn + latOut
-            else
-                latency = 0
-            end
-                -- Get current lerp
-            lerp = client.GetConVar("cl_interp") or 0
-
-            time = math.floor(time + latency + lerp)
-
             if pLocal:EstimateAbsVelocity() == 0 then
                 -- If the local player is not accelerating, set the predicted position to the current position
                 pLocalFuture = pLocalOrigin
@@ -390,8 +385,8 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
                     end
 
                     if Achargebot:GetValue() and chargeLeft >= 100.0 then
-                        collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, (swingrange * 1.5)) --increased range when in charge
-                        if collision then              
+                        collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5)) --increased range when in charge
+                        if collision then
                             can_attack = true
                             tick_count = tick_count + 1
                             if tick_count % 6 == 0 then
@@ -427,7 +422,7 @@ if not Helpers.VisPos(closestPlayer,vPlayerFuture + Vector3(0, 0, 150), pLocalFu
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
     
-    elseif Mchargebot:GetValue() and pLocal:InCond(17) then
+    elseif Mchargebot:GetValue() and pLocal:InCond(17) and not Maimbot:GetValue() then
 
 -- Calculate the source and destination vectors
     -- Get the current view angles
@@ -468,6 +463,7 @@ end
             end
 
             if can_charge then
+                pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
             end
         
