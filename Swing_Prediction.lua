@@ -49,7 +49,7 @@ local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
 local Visuals = {
     ["Range Circle"] = true,
-    ["Visualization"] = true
+    ["Visualization"] = false
 }
 
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
@@ -81,11 +81,11 @@ local vdistance = 1
 local vPlayerFuture
 local vPlayer
 local vPlayerOrigin
-local vPlayerOriginLast
 local chargeLeft
 local target_strafeAngle
 local onGround
-
+local pLocalPath = {}
+local TargetPath = {}
 
 local pivot
 local can_charge = false
@@ -209,22 +209,25 @@ local function GetBestTarget(me)
 end
 
     
-  -- those parrams are super important!!! dont change them
 -- Predicts player position after set amount of ticks
 ---@param targetLastPos Vector3
 ---@param time integer
 ---@param targetEntity number
 ---@param strafeAngle number
----@return Vector3?, boolean?
+---@return Vector3?
 local function TargetPositionPrediction(targetLastPos, time, targetEntity, strafeAngle)
     local player = WPlayer.FromEntity(targetEntity)
     local predData = Prediction.Player(player, time, strafeAngle)
+
     if not predData then return nil end
 
-    local pos = predData.pos[time]
     if targetEntity == pLocal then
-        onGround = (predData.onGround[time])
+        pLocalPath = predData.path
+    else
+        TargetPath = predData.path
     end
+
+    local pos = predData.pos[time]
     return pos
 end
 
@@ -280,12 +283,6 @@ local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
     end
 end
 
-    
-    
-    
-    
-
-
 local Hitbox = {
     Head = 1,
     Neck = 2,
@@ -304,10 +301,10 @@ function UpdateViewAngles(pCmd)
     local newYaw = currentAngles.yaw + mouseDeltaX
 
     -- Create the new view angles
-    aimpos = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
+    local aimpos1 = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
 
     -- Set the new view angles
-    pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)
+    pCmd:SetViewAngles(aimpos1:Unpack()) --engine.SetViewAngles(aimpos1)
 end
 
 --[[ Code needed to run 66 times a second ]]--
@@ -315,7 +312,7 @@ local function OnCreateMove(pCmd)
     if not Swingpred:GetValue() then goto continue end -- enable or distable script
 --[--if we are not existign then stop code--]
         pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
-        if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
+        if not pLocal or not pLocal:IsAlive() then return end  -- Immediately check if the local player exists. If it doesn't, return.
         
         ping = entities.GetPlayerResources():GetPropDataTableInt("m_iPing")[pLocal:GetIndex()]
         chargeLeft = pLocal:GetPropFloat( "m_flChargeMeter" )
@@ -343,11 +340,13 @@ local function OnCreateMove(pCmd)
 
                                    --[[ Features that require access to the weapon ]]--
         pWeapon               = pLocal:GetPropEntity( "m_hActiveWeapon" )            -- Set "pWeapon" to the local player's active weapon
+if not pWeapon then return end
+
         local pWeaponDefIndex = pWeapon:GetPropInt( "m_iItemDefinitionIndex" )       -- Set "pWeaponDefIndex" to the "pWeapon"'s item definition index
         local pWeaponDef      = itemschema.GetItemDefinitionByID( pWeaponDefIndex )  -- Set "pWeaponDef" to the local "pWeapon"'s item definition
         local pWeaponName     = pWeaponDef:GetName()
         swingrange = pWeapon:GetSwingRange()
-
+        
         local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
                 local closestPlayer
                 if #players == 0 then return end  -- Immediately check if there are any players in the game. If there aren't, return.
@@ -389,6 +388,7 @@ local function OnCreateMove(pCmd)
         local vel = enemy:EstimateAbsVelocity()
         local futurePos = (pos + vel) * 0.5
         print(futurePos)
+
 
         local dist = (pLocal:GetAbsOrigin() - futurePos):Length()
         if dist < closestEnemyDist then
@@ -451,40 +451,40 @@ end
        
 
 --[--------------Prediction-------------------] -- predict both players position after swing
-            if pLocal:EstimateAbsVelocity() == 0 then
-                -- If the local player is not accelerating, set the predicted position to the current position
-                pLocalFuture = pLocalOrigin
-                ONGround = (flags & FL_ONGROUND == 1)
-            else
-                ONGround = (flags & FL_ONGROUND == 1)
-                CalcStrafe(pLocal)
 
-                if ONGround then
-                    strafeAngle = 0
-                else
-                    strafeAngle = strafeAngles[pLocal:GetIndex()]
-                end
-                -- If the local player is accelerating, predict the future position   
-                pLocalFuture = TargetPositionPrediction(pLocalOrigin, time, pLocal, strafeAngle) + Vheight
-                
-            end
+    if pLocal:EstimateAbsVelocity() == 0 then
+        -- If the local player is not accelerating, set the predicted position to the current position
+        pLocalFuture = pLocalOrigin
+        ONGround = (flags & FL_ONGROUND == 1)
+    else
+        ONGround = (flags & FL_ONGROUND == 1)
+        CalcStrafe(pLocal)
 
-            if pLocal:EstimateAbsVelocity() == 0 then
-                vPlayerFuture = closestPlayer:GetAbsOrigin()
-                Target_ONGround = (flags & FL_ONGROUND == 1)
-            else
-                CalcStrafe(closestPlayer)
-                Target_ONGround = (flags & FL_ONGROUND == 1)
+        if ONGround then
+            strafeAngle = 0
+        else
+            strafeAngle = strafeAngles[pLocal:GetIndex()]
+        end
+        -- If the local player is accelerating, predict the future position   
+        pLocalFuture = TargetPositionPrediction(pLocalOrigin, time, pLocal, strafeAngle) + Vheight
+    end
 
-                if not ONGround then
-                    strafeAngle = strafeAngles[closestPlayer:GetIndex()]
-                else
-                    strafeAngle = 0
-                end
+    if pLocal:EstimateAbsVelocity() == 0 then
+        vPlayerFuture = closestPlayer:GetAbsOrigin()
+        Target_ONGround = (flags & FL_ONGROUND == 1)
+    else
+        CalcStrafe(closestPlayer)
+        Target_ONGround = (flags & FL_ONGROUND == 1)
 
-                target_strafeAngle = strafeAngle
-                vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer, strafeAngle)
-            end
+        if ONGround then
+            strafeAngle = 0
+        else
+            strafeAngle = strafeAngles[closestPlayer:GetIndex()]
+        end
+        target_strafeAngle = strafeAngle
+
+        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer, strafeAngle)
+    end
 
             
 --[--------------Distance check-------------------]
@@ -623,23 +623,25 @@ end
     end
 
     flags = pLocal:GetPropInt("m_fFlags")
+    local inAttackAim = false
     if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture * 1.7, pLocalFuture)
     and pLocal:InCond(17)
     and not collision then
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
         pCmd:SetViewAngles(aimpos:Unpack())      --engine.SetViewAngles(aimpos)
-    
+        inAttackAim = true
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack())                                         --  engine.SetViewAngles(aimpos) --
-    
+        inAttackAim = true
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
-    elseif Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
+        inAttackAim = true
+    elseif not inAttackAim and Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
             -- Calculate the source and destination vectors
             UpdateViewAngles(pCmd)
     end
@@ -673,8 +675,6 @@ end
 
 
 -- Update last variables
-            vPlayerOriginLast = vPlayerOrigin
-            pLocalOriginLast = pLocalOrigin
             Safe_Strafe = false -- reset safe strafe
     ::continue::
 end
@@ -692,7 +692,7 @@ end
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
-    if engine.Con_IsVisible() or engine.IsGameUIVisible() then
+    if engine.Con_IsVisible() or engine.IsGameUIVisible() or not pLocal:IsAlive() then
         return
     end
     if vPlayerOrigin == nil then return end
@@ -700,7 +700,7 @@ local function doDraw()
 
     --local pLocal = entities.GetLocalPlayer()
 if not mmVisuals:GetValue() then return end
-    if pLocalFuture == nil then return end
+    if pLocalFuture == nil or not pLocal:IsAlive() then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
         local w, h = draw.GetScreenSize()
@@ -750,82 +750,40 @@ if not mmVisuals:GetValue() then return end
                 end
 
         -- Strafe prediction visualization
+        draw.Color(255, 255, 255, 255) -- Set the color to white
         if mVisuals:IsSelected("Visualization") then
-            CalcStrafe(pLocal)
-            local flags = pLocal:GetPropInt( "m_fFlags" )
-            local strafeAngle = 0
-            local ONGround = (flags & FL_ONGROUND == 1)
-
-            if not ONGround then
-                strafeAngle = strafeAngles[pLocal:GetIndex()]
-            else
-                strafeAngle = 0
-            end
-
-                    
-
-            local predictedPositions = {} -- table to store all predicted positions
-            -- Predict the position for each tick until we reach the final tick we want to predict
-            for i = 1, time do
-                local tickTime = i
-                local pos = TargetPositionPrediction(pLocalOrigin, tickTime, pLocal, strafeAngle)
-
-                -- Add the predicted position to the table
-                table.insert(predictedPositions, {pos = pos})
-            end
-
             -- Draw lines between the predicted positions
-            for i = 1, #predictedPositions - 1 do
-                local pos1 = predictedPositions[i].pos
-                local pos2 = predictedPositions[i + 1].pos
+            for i = 1, #pLocalPath - 1 do
+                local pos1 = pLocalPath[i]
+                local pos2 = pLocalPath[i + 1]
 
                 local screenPos1 = client.WorldToScreen(pos1)
                 local screenPos2 = client.WorldToScreen(pos2)
 
                 if screenPos1 ~= nil and screenPos2 ~= nil then
-                    draw.Color(255, 255, 255, 255) -- Set the color to white
-                    if Latency ~= nil then
-                        
-                        if i <= (time - Latency) then
-                            draw.Color(255, 255, 255, 255) -- Set the color to white 
-                        else
-                            draw.Color(255, 0, 0, 255) -- Set the color to red 
-                        end
-                    end
-
                     draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
                 end
             end
 
             -- enemy
 
-            local predictedPositions1 = {} -- table to store all predicted positions
-            -- Predict the position for each tick until we reach the final tick we want to predict
-            for i = 1, time do
-                local tickTime = i
-                local pos = TargetPositionPrediction(vPlayerOrigin, tickTime, vPlayer, target_strafeAngle)
-
-                -- Add the predicted position to the table
-                table.insert(predictedPositions1, pos)
-            end
-
             -- Draw lines between the predicted positions
-            for i = 1, #predictedPositions1 - 1 do
-                local pos1 = predictedPositions1[i]
-                local pos2 = predictedPositions1[i + 1]
+                for i = 1, #TargetPath - 1 do
+                    local pos1 = TargetPath[i]
+                    local pos2 = TargetPath[i + 1]
 
-                local screenPos3 = client.WorldToScreen(pos1)
-                local screenPos4 = client.WorldToScreen(pos2)
+                    local screenPos3 = client.WorldToScreen(pos1)
+                    local screenPos4 = client.WorldToScreen(pos2)
 
-                if screenPos3 ~= nil and screenPos4 ~= nil then
-                    draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                    if screenPos3 ~= nil and screenPos4 ~= nil then
+                        draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                    end
                 end
-            end
                 
             end
 
         -- Check if the range circle is selected, the player future is not nil, and the player is melee
-    if not mVisuals:IsSelected("Range Circle") or not vPlayerFuture or not isMelee and GetBestTarget(pLocal) == nil then
+    if not pLocal:IsAlive() and not mVisuals:IsSelected("Range Circle") or not vPlayerFuture or not isMelee and GetBestTarget(pLocal) == nil then
         return
     end
 
@@ -837,9 +795,9 @@ if not mmVisuals:GetValue() then return end
     local target_distance = swingrange
 
     -- Calculate the vertex positions around the circle
-    local center = pLocalFuture + Vector3(0, 0, -70) -- center of the circle
+    local center = pLocalFuture - Vheight
     local radius = swingrange -- radius of the circle
-    local segments = 64 -- number of segments to use for the circle
+    local segments = 32 -- number of segments to use for the circle
     vertices = {} -- table to store circle vertices
     local colors = {} -- table to store colors for each vertex
 
