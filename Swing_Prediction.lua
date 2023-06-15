@@ -39,10 +39,11 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Silent)", true, ItemFlags.FullWidth))
-local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("charge steer", true, ItemFlags.FullWidth))
+local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", true, ItemFlags.FullWidth))
+--local mAutoMelee    = menu:AddComponent(MenuLib.Checkbox("Auto Melee", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local Achargebot     = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
+local Achargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
@@ -53,7 +54,7 @@ local Visuals = {
 
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
 local closestDistance = 2000
-local fDistance
+local fDistance = 1
 local hitbox_max = Vector3(-14, -14, 85)
 local hitbox_min = Vector3(14, 14, 0)
 local isMelee = false
@@ -66,6 +67,7 @@ local pLocalClass
 local pLocalFuture
 local pLocalOrigin
 local ping = 0
+local pWeapon
 local Safe_Strafe = false
 local swingrange
 local time = 16
@@ -75,7 +77,7 @@ local tickRate = 66
 local tick_count = 0
 local viewheight
 local Vheight
-local vdistance
+local vdistance = 1
 local vPlayerFuture
 local vPlayer
 local vPlayerOrigin
@@ -297,6 +299,7 @@ local function OnCreateMove(pCmd)
 --[--if we are not existign then stop code--]
         pLocal = entities.GetLocalPlayer()     -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
         if not pLocal then return end  -- Immediately check if the local player exists. If it doesn't, return.
+        
         ping = entities.GetPlayerResources():GetPropDataTableInt("m_iPing")[pLocal:GetIndex()]
         chargeLeft = pLocal:GetPropFloat( "m_flChargeMeter" )
         --[--Check local player class if spy or none then stop code--]
@@ -306,22 +309,29 @@ local function OnCreateMove(pCmd)
             if pLocalClass == 8 then goto continue end --when local player is spy then skip code
 
  -- Get current latency and lerp
-            local latIn, latOut = clientstate.GetLatencyIn(), clientstate.GetLatencyOut()
+            local latOut = clientstate.GetLatencyOut()
             lerp = client.GetConVar("cl_interp") or 0
             --local Tolerance = 4
             --print(lerp)
             -- Define the reaction time in seconds
             Latency = (latOut + lerp )
             -- Convert the delay to ticks
-            Latency = math.floor( Latency * tickRate )
+            Latency = math.floor( Latency * tickRate + 1 )
             
             -- Add the ticks to the current time
             --time = time + Latency - Tolerance
 
             settings.MaxDistance = time * pLocal:EstimateAbsVelocity():Length()
 --[--obtain secondary information after confirming we need it for fps boost whe nnot using script]
-                local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-                local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
+
+                                   --[[ Features that require access to the weapon ]]--
+        pWeapon               = pLocal:GetPropEntity( "m_hActiveWeapon" )            -- Set "pWeapon" to the local player's active weapon
+        local pWeaponDefIndex = pWeapon:GetPropInt( "m_iItemDefinitionIndex" )       -- Set "pWeaponDefIndex" to the "pWeapon"'s item definition index
+        local pWeaponDef      = itemschema.GetItemDefinitionByID( pWeaponDefIndex )  -- Set "pWeaponDef" to the local "pWeapon"'s item definition
+        local pWeaponName     = pWeaponDef:GetName()
+        swingrange = pWeapon:GetSwingRange()
+
+        local players = entities.FindByClass("CTFPlayer")  -- Create a table of all players in the game
                 local closestPlayer
                 if #players == 0 then return end  -- Immediately check if there are any players in the game. If there aren't, return.
 --[--if we enabled trodlier assist run auto weapon script]
@@ -348,6 +358,32 @@ local function OnCreateMove(pCmd)
         end
     end
     
+
+
+--[[ Auto Melee Switch ]]-- (Automatically switches to slot3 when an enemy is in range)
+--[[if mAutoMelee:GetValue()  then
+    local minDistance = 200
+    local closestEnemyDist = 600
+    local closestEnemy
+
+    for i, enemy in ipairs(players) do
+        if enemy == pLocal then goto continue end
+        local pos = enemy:GetAbsOrigin()
+        local vel = enemy:EstimateAbsVelocity()
+        local futurePos = (pos + vel) * 0.5
+        print(futurePos)
+
+        local dist = (pLocal:GetAbsOrigin() - futurePos):Length()
+        if dist < closestEnemyDist then
+            closestEnemyDist = dist
+            closestEnemy = enemy
+        end
+    end
+
+    if closestEnemyDist < minDistance and not pWeapon:IsMeleeWeapon() then
+        client.Command("slot3", true)
+    end
+end]]--
 --[-Don`t run script below when not usign melee--]
 
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
@@ -387,6 +423,9 @@ end
         local Target_ONGround
         local flags = pLocal:GetPropInt( "m_fFlags" )
         local strafeAngle = 0
+        local can_attack = false
+        local stop = false
+       
 
 --[--------------Prediction-------------------] -- predict both players position after swing
             if pLocal:EstimateAbsVelocity() == 0 then
@@ -414,11 +453,11 @@ end
                 CalcStrafe(closestPlayer)
                 Target_ONGround = (flags & FL_ONGROUND == 1)
 
-                --if not ONGround then
+                if not ONGround then
                     strafeAngle = strafeAngles[closestPlayer:GetIndex()]
-                --else
-                --    strafeAngle = 0
-                --end
+                else
+                    strafeAngle = 0
+                end
 
                 target_strafeAngle = strafeAngle
                 vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer, strafeAngle)
@@ -432,21 +471,9 @@ end
         -- get distance between local player and closest player after swing
         fDistance = (vPlayerFuture - pLocalFuture):Length()
 
---[[-----------------------------Swing Prediction------------------------------------------------------------------------]]
-
-            local can_attack = false
-            local stop = false
-            swingrange = pWeapon:GetSwingRange()
-
---[[check if can hit after swing]]
                 -- Simulate swing and return result
                 local collisionPoint
                 local pUsingMargetGarden = false
-                   --[[ Features that require access to the weapon ]]--
-        pWeapon               = pLocal:GetPropEntity( "m_hActiveWeapon" )            -- Set "pWeapon" to the local player's active weapon
-        local pWeaponDefIndex = pWeapon:GetPropInt( "m_iItemDefinitionIndex" )       -- Set "pWeaponDefIndex" to the "pWeapon"'s item definition index
-        local pWeaponDef      = itemschema.GetItemDefinitionByID( pWeaponDefIndex )  -- Set "pWeaponDef" to the local "pWeapon"'s item definition
-        local pWeaponName     = pWeaponDef:GetName()
 
         if pWeaponDefIndex == 416 then                                               -- If "pWeapon" is not set, break
             pUsingMargetGarden = true                                             -- Set "pUsingProjectileWeapon" to true
@@ -488,7 +515,7 @@ end
                             if collision then
                                 can_attack = true
                                 tick_count = tick_count + 1
-                                if tick_count %  (Latency + 4) == 0 then
+                                if tick_count %  (Latency + 2) == 0 then
                                     can_charge = true
                                 end
                             end
