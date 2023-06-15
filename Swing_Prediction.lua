@@ -482,10 +482,10 @@ end
         
 --[[Hit Detection -------------------------------------------------]]
             ONGround = (flags & FL_ONGROUND == 1)
-
+            local collision = false
             if pUsingMargetGarden == true then
                 if pLocal:InCond(81) and not ONGround then
-                    local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
+                    collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
                         can_attack = collision
                         can_charge = false
                     
@@ -523,7 +523,7 @@ end
 
                 elseif not pLocal:InCond(81) and ONGround then
 
-                        local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
+                        collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
                         can_attack = collision
                         can_charge = false
                     
@@ -562,7 +562,7 @@ end
                   
             else
 
-                local collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
+                collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
                     can_attack = collision
                     can_charge = false
 
@@ -600,7 +600,8 @@ end
     end
 
     flags = pLocal:GetPropInt("m_fFlags")
-    if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture + Vector3(0, 0, 150), pLocalFuture) and pLocal:InCond(17)
+    if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture * 1.7, pLocalFuture)
+    and pLocal:InCond(17)
     and not collision then
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
@@ -616,12 +617,12 @@ end
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
     
-    elseif Mchargebot:GetValue() and pLocal:InCond(17) and not Maimbot:GetValue() then
+    elseif Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
 
     -- Calculate the source and destination vectors
         -- Get the current view angles
         local currentAngles = engine.GetViewAngles()
-        local sensetivity = client.GetConVar("sensitivity") --mSensetivity:GetValue() / 10 --0.4
+        local sensetivity = client.GetConVar("sensitivity") + 2 --mSensetivity:GetValue() / 10 --0.4
         -- Get the mouse motion
         local mouseDeltaX = -(pCmd.mousedx * sensetivity / 100)
         -- Calculate the new yaw angle
