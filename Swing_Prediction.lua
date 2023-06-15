@@ -161,11 +161,13 @@ local function GetBestTarget(me)
         if entIdx == localPlayer:GetIndex() then goto continue end
 
         local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
+        local height_diff = math.floor(math.abs(player:GetAbsOrigin().z - localPlayer:GetAbsOrigin().z))
         local health = player:GetHealth()
-
+        --pLocal:InCond(17)
         local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), player:GetAbsOrigin())
         local fov = Math.AngleFov(engine.GetViewAngles(), angles)
         if fov > settings.MaxFOV then goto continue end
+        if height_diff > swingrange * 2 then goto continue end
 
         local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.1)
         local healthFactor = Math.RemapValClamped(health, settings.MinHealth, settings.MaxHealth, 1, 0.5)
@@ -292,6 +294,21 @@ local Hitbox = {
     Chest = 7
 }
 
+function UpdateViewAngles(pCmd)
+    -- Get the current view angles
+    local currentAngles = engine.GetViewAngles()
+    local sensetivity = client.GetConVar("sensitivity") + 2 --mSensetivity:GetValue() / 10 --0.4
+    -- Get the mouse motion
+    local mouseDeltaX = -(pCmd.mousedx * sensetivity / 100)
+    -- Calculate the new yaw angle
+    local newYaw = currentAngles.yaw + mouseDeltaX
+
+    -- Create the new view angles
+    aimpos = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
+
+    -- Set the new view angles
+    pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)
+end
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
@@ -384,6 +401,7 @@ local function OnCreateMove(pCmd)
         client.Command("slot3", true)
     end
 end]]--
+
 --[-Don`t run script below when not usign melee--]
 
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
@@ -409,6 +427,11 @@ local keybind = mKeyOverrite:GetValue()
     elseif input.IsButtonDown(keybind) and GetBestTarget(pLocal) ~= nil then -- if player boudn key for aimbot then only work when its on.
         closestPlayer = GetBestTarget(pLocal).entity
         vPlayer = closestPlayer
+    end
+
+--[[manual charge controll]]
+    if Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
+        UpdateViewAngles(pCmd)
     end
 --[-----Refil and skip code when alone-----]
 
@@ -595,7 +618,7 @@ end
     local aimpos
     if collisionPoint ~= nil then
         aimpos = collisionPoint
-    else
+    elseif aimpos == nil then
         aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no collision point accesable then aim at defualt hitbox
     end
 
@@ -616,24 +639,10 @@ end
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
         pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
-    
     elseif Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
-
-    -- Calculate the source and destination vectors
-        -- Get the current view angles
-        local currentAngles = engine.GetViewAngles()
-        local sensetivity = client.GetConVar("sensitivity") + 2 --mSensetivity:GetValue() / 10 --0.4
-        -- Get the mouse motion
-        local mouseDeltaX = -(pCmd.mousedx * sensetivity / 100)
-        -- Calculate the new yaw angle
-        local newYaw = currentAngles.yaw + mouseDeltaX
-
-        -- Create the new view angles
-        local newAngles = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
-
-        -- Set the new view angles
-        engine.SetViewAngles(newAngles)
-end
+            -- Calculate the source and destination vectors
+            UpdateViewAngles(pCmd)
+    end
        
     --[shield bashing strat]
 
