@@ -70,7 +70,7 @@ local pLocalOrigin
 local ping = 0
 local pWeapon
 local Safe_Strafe = false
-local swingrange
+local swingrange = 70
 local time = 16
 local Latency
 local tick
@@ -167,7 +167,7 @@ local function GetBestTarget(me)
             local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
             local height_diff = math.floor(math.abs(player:GetAbsOrigin().z - localPlayer:GetAbsOrigin().z))
         
-        if height_diff > swingrange * 2
+        if height_diff > 180
         or distance > 700 then goto continue end
         -- Visibility Check
             local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), player:GetAbsOrigin())
@@ -524,9 +524,10 @@ end]]--
 --[[---Check for hit detection--------]]
         ONGround = (flags & FL_ONGROUND == 1)
         local collision = false
+        
         collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
-        if pUsingMargetGarden == true then
-            if pLocal:InCond(81) and not ONGround then
+        --if pUsingMargetGarden == true then
+            --[[if pLocal:InCond(81) and not ONGround then
                 -- Check for collision with future position
                 can_attack = collision
                 can_charge = false
@@ -555,16 +556,14 @@ end]]--
                         can_attack = true
                     end
                 end
-            end
-        else
+            end]]
+        --else
             -- Check for collision with future position
             can_attack = collision
             can_charge = false
 
             -- Check for collision with current position
-            if collision then
-                can_attack = true
-            elseif not collision then
+            if not collision then
                 collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
                 if collision then
                     can_attack = true
@@ -582,7 +581,7 @@ end]]--
                         end
                     end
             end
-        end
+        --end
                     
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = CurrentTarget:GetHitboxes()
@@ -671,7 +670,9 @@ local function doDraw()
     if vPlayerFuture == nil and pLocalFuture == nil then return end
 
     --local pLocal = entities.GetLocalPlayer()
-if not mmVisuals:GetValue() then return end
+    pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
+if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
+
     if pLocalFuture == nil or not pLocal:IsAlive() then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
@@ -766,7 +767,7 @@ if not mmVisuals:GetValue() then return end
             end
 
         -- Check if the range circle is selected, the player future is not nil, and the player is melee
-    if not pLocal:IsAlive() and not mVisuals:IsSelected("Range Circle") or not vPlayerFuture or not isMelee and GetBestTarget(pLocal) == nil then
+    if not pLocal:IsAlive() and not mVisuals:IsSelected("Range Circle") or vPlayerFuture == nil  or isMelee == nil  and GetBestTarget(pLocal) == nil then
         return
     end
 
@@ -787,6 +788,8 @@ if not mmVisuals:GetValue() then return end
     for i = 1, segments do
         local angle = math.rad(i * (360 / segments))
         local direction = Vector3(math.cos(angle), math.sin(angle), 0)
+        if center == nil or direction == nil or radius == nil then return end
+        
         local endpos = center + direction * radius
         local trace = engine.TraceLine(pLocalFuture, endpos, MASK_SHOT_HULL)
 
