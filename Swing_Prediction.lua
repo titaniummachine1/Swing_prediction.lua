@@ -54,7 +54,7 @@ local Visuals = {
 
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
 local closestDistance = 2000
-local closestPlayer
+local CurrentTarget
 local fDistance = 1
 local hitbox_max = Vector3(-14, -14, 85)
 local hitbox_min = Vector3(14, 14, 0)
@@ -100,16 +100,16 @@ local settings = {
 
 local latency = 0
 local lerp = 0
-local lastAngles = {} ---@type EulerAngles[]
-local strafeAngles = {} ---@type number[]
+local lastAngles = {} ---@type table<number, EulerAngles>
+local strafeAngles = {} ---@type table<number, number>
 
 ---@param me WPlayer
 local function CalcStrafe(me)
     local players = entities.FindByClass("CTFPlayer")
     for idx, entity in ipairs(players) do
         if entity:IsDormant() or not entity:IsAlive() then
-            lastAngles[idx] = nil
-            strafeAngles[idx] = nil
+            lastAngles[entity:GetIndex()] = nil
+            strafeAngles[entity:GetIndex()] = nil
             goto continue
         end
 
@@ -122,16 +122,16 @@ local function CalcStrafe(me)
         local angle = v:Angles()
 
         -- Play doesn't have a last angle
-        if lastAngles[idx] == nil then
-            lastAngles[idx] = angle
+        if lastAngles[entity:GetIndex()] == nil then
+            lastAngles[entity:GetIndex()] = angle
             goto continue
         end
 
         -- Calculate the delta angle
-        if angle.y ~= lastAngles[idx].y then
-            strafeAngles[idx] = angle.y - lastAngles[idx].y
+        if angle.y ~= lastAngles[entity:GetIndex()].y then
+            strafeAngles[entity:GetIndex()] = angle.y - lastAngles[entity:GetIndex()].y
         end
-        lastAngles[idx] = angle
+        lastAngles[entity:GetIndex()] = angle
 
         ::continue::
     end
@@ -446,25 +446,25 @@ end]]--
 
     if keybind == KEY_NONE and GetBestTarget(pLocal) ~= nil then
         -- Check if player has no key bound
-        closestPlayer = GetBestTarget(pLocal).entity
-        vPlayer = closestPlayer
+        CurrentTarget = GetBestTarget(pLocal).entity
+        vPlayer = CurrentTarget
     elseif input.IsButtonDown(keybind) and GetBestTarget(pLocal) ~= nil then
         -- If player has bound key for aimbot, only work when it's on
-        closestPlayer = GetBestTarget(pLocal).entity
-        vPlayer = closestPlayer
+        CurrentTarget = GetBestTarget(pLocal).entity
+        vPlayer = CurrentTarget
     else
-        closestPlayer = nil
+        CurrentTarget = nil
     end
     
     -- Refill and skip code when alone
-    if closestPlayer == nil then
+    if CurrentTarget == nil then
         if mAutoRefill:GetValue() and pWeapon:GetCritTokenBucket() <= 27 then
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
         end
         goto continue
     end
 
-    vPlayerOrigin = closestPlayer:GetAbsOrigin() -- Get closest player origin
+    vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
     local ONGround
     local Target_ONGround
     local strafeAngle = 0
@@ -478,37 +478,28 @@ end]]--
         pLocalFuture = pLocalOrigin
     else
         CalcStrafe(pLocal)
+        strafeAngle = strafeAngles[pLocal:GetIndex()]
 
-        if ONGround then
-            strafeAngle = 0
-        else
-            strafeAngle = strafeAngles[pLocal:GetIndex()]
-        end
-
-        -- If the local player is accelerating, predict the future position   
+        -- If the local player is accelerating, predict the future position
         pLocalFuture = TargetPositionPrediction(pLocalOrigin, time, pLocal, strafeAngle) + Vheight
     end
 
 
-    if closestPlayer:EstimateAbsVelocity() == 0 then
+    if CurrentTarget:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position of the closest player
-        vPlayerFuture = closestPlayer:GetAbsOrigin()
+        vPlayerFuture = CurrentTarget:GetAbsOrigin()
     else
 
-        CalcStrafe(closestPlayer)
-        local flagsTarget = closestPlayer:GetPropInt("m_fFlags")
+        CalcStrafe(CurrentTarget)
+        local flagsTarget = CurrentTarget:GetPropInt("m_fFlags")
         Target_ONGround = (flagsTarget & FL_ONGROUND == 1)
 
-        if ONGround then
-            strafeAngle = 0
-        else
-            strafeAngle = strafeAngles[closestPlayer:GetIndex()]
-        end
+        strafeAngle = strafeAngles[CurrentTarget:GetIndex()]
 
         target_strafeAngle = strafeAngle
 
         -- Predict the future position of the closest player
-        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, closestPlayer, strafeAngle)
+        vPlayerFuture = TargetPositionPrediction(vPlayerOrigin, time, CurrentTarget, strafeAngle)
     end
 
             
@@ -533,10 +524,10 @@ end]]--
 --[[---Check for hit detection--------]]
         ONGround = (flags & FL_ONGROUND == 1)
         local collision = false
+        collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
         if pUsingMargetGarden == true then
             if pLocal:InCond(81) and not ONGround then
                 -- Check for collision with future position
-                collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
                 can_attack = collision
                 can_charge = false
 
@@ -550,20 +541,8 @@ end]]--
                     end
                 end
 
-                -- Check for collision during charge
-                if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100.0 then
-                    collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
-                    if collision then
-                        can_attack = true
-                        tick_count = tick_count + 1
-                        if tick_count %  (Latency + 2) == 0 then
-                            can_charge = true
-                        end
-                    end
-                end
             elseif not pLocal:InCond(81) and ONGround then
                 -- Check for collision with future position
-                collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
                 can_attack = collision
                 can_charge = false
 
@@ -574,24 +553,11 @@ end]]--
                     collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
                     if collision then
                         can_attack = true
-                    end
-                end
-
-                -- Check for collision during charge
-                if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100.0 then
-                    collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
-                    if collision then
-                        can_attack = true
-                        tick_count = tick_count + 1
-                        if tick_count %  (Latency + 4) == 0 then
-                            can_charge = true
-                        end
                     end
                 end
             end
         else
             -- Check for collision with future position
-            collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
             can_attack = collision
             can_charge = false
 
@@ -607,19 +573,19 @@ end]]--
 
             -- Check for collision during charge
             if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100 then
-                collision, collisionPoint = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
-                if collision then
-                    can_attack = true
-                    tick_count = tick_count + 1
-                    if tick_count % (Latency + 4) == 0 then
-                        can_charge = true
+                    collision = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
+                    if collision then
+                        can_attack = true
+                        tick_count = tick_count + 1
+                        if tick_count % (Latency + 4) == 0 then
+                            can_charge = true
+                        end
                     end
-                end
             end
         end
                     
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
-    local hitboxes = closestPlayer:GetHitboxes()
+    local hitboxes = CurrentTarget:GetHitboxes()
     local hitbox = hitboxes[4]
     local aimpos
     if collisionPoint ~= nil then
@@ -630,7 +596,7 @@ end]]--
 
     flags = pLocal:GetPropInt("m_fFlags")
     local inAttackAim = false
-    if Maimbot:GetValue() and Helpers.VisPos(closestPlayer, vPlayerFuture * 1.7, pLocalFuture)
+    if Maimbot:GetValue() and Helpers.VisPos(CurrentTarget, vPlayerFuture * 1.7, pLocalFuture)
     and pLocal:InCond(17)
     and not collision then
         -- change angles at target
