@@ -86,6 +86,7 @@ local chargeLeft
 local target_strafeAngle
 local onGround
 local current_fps = 0
+local aimposVis
 
 local pivot
 local can_charge = false
@@ -522,95 +523,64 @@ end]]--
         
         
 --[[---Check for hit detection--------]]
-        ONGround = (flags & FL_ONGROUND == 1)
-        local collision = false
-        
-        collision = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
-        --if pUsingMargetGarden == true then
-            --[[if pLocal:InCond(81) and not ONGround then
-                -- Check for collision with future position
-                can_attack = collision
-                can_charge = false
+ONGround = (flags & FL_ONGROUND == 1)
+local collision = false
 
-                -- Check for collision with current position
-                if collision and pLocal:InCond(81) then
-                    can_attack = true
-                elseif not collision then
-                    collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
-                    if collision then
-                        can_attack = true
-                    end
-                end
+collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
+    -- Check for collision with future position
+    can_attack = collision
+    can_charge = false
 
-            elseif not pLocal:InCond(81) and ONGround then
-                -- Check for collision with future position
-                can_attack = collision
-                can_charge = false
+    -- Check for collision with current position
+    if not collision then
+        collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
+        if collision then
+            can_attack = true
+        end
+    end
 
-                -- Check for collision with current position
-                if collision and pLocal:InCond(81) then
-                    can_attack = true
-                elseif not collision then
-                    collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
-                    if collision then
-                        can_attack = true
-                    end
-                end
-            end]]
-        --else
-            -- Check for collision with future position
-            can_attack = collision
-            can_charge = false
-
-            -- Check for collision with current position
-            if not collision then
-                collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
-                if collision then
-                    can_attack = true
+    -- Check for collision during charge
+    if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100 then
+            collision = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
+            if collision then
+                can_attack = true
+                tick_count = tick_count + 1
+                if tick_count % (Latency + 4) == 0 then
+                    can_charge = true
                 end
             end
-
-            -- Check for collision during charge
-            if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100 then
-                    collision = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
-                    if collision then
-                        can_attack = true
-                        tick_count = tick_count + 1
-                        if tick_count % (Latency + 4) == 0 then
-                            can_charge = true
-                        end
-                    end
-            end
-        --end
+    end
                     
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = CurrentTarget:GetHitboxes()
-    local hitbox = hitboxes[4]
+    local hitbox = hitboxes[6]
     local aimpos
     if collisionPoint ~= nil then
         aimpos = collisionPoint
     elseif aimpos == nil then
-        aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no collision point accesable then aim at defualt hitbox
+        aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no collision point accesable then aim at defualt hitbox
     end
 
+    aimposVis = aimpos
     flags = pLocal:GetPropInt("m_fFlags")
     local inAttackAim = false
-    if Maimbot:GetValue() and Helpers.VisPos(CurrentTarget, vPlayerFuture * 1.7, pLocalFuture)
+    if Maimbot:GetValue() and Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture)
     and pLocal:InCond(17)
     and not collision then
         -- change angles at target
-        aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
-        pCmd:SetViewAngles(aimpos:Unpack())      --engine.SetViewAngles(aimpos)
+        aimpos = CurrentTarget:GetAbsOrigin() + Vheight
+        --aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
+            pCmd:SetViewAngles(aimpos:Unpack())      --engine.SetViewAngles(aimpos)
         inAttackAim = true
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-        pCmd:SetViewAngles(aimpos:Unpack())                                         --  engine.SetViewAngles(aimpos) --
+            pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
         inAttackAim = true
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-        pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
+            pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
         inAttackAim = true
     elseif not inAttackAim and Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
             -- Calculate the source and destination vectors
@@ -680,13 +650,13 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
         local screenPos = { w / 2 - 15, h / 2 + 35}
 
         local vPlayerTargetPos = vPlayerFuture
-        
-            --[[ draw predicted local position with strafe prediction
-            screenPos = client.WorldToScreen(pLocalFuture)
+
+            --draw predicted local position with strafe prediction
+            screenPos = client.WorldToScreen(aimposVis)
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
-            end]]
+            end
 
 
             -- Define function to draw the triggerbox
