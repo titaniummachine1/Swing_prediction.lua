@@ -219,13 +219,14 @@ end
 ---@param targetEntity number
 ---@param strafeAngle number
 ---@return Vector3?
-local function TargetPositionPrediction(targetLastPos, time, targetEntity, strafeAngle)
+local function TargetPositionPrediction(TargetPos, Ltime, targetEntity, strafeAngle)
+    if Ltime == 0 then return TargetPos end
     local player = WPlayer.FromEntity(targetEntity)
-    local predData = Prediction.Player(player, time, strafeAngle)
+    local predData = Prediction.Player(player, Ltime, strafeAngle)
 
     if not predData then return nil end
 
-    local pos = predData.pos[time]
+    local pos = predData.pos[Ltime]
     return pos
 end
 
@@ -259,24 +260,43 @@ local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
         -- Calculate the distance along the vector from the closest point to the sphere center
         local distanceAlongVector = math.sqrt(closestToPointVector.x^2 + closestToPointVector.y^2 + closestToPointVector.z^2)
 
-        -- Compare the distance along the vector to the sum of the radii
-        if sphereRadius == 0 then
-            -- Treat the sphere as a single point
-            if distanceAlongVector <= 0 then
-                -- Collision detected
-                return true, closestPoint
+        -- Check collision between the AABB hitbox and the sphere
+        if distanceAlongVector <= sphereRadius then
+            -- Collision detected
+            local isVisible, collisionPoint = Helpers.VisPos(spherePos, closestPoint, vPlayerFuture)
+            if isVisible then
+                -- Collision point is visible
+                return true, collisionPoint
             else
-                -- No collision
-                return false, nil
+                -- Collision point is not visible, find alternative collision points
+                local iterations = 8
+                local angleIncrement = 2 * math.pi / iterations
+                local alternativePoint = nil
+
+                for i = 1, iterations do
+                    local angle = angleIncrement * i
+                    local rotatedDirection = Vector3(math.sin(angle), 0, math.cos(angle))
+
+                    local alternativeCollisionPoint = spherePos + rotatedDirection * sphereRadius
+                    local alternativeIsVisible, alternativeCollisionPoint = Helpers.VisPos(spherePos, alternativeCollisionPoint, vPlayerFuture)
+
+                    if alternativeIsVisible then
+                        -- Alternative collision point is visible, use it
+                        alternativePoint = alternativeCollisionPoint
+                        break
+                    end
+                end
+
+                if alternativePoint then
+                    return true, alternativePoint
+                else
+                    -- No alternative collision point is visible, return original collision point
+                    return true, closestPoint
+                end
             end
         else
-            if distanceAlongVector <= sphereRadius or distanceAlongVector <= sphereRadius + 0.5 then
-                -- Collision detected (including intersecting or touching)
-                return true, closestPoint
-            else
-                -- No collision
-                return false, nil
-            end
+            -- No collision
+            return false, nil
         end
     end
 end
@@ -299,7 +319,7 @@ function UpdateViewAngles(pCmd)
     local newYaw = currentAngles.yaw + mouseDeltaX
 
     -- Create the new view angles
-    local aimpos1 = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
+    local aimpos1 = EulerAngles(currentAngles.pitch, newYaw, 0)
 
     -- Set the new view angles
     pCmd:SetViewAngles(aimpos1:Unpack()) --engine.SetViewAngles(aimpos1)
@@ -570,18 +590,18 @@ collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingran
         -- change angles at target
         aimpos = CurrentTarget:GetAbsOrigin() + Vheight
         --aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
-            pCmd:SetViewAngles(aimpos:Unpack())      --engine.SetViewAngles(aimpos)
-        inAttackAim = true
+            pCmd:SetViewAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0)      --engine.SetViewAngles(aimpos)
+
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
             pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
-        inAttackAim = true
+        
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
             pCmd:SetViewAngles(aimpos:Unpack()) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
-        inAttackAim = true
+
     elseif not inAttackAim and Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
             -- Calculate the source and destination vectors
             UpdateViewAngles(pCmd)
@@ -629,7 +649,7 @@ end
                     return vhitbox_width_trigger, vhitbox_Height_trigger_bottom
                 end
 
--- debug command: ent_fire !picker Addoutput "health 99999"
+-- debug command: ent_fire !picker Addoutput "health 99999" --superbot
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
