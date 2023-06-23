@@ -41,7 +41,7 @@ local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFla
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Silent)", true, ItemFlags.FullWidth))
 local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", true, ItemFlags.FullWidth))
 --local mAutoMelee    = menu:AddComponent(MenuLib.Checkbox("Auto Melee", true, ItemFlags.FullWidth))
-local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,180 ))
+local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local Achargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
@@ -144,51 +144,62 @@ end
 ---@param me WPlayer
 ---@return AimTarget? target
 local function GetBestTarget(me)
-    settings = {
-        MinDistance = 200,
+    -- Define settings for target selection
+    local settings = {
+        MinDistance = 150,
         MaxDistance = 1000,
-        MinHealth = 10,
+        MinHealth = 17,
         MaxHealth = 100,
         MinFOV = 0,
         MaxFOV = mFov:GetValue(),
     }
     
+    -- Get all players in the game
     local players = entities.FindByClass("CTFPlayer")
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
 
-    ---@type Target[]
+    -- Create a table to store target factors for each player
     local targetList = {}
+    for i = 1, #players do
+        targetList[i] = nil
+    end
 
-    -- Calculate target factors
+    -- Calculate target factors for each player
     for i, player in pairs(players) do
-        if not Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin()) then goto continue end
-        if player == localPlayer or player:GetTeamNumber() == localPlayer:GetTeamNumber() then goto continue end
-        if player == nil or not player:IsAlive() then goto continue end
-        if gui.GetValue("ignore cloaked") == 1 and (player:InCond(4)) then goto continue end
-        if player:IsDormant() then goto continue end
+        -- Skip invalid players
+        if player == nil
+            or player:IsDormant()
+            or player == localPlayer
+            or player:GetTeamNumber() == localPlayer:GetTeamNumber()
+            or not player:IsAlive()
+            or gui.GetValue("ignore cloaked") == 1 and player:InCond(4)
+            or not Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin())
+        then
+            goto continue
+        end
+
+        -- Calculate distance and height difference to player
+        local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
+        local height_diff = math.floor(math.abs(player:GetAbsOrigin().z - localPlayer:GetAbsOrigin().z))
         
-            local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
-            local height_diff = math.floor(math.abs(player:GetAbsOrigin().z - localPlayer:GetAbsOrigin().z))
-        
-        if height_diff > 180
-        or distance > 700 then goto continue end
-        -- Visibility Check
-            local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), player:GetAbsOrigin())
-            local fov = Math.AngleFov(engine.GetViewAngles(), angles)
+        -- Skip players that are too far away or too high
+        if height_diff > 180 or distance > 700 then goto continue end
+
+        -- Calculate player's FOV and skip if it's too high
+        local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), player:GetAbsOrigin())
+        local fov = Math.AngleFov(engine.GetViewAngles(), angles)
         if fov > settings.MaxFOV then goto continue end
         
-            local health = player:GetHealth()
-        --pLocal:InCond(17)
-
- 
-
+        -- Calculate player's health factor
+        local health = player:GetHealth()
         local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.1)
         local healthFactor = Math.RemapValClamped(health, settings.MinHealth, settings.MaxHealth, 1, 0.5)
         local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.5)
 
+        -- Calculate overall factor for player
         local factor = distanceFactor * healthFactor * fovFactor
-        table.insert(targetList, { player = player, factor = factor})
+        targetList[i] = { player = player, factor = factor}
         ::continue::
     end
 
@@ -197,8 +208,8 @@ local function GetBestTarget(me)
         return a.factor > b.factor
     end)
 
+    -- Select the best target
     local bestTarget = nil
-
     for _, target in ipairs(targetList) do
         local player = target.player
         local aimPos = player:GetAbsOrigin()
@@ -208,7 +219,6 @@ local function GetBestTarget(me)
         -- Set as best target
         bestTarget = { entity = player, pos = aimPos, angles = angles, factor = target.factor }
         break
-
         ::continue::
     end
 
