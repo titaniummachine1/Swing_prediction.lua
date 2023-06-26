@@ -43,7 +43,7 @@ local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", true
 --local mAutoMelee    = menu:AddComponent(MenuLib.Checkbox("Auto Melee", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local Achargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
+local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
@@ -67,9 +67,13 @@ local pLocal = entities.GetLocalPlayer()
 local vdistance = 1
 local ping = 0
 local swingrange = 70
-local time = 16
 local tickRate = 66
 local tick_count = 0
+local in_attack
+
+local time = 17
+local last_time = time
+local swing_delay = time
 
 local pLocalClass = nil
 local pLocalFuture = nil
@@ -187,6 +191,7 @@ local function GetBestTarget(me)
 
         local factor = distanceFactor * healthFactor * fovFactor
         targetCount = targetCount + 1
+
         targetList[targetCount] = { player = player, factor = factor }
         
         ::continue::
@@ -216,7 +221,7 @@ end
     
 -- Predicts player position after set amount of ticks
 ---@param targetLastPos Vector3
----@param time integer
+---@param Ltime integer
 ---@param targetEntity number
 ---@param strafeAngle number
 ---@return Vector3?
@@ -310,7 +315,7 @@ local Hitbox = {
     Chest = 7
 }
 
-function UpdateViewAngles(pCmd)
+local function ChargeControll(pCmd)
     -- Get the current view angles
     local sensetivity = client.GetConVar("sensitivity") + 2 --mSensetivity:GetValue() / 10 --0.4
     local currentAngles = engine.GetViewAngles()
@@ -335,7 +340,8 @@ local function OnCreateMove(pCmd)
     end
     local flags = pLocal:GetPropInt("m_fFlags")
     --[[ping = entities.GetPlayerResources():GetPropDataTableInt("m_iPing")[pLocal:GetIndex()]]
-    chargeLeft = pLocal:GetPropInt("m_flChargeMeter")
+    chargeLeft = pLocal:GetPropFloat("m_flChargeMeter")
+    chargeLeft = math.floor(chargeLeft)
 
     --[--Check local player class if spy or none then stop code--]
 
@@ -357,6 +363,7 @@ local function OnCreateMove(pCmd)
     -- Convert the delay to ticks
     Latency = math.floor(Latency * tickRate + 1)
 
+
     -- Add the ticks to the current time
     --time = time + Latency - Tolerances
 
@@ -369,12 +376,11 @@ local function OnCreateMove(pCmd)
     if not pWeapon then
         return
     end
-
+    local pWeaponData = pWeapon:GetWeaponData()
     local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex") -- Set "pWeaponDefIndex" to the "pWeapon"'s item definition index
     local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex) -- Set "pWeaponDef" to the local "pWeapon"'s item definition
     local pWeaponName = pWeaponDef:GetName()
     swingrange = pWeapon:GetSwingRange()
-
     local players = entities.FindByClass("CTFPlayer") -- Create a table of all players in the game
     if #players == 0 then
         return -- Immediately check if there are any players in the game. If there aren't, return.
@@ -452,7 +458,7 @@ end]]--
 -- Manual charge control
 
         if Mchargebot:GetValue() and pLocal:InCond(17) then
-            UpdateViewAngles(pCmd)
+            ChargeControll(pCmd)
         end
 
 --[-----Get best target------------------]
@@ -554,7 +560,9 @@ collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingran
     
     end
     
-    if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100 then -- Check for collision during charge
+    -- Check for charge range
+    print(chargeLeft)
+    if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft == 100 then -- Check for collision during charge
             collision = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
             if collision then
                 can_attack = true
@@ -598,38 +606,46 @@ collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingran
 
     elseif not inAttackAim and Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
             -- Calculate the source and destination vectors
-            UpdateViewAngles(pCmd)
+            ChargeControll(pCmd)
     end
        
     --[shield bashing strat]
 
     if pLocalClass == 4 and (pLocal:InCond(17)) then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
-        local collision1 = checkCollision(vPlayerFuture, pLocalOrigin, 18)
+        local Bashed = checkCollision(vPlayerFuture, pLocalOrigin, 18)
 
-        if not collision1 then -- if demoknight bashed on enemy
+        if not Bashed then -- if demoknight bashed on enemy
             can_attack = false
             goto continue
         end
     end
 
         --Check if attack simulation was succesfull
-            if can_attack then
-                
+            if can_attack == true then
+                --remove tick
+                time = time - 1
+                    
                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
 
-            elseif mAutoRefill:GetValue() then
-                if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 400 then
+            elseif mAutoRefill:GetValue() == true then
+                if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 350 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
+            else
+                time = swing_delay
             end
 
             if can_charge then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
             end
-        
+
+            if time % swing_delay == 0 or time == last_time then
+                time = swing_delay
+            end
 
 
 -- Update last variables
+            last_time = time
             Safe_Strafe = false -- reset safe strafe
     ::continue::
 end
@@ -815,8 +831,8 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
         end
     end
 
-    -- Draw a second circle if Achargebot is enabled
-    if pLocalClass == 4 and Achargebot:GetValue() and chargeLeft >= 100 then
+    -- Draw a second circle if AchargeRange is enabled
+    if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft >= 100 then
         -- Define the color for the second circle
         local color = {r = 0, g = 0, b = 255, a = 255} -- blue
 
