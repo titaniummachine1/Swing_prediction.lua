@@ -444,7 +444,7 @@ end]]--
         -- Calculate the distance from the view position to the center of the furthest plane of the extended cube
         ExtendedRange = swingrange + halfsize
     end
-swingrange = ExtendedRange
+--swingrange = ExtendedRange
 
 -- Manual charge control
 
