@@ -40,6 +40,7 @@ end, ItemFlags.FullWidth))]]
 local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot(Silent)", true, ItemFlags.FullWidth))
 local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", true, ItemFlags.FullWidth))
+local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,50 ,10 ))
 --local mAutoMelee    = menu:AddComponent(MenuLib.Checkbox("Auto Melee", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
@@ -69,9 +70,7 @@ local ping = 0
 local swingrange = 70
 local tickRate = 66
 local tick_count = 0
-local in_attack
-
-local time = 17
+local time = 16
 local last_time = time
 local swing_delay = time
 
@@ -93,6 +92,8 @@ local onGround = nil
 local CurrentTarget = nil
 local aimposVis = nil
 local LastTarget = nil
+local ExtendedRange = nil
+local in_attack = nil
 
 local pivot
 local can_charge = false
@@ -151,7 +152,7 @@ local function GetBestTarget(me)
     settings = {
         MinDistance = 200,
         MaxDistance = 1000,
-        MinHealth = 10,
+        MinHealth = 1,
         MaxHealth = 100,
         MinFOV = 0,
         MaxFOV = mFov:GetValue(),
@@ -244,68 +245,50 @@ local vhitbox_Height = 85
 local vhitbox_width = 18
 
 -- Define function to check collision between the hitbox and the sphere
-local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
-    if vPlayerFuture ~= nil and isMelee then
-        local vhitbox_Height_trigger_bottom = Vector3(0, 0, 0) --swingrange
-        local vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
-        local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
-        local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)
-        local hitbox_min_trigger = (vPlayerFuture + vhitbox_min)
-        local hitbox_max_trigger = (vPlayerFuture + vhitbox_max)
-
-        -- Calculate the closest point on the hitbox to the sphere
-        local closestPoint = Vector3(
-            math.max(hitbox_min_trigger.x, math.min(spherePos.x, hitbox_max_trigger.x)),
-            math.max(hitbox_min_trigger.y, math.min(spherePos.y, hitbox_max_trigger.y)),
-            math.max(hitbox_min_trigger.z, math.min(spherePos.z, hitbox_max_trigger.z))
-        )
-
-        -- Calculate the vector from the closest point to the sphere center
-        local closestToPointVector = spherePos - closestPoint
-
-        -- Calculate the distance along the vector from the closest point to the sphere center
-        local distanceAlongVector = math.sqrt(closestToPointVector.x^2 + closestToPointVector.y^2 + closestToPointVector.z^2)
-
-        -- Check collision between the AABB hitbox and the sphere
-        if distanceAlongVector <= sphereRadius then
-            -- Collision detected
-            local isVisible, collisionPoint = Helpers.VisPos(spherePos, closestPoint, vPlayerFuture)
-            if isVisible then
-                -- Collision point is visible
-                return true, collisionPoint
-            else
-                -- Collision point is not visible, find alternative collision points
-                local iterations = 8
-                local angleIncrement = 2 * math.pi / iterations
-                local alternativePoint = nil
-
-                for i = 1, iterations do
-                    local angle = angleIncrement * i
-                    local rotatedDirection = Vector3(math.sin(angle), 0, math.cos(angle))
-
-                    local alternativeCollisionPoint = spherePos + rotatedDirection * sphereRadius
-                    local alternativeIsVisible, alternativeCollisionPoint = Helpers.VisPos(spherePos, alternativeCollisionPoint, vPlayerFuture)
-
-                    if alternativeIsVisible then
-                        -- Alternative collision point is visible, use it
-                        alternativePoint = alternativeCollisionPoint
-                        break
-                    end
-                end
-
-                if alternativePoint then
-                    return true, alternativePoint
-                else
-                    -- No alternative collision point is visible, return original collision point
+-- Define function to check collision between the hitbox and the sphere
+    local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
+        if vPlayerFuture ~= nil and isMelee then
+            local vhitbox_Height_trigger_bottom = Vector3(0, 0, 0) --swingrange
+            local vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
+            local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
+            local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)
+            local hitbox_min_trigger = (vPlayerFuture + vhitbox_min)
+            local hitbox_max_trigger = (vPlayerFuture + vhitbox_max)
+    
+            -- Calculate the closest point on the hitbox to the sphere
+            local closestPoint = Vector3(
+                math.max(hitbox_min_trigger.x, math.min(spherePos.x, hitbox_max_trigger.x)),
+                math.max(hitbox_min_trigger.y, math.min(spherePos.y, hitbox_max_trigger.y)),
+                math.max(hitbox_min_trigger.z, math.min(spherePos.z, hitbox_max_trigger.z))
+            )
+    
+            -- Calculate the vector from the closest point to the sphere center
+            local closestToPointVector = spherePos - closestPoint
+    
+            -- Calculate the distance along the vector from the closest point to the sphere center
+            local distanceAlongVector = math.sqrt(closestToPointVector.x^2 + closestToPointVector.y^2 + closestToPointVector.z^2)
+    
+            -- Compare the distance along the vector to the sum of the radii
+            if sphereRadius == 0 then
+                -- Treat the sphere as a single point
+                if distanceAlongVector <= 0 then
+                    -- Collision detected
                     return true, closestPoint
+                else
+                    -- No collision
+                    return false, nil
+                end
+            else
+                if distanceAlongVector <= sphereRadius or distanceAlongVector <= sphereRadius + 0.5 then
+                    -- Collision detected (including intersecting or touching)
+                    return true, closestPoint
+                else
+                    -- No collision
+                    return false, nil
                 end
             end
-        else
-            -- No collision
-            return false, nil
         end
     end
-end
 
 local Hitbox = {
     Head = 1,
@@ -317,7 +300,7 @@ local Hitbox = {
 
 local function ChargeControll(pCmd)
     -- Get the current view angles
-    local sensetivity = client.GetConVar("sensitivity") + 2 --mSensetivity:GetValue() / 10 --0.4
+    local sensetivity = mSensetivity:GetValue() --client.GetConVar("sensitivity") --mSensetivity:GetValue() / 10 --0.4 --client.GetConVar("sensitivity") +
     local currentAngles = engine.GetViewAngles()
     -- Get the mouse motion
     local mouseDeltaX = -(pCmd.mousedx * sensetivity / 100)
@@ -330,9 +313,7 @@ end
 
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
-    if not Swingpred:GetValue() then
-        goto continue -- Enable or disable script
-    end
+    if not Swingpred:GetValue() then goto continue end
 
     pLocal = entities.GetLocalPlayer() -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
     if not pLocal or not pLocal:IsAlive() then
@@ -455,6 +436,15 @@ end]]--
     Vheight = Vector3(0, 0, viewheight)
     pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
 
+    --SwingRange calculation
+    if ExtendedRange == nil then
+        -- Extend the cube by the swingrange value forward
+        local halfsize = 18
+        -- Calculate the distance from the view position to the center of the furthest plane of the extended cube
+        ExtendedRange = swingrange + halfsize
+    end
+swingrange = ExtendedRange
+
 -- Manual charge control
 
         if Mchargebot:GetValue() and pLocal:InCond(17) then
@@ -546,22 +536,20 @@ end]]--
 ONGround = (flags & FL_ONGROUND == 1)
 local collision = false
 
-collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
-    -- Check for collision with future position
-    can_attack = collision
-    can_charge = false
-
     -- Check for collision with current position
+    collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
+        can_attack = collision
+
+    -- Check for collision with future position
     if not collision then
-        collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
-        if collision then
-            can_attack = true
-        end
-    
+        collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
+        
+        -- Check for collision with future position
+        can_attack = collision
+        can_charge = false
     end
     
     -- Check for charge range
-    print(chargeLeft)
     if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft == 100 then -- Check for collision during charge
             collision = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
             if collision then
@@ -597,8 +585,9 @@ collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingran
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-            pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0) --pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
-        
+        pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0) --pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
+
+
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
         -- change angles at target
         aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
@@ -625,7 +614,7 @@ collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingran
                 --remove tick
                 time = time - 1
                     
-               pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
 
             elseif mAutoRefill:GetValue() == true then
                 if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 350 then
@@ -807,26 +796,18 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
         end
 
         vertices[i] = client.WorldToScreen(Vector3(x, y, z))
-
-        -- calculate the color for this line based on the height of the point
-        local t = math.max(math.min((z - center.z - target_distance) / (mTHeightt - target_distance), 1), 0)
-        local color = {}
-        for key, value in pairs(color_close) do
-            color[key] = math.floor((1 - t) * value + t * color_far[key])
-        end
-        colors[i] = color
     end
 
     -- Calculate the top vertex position
     local top_height = mTHeightt -- adjust as needed
     local top_vertex = client.WorldToScreen(Vector3(center.x, center.y, center.z + top_height))
-
+    local color = {r = 0, g = 0, b = 255, a = 255} -- blue
+    draw.Color(color.r, color.g, color.b, color.a)
     -- Draw the circle and connect all the vertices to the top point
     for i = 1, segments do
         local j = i + 1
         if j > segments then j = 1 end
         if vertices[i] and vertices[j] then
-            draw.Color(colors[i].r, colors[i].g, colors[i].b, colors[i].a)
             draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
         end
     end
@@ -834,7 +815,7 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
     -- Draw a second circle if AchargeRange is enabled
     if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft >= 100 then
         -- Define the color for the second circle
-        local color = {r = 0, g = 0, b = 255, a = 255} -- blue
+        color = {r = 255, g = 0, b = 0, a = 255} -- red
 
         -- Calculate the radius for the second circle
         local radius2 = radius * 1.5
