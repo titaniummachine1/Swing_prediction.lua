@@ -94,6 +94,7 @@ local aimposVis = nil
 local LastTarget = nil
 local ExtendedRange = nil
 local in_attack = nil
+local Gcan_attack = false
 
 local pivot
 local can_charge = false
@@ -613,15 +614,18 @@ local collision = false
             if can_attack == true then
                 --remove tick
                 time = time - 1
-                    
+                Gcan_attack = false
+
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
 
             elseif mAutoRefill:GetValue() == true then
                 if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 350 then
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
+                Gcan_attack = true
             else
                 time = swing_delay
+                Gcan_attack = true
             end
 
             if can_charge then
@@ -663,6 +667,7 @@ local function doDraw()
 if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
 
     if pLocalFuture == nil or not pLocal:IsAlive() then return end
+    if CurrentTarget == nil then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
         local w, h = draw.GetScreenSize()
@@ -803,6 +808,11 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
     local top_vertex = client.WorldToScreen(Vector3(center.x, center.y, center.z + top_height))
     local color = {r = 0, g = 0, b = 255, a = 255} -- blue
     draw.Color(color.r, color.g, color.b, color.a)
+    if not Gcan_attack then
+        print(Gcan_attack)
+        color = {r = 52, g = 235, b = 97, a = 255} -- red
+        draw.Color(color.r, color.g, color.b, color.a)
+    end
     -- Draw the circle and connect all the vertices to the top point
     for i = 1, segments do
         local j = i + 1
