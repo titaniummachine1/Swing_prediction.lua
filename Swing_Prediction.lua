@@ -92,7 +92,6 @@ local onGround = nil
 local CurrentTarget = nil
 local aimposVis = nil
 local LastTarget = nil
-local ExtendedRange = nil
 local in_attack = nil
 local Gcan_attack = false
 
@@ -436,15 +435,6 @@ end]]--
     -- Eye level 
     Vheight = Vector3(0, 0, viewheight)
     pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
-
-    --SwingRange calculation
-    if ExtendedRange == nil then
-        -- Extend the cube by the swingrange value forward
-        local halfsize = 18
-        -- Calculate the distance from the view position to the center of the furthest plane of the extended cube
-        ExtendedRange = swingrange + halfsize
-    end
---swingrange = ExtendedRange
 
 -- Manual charge control
 
