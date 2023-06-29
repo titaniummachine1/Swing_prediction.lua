@@ -367,7 +367,7 @@ local function OnCreateMove(pCmd)
 
 --get maximum swing range
     swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 36) / 2))
-    
+
     --maximum swign range physicly possible VV
     --swingrange = (swingRangeMultiplier * pWeapon:GetSwingRange() + (math.sqrt(36^2 / 2)))
 
@@ -549,7 +549,6 @@ local collision = false
         can_attack = collision
         can_charge = false
     end
-    print(swingrange)
     -- Check for charge range
     if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft == 100 then -- Check for collision during charge
             collision = checkCollision(vPlayerFuture, pLocalOrigin, Charge_Range)
