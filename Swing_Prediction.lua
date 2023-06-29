@@ -367,7 +367,7 @@ local function OnCreateMove(pCmd)
     local pWeaponName = pWeaponDef:GetName()
 
 --get maximum swing range
-    swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 36) / 2))
+    swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 35.9) / 2))
 
     --maximum swign range physicly possible VV
     --swingrange = (swingRangeMultiplier * pWeapon:GetSwingRange() + (math.sqrt(36^2 / 2)))
@@ -557,7 +557,7 @@ local collision = false
             if collision then
                 can_attack = true
                 tick_count = tick_count + 1
-                if tick_count % (time - Latency + 4) == 0 then
+                if tick_count % (time - Latency + 2) == 0 then
                     can_charge = true
                 end
             end
