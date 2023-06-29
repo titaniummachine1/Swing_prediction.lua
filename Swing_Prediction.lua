@@ -44,9 +44,9 @@ local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,5
 --local mAutoMelee    = menu:AddComponent(MenuLib.Checkbox("Auto Melee", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
+local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", false, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
-local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
+local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", true))
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
 local Visuals = {
     ["Range Circle"] = true,
@@ -67,18 +67,22 @@ local pastPredictions = {}
 local pLocal = entities.GetLocalPlayer()
 local vdistance = 1
 local ping = 0
-local swingrange = 70
+local swingrange = 48
 local tickRate = 66
 local tick_count = 0
 local time = 16
 local last_time = time
 local swing_delay = time
+local Gcan_attack = false
+local Safe_Strafe = false
+local can_charge = false
+local Charge_Range = 128
+local swingRangeMultiplier = 1
 
 local pLocalClass = nil
 local pLocalFuture = nil
 local pLocalOrigin = nil
 local pWeapon = nil
-local Safe_Strafe = false
 local Latency = nil
 local tick = nil
 local viewheight = nil
@@ -92,11 +96,10 @@ local onGround = nil
 local CurrentTarget = nil
 local aimposVis = nil
 local LastTarget = nil
+local ExtendedRange = nil
 local in_attack = nil
-local Gcan_attack = false
-
+local pitchAngle
 local pivot
-local can_charge = false
 
 local settings = {
     MinDistance = 200,
@@ -361,7 +364,14 @@ local function OnCreateMove(pCmd)
     local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex") -- Set "pWeaponDefIndex" to the "pWeapon"'s item definition index
     local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex) -- Set "pWeaponDef" to the local "pWeapon"'s item definition
     local pWeaponName = pWeaponDef:GetName()
-    swingrange = pWeapon:GetSwingRange()
+
+--get maximum swing range
+    swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 36) / 2))
+    
+    --maximum swign range physicly possible VV
+    --swingrange = (swingRangeMultiplier * pWeapon:GetSwingRange() + (math.sqrt(36^2 / 2)))
+
+
     local players = entities.FindByClass("CTFPlayer") -- Create a table of all players in the game
     if #players == 0 then
         return -- Immediately check if there are any players in the game. If there aren't, return.
@@ -539,10 +549,10 @@ local collision = false
         can_attack = collision
         can_charge = false
     end
-    
+    print(swingrange)
     -- Check for charge range
     if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft == 100 then -- Check for collision during charge
-            collision = checkCollision(vPlayerFuture, pLocalOrigin, (swingrange * 1.5))
+            collision = checkCollision(vPlayerFuture, pLocalOrigin, Charge_Range)
             if collision then
                 can_attack = true
                 tick_count = tick_count + 1
@@ -552,43 +562,61 @@ local collision = false
             end
     end
                     
+
+
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = CurrentTarget:GetHitboxes()
     local hitbox = hitboxes[6]
     local aimpos = nil
+
     if collisionPoint ~= nil then
-        aimpos = collisionPoint
+        aimpos = collisionPoint -- + eulerAngleOffset
+        
+    --(swingrange extending and aimpos height_adjustment)
+
+        local hitboxSize = Vector3(36, 36, 36) + Vector3(pWeapon:GetSwingRange(), pWeapon:GetSwingRange(), pWeapon:GetSwingRange())
+        local straightAimDistance = pWeapon:GetSwingRange() + ((swingRangeMultiplier * 36) / 2)
+        local cornerAimDistance = ((swingRangeMultiplier * 36) / 2) + math.sqrt((pWeapon:GetSwingRange())^2 + pWeapon:GetSwingRange()^2)
+        
+        local aimDirection = Vector3((collisionPoint - pLocalOrigin):Length())
+        local adjustedAimPosition = pLocalOrigin + aimDirection * (straightAimDistance + (cornerAimDistance - straightAimDistance) * (1 - hitboxSize:Length() / math.sqrt((collisionPoint.x - pLocalOrigin.x)^2 + (collisionPoint.y - pLocalOrigin.y)^2 + (collisionPoint.z - pLocalOrigin.z)^2)))
+        
+        -- Calculate the pitch angle adjustment
+        pitchAngle =  0 --vdistance * 0.1 * math.atan(adjustedAimPosition.x - pLocalOrigin.x, math.sqrt((adjustedAimPosition.x - pLocalOrigin.x)^2))
+
     elseif aimpos == nil then
         aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no collision point accesable then aim at defualt hitbox
     end
 
     aimposVis = aimpos -- transfer aim point to visuals
-    flags = pLocal:GetPropInt("m_fFlags")
-    local inAttackAim = false
+    local Eaimpos = aimpos
+
+        flags = pLocal:GetPropInt("m_fFlags")
+        local inAttackAim = false
+
     if Maimbot:GetValue() and Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture)
-    and pLocal:InCond(17)
-    and not collision then
+        and pLocal:InCond(17)
+        and not collision then
         -- change angles at target
-        aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+        Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
         --aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
-            pCmd:SetViewAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0)      --engine.SetViewAngles(aimpos)
+            pCmd:SetViewAngles(engine.GetViewAngles().pitch, Eaimpos.yaw, 45)      --engine.SetViewAngles(aimpos)
 
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
         -- change angles at target
-        aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-        pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0) --pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
-
+        Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
+            pCmd:SetViewAngles(Eaimpos.pitch + pitchAngle, Eaimpos.yaw, 0) --pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
 
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
         -- change angles at target
-        aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-            pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
+        Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
+            pCmd:SetViewAngles(Eaimpos.pitch + pitchAngle, Eaimpos.yaw, 45) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
 
     elseif not inAttackAim and Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
             -- Calculate the source and destination vectors
             ChargeControll(pCmd)
     end
-       
+    aimposVis = aimpos  -- transfer aim point to visuals
     --[shield bashing strat]
 
     if pLocalClass == 4 and (pLocal:InCond(17)) then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
@@ -630,6 +658,7 @@ local collision = false
 -- Update last variables
             last_time = time
             Safe_Strafe = false -- reset safe strafe
+            aimposVis = aimpos -- transfer aim point to visuals
     ::continue::
 end
 
@@ -799,7 +828,6 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
     local color = {r = 0, g = 0, b = 255, a = 255} -- blue
     draw.Color(color.r, color.g, color.b, color.a)
     if not Gcan_attack then
-        print(Gcan_attack)
         color = {r = 52, g = 235, b = 97, a = 255} -- red
         draw.Color(color.r, color.g, color.b, color.a)
     end
@@ -818,7 +846,7 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
         color = {r = 255, g = 0, b = 0, a = 255} -- red
 
         -- Calculate the radius for the second circle
-        local radius2 = radius * 1.5
+        local radius2 = Charge_Range
 
         -- Calculate the vertex positions around the second circle
         local vertices2 = {} -- table to store circle vertices
