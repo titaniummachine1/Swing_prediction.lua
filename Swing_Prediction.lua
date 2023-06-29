@@ -44,9 +44,9 @@ local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,5
 --local mAutoMelee    = menu:AddComponent(MenuLib.Checkbox("Auto Melee", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", false, ItemFlags.FullWidth))
+local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
-local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", true))
+local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
 local Visuals = {
     ["Range Circle"] = true,
@@ -339,6 +339,7 @@ local function OnCreateMove(pCmd)
 
     -- Get current latency and lerp
     local latOut = clientstate.GetLatencyOut()
+    local latIn = clientstate.GetLatencyIn()
     lerp = client.GetConVar("cl_interp") or 0
     --local Tolerance = 4
     --print(lerp)
@@ -549,13 +550,14 @@ local collision = false
         can_attack = collision
         can_charge = false
     end
+
     -- Check for charge range
     if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft == 100 then -- Check for collision during charge
             collision = checkCollision(vPlayerFuture, pLocalOrigin, Charge_Range)
             if collision then
                 can_attack = true
                 tick_count = tick_count + 1
-                if tick_count % (Latency + 4) == 0 then
+                if tick_count % (time - Latency + 4) == 0 then
                     can_charge = true
                 end
             end
@@ -573,7 +575,7 @@ local collision = false
         
     --(swingrange extending and aimpos height_adjustment)
 
-        local hitboxSize = Vector3(36, 36, 36) + Vector3(pWeapon:GetSwingRange(), pWeapon:GetSwingRange(), pWeapon:GetSwingRange())
+        --[[local hitboxSize = Vector3(36, 36, 36) + Vector3(pWeapon:GetSwingRange(), pWeapon:GetSwingRange(), pWeapon:GetSwingRange())
         local straightAimDistance = pWeapon:GetSwingRange() + ((swingRangeMultiplier * 36) / 2)
         local cornerAimDistance = ((swingRangeMultiplier * 36) / 2) + math.sqrt((pWeapon:GetSwingRange())^2 + pWeapon:GetSwingRange()^2)
         
@@ -582,7 +584,7 @@ local collision = false
         
         -- Calculate the pitch angle adjustment
         pitchAngle =  0 --vdistance * 0.1 * math.atan(adjustedAimPosition.x - pLocalOrigin.x, math.sqrt((adjustedAimPosition.x - pLocalOrigin.x)^2))
-
+        ]]
     elseif aimpos == nil then
         aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no collision point accesable then aim at defualt hitbox
     end
@@ -604,12 +606,12 @@ local collision = false
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
         -- change angles at target
         Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
-            pCmd:SetViewAngles(Eaimpos.pitch + pitchAngle, Eaimpos.yaw, 0) --pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
+            pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 0) --pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
 
     elseif Maimbot:GetValue() and flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
         -- change angles at target
         Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
-            pCmd:SetViewAngles(Eaimpos.pitch + pitchAngle, Eaimpos.yaw, 45) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
+            pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 45) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
 
     elseif not inAttackAim and Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
             -- Calculate the source and destination vectors
