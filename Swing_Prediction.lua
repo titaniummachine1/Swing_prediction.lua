@@ -44,6 +44,7 @@ local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,5
 --local mAutoMelee    = menu:AddComponent(MenuLib.Checkbox("Auto Melee", true, ItemFlags.FullWidth))
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
+local AutoFakelat   = menu:AddComponent(MenuLib.Checkbox("Adaptive Latency", true, ItemFlags.FullWidth))
 local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
@@ -78,6 +79,7 @@ local Safe_Strafe = false
 local can_charge = false
 local Charge_Range = 128
 local swingRangeMultiplier = 1
+local defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
 
 local pLocalClass = nil
 local pLocalFuture = nil
@@ -367,7 +369,7 @@ local function OnCreateMove(pCmd)
     local pWeaponName = pWeaponDef:GetName()
 
 --get maximum swing range
-    swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 35.9) / 2))
+    swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 35.7) / 2))
 
     --maximum swign range physicly possible VV
     --swingrange = (swingRangeMultiplier * pWeapon:GetSwingRange() + (math.sqrt(36^2 / 2)))
@@ -562,7 +564,33 @@ local collision = false
                 end
             end
     end
-                    
+
+-- Initialize the temporary fake latency value
+if gui.GetValue("Fake Latency Value (MS)") ~= 200 then
+    defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
+end
+
+-- Check if AutoFakelat is enabled
+if AutoFakelat:GetValue() then
+    -- Check if there is a collision
+    if collision then
+        -- Check if the global fake latency value is not already 200 and is greater than or equal to 200
+        if defFakeLatency ~= 200 then
+            -- Set the fake latency value to 200
+            gui.SetValue("Fake Latency Value (MS)", 200)
+        end
+    elseif not collision then
+        -- Check if the fake latency value is already 200
+        if gui.GetValue("Fake Latency Value (MS)") == 200 then
+            -- Set the fake latency value to the global fake latency value
+            gui.SetValue("Fake Latency Value (MS)", defFakeLatency)
+            
+        end
+    end
+end
+
+
+
 
 
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
@@ -617,11 +645,11 @@ local collision = false
             -- Calculate the source and destination vectors
             ChargeControll(pCmd)
     end
-    aimposVis = aimpos  -- transfer aim point to visuals
+
     --[shield bashing strat]
 
     if pLocalClass == 4 and (pLocal:InCond(17)) then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
-        local Bashed = checkCollision(vPlayerFuture, pLocalOrigin, 18)
+        local Bashed = checkCollision(vPlayerOrigin, pLocalOrigin, 20)
 
         if not Bashed then -- if demoknight bashed on enemy
             can_attack = false
