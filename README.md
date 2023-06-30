@@ -13,11 +13,11 @@
 ![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/5d4b98fc-5bd8-4ba3-ab4e-ab0a5cf3d9de)
 
 
-## Download
+# Download
 
 Put all required files in your %localappdata% folder.
 including 
-# Requirements
+## Requirements
 
 [![LuaLib](https://img.shields.io/badge/Download-Latest-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-Library/releases/latest/) and copy the `lnxLib.lua` file to your `%localappdata%` folder.
 
