@@ -17,7 +17,7 @@
 # Setup
 
 Put all required files in your %localappdata% folder.
-including 
+
 ## Requirements
 
 [![LuaLib](https://img.shields.io/badge/Download-Latest-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-Library/releases/latest/) and copy the `lnxLib.lua` file to your `%localappdata%` folder.
@@ -30,19 +30,13 @@ including
 
 https://user-images.githubusercontent.com/78664175/230738710-c0c385d0-dcb3-4c50-b707-436808db31aa.mp4
 
+# Lmaobox Beta Setup
 
-
-
-
-
-
-
-
-
-
-
-
-
+How to run Swing_prediction.lua:
+  1. Create a .bat file in the same directory as lmaobox.exe.
+  2. Right-click the .bat file and click "edit".
+  3. Put "Lmaobox file name.exe -beta" inside the file, save, and run it.
+  4. It should look similar to this: `start Lmaobox file-name.exe -beta`
 
 ## description
 👥 The script finds best target taking into account distance, fov, and health.
@@ -56,14 +50,6 @@ https://user-images.githubusercontent.com/78664175/230738710-c0c385d0-dcb3-4c50-
 💻 calculates collision between the sphere of range of melee range and enemy hitbox in future when swing would had ended already
 
 if it predicts you would hit the enemy after swing ends it will perform a swing
-
-# Lmaobox Beta Setup
-
-How to run Swing_prediction.lua:
-  1. Create a .bat file in the same directory as lmaobox.exe.
-  2. Right-click the .bat file and click "edit".
-  3. Put "Lmaobox file name.exe -beta" inside the file, save, and run it.
-  4. It should look similar to this: `start Lmaobox file-name.exe -beta`
 
 [![Changelog](https://img.shields.io/badge/Changelog-Latest%20Release-blue?style=for-the-badge)](https://github.com/titaniummachine1/Swing_prediction.lua/compare/v1.3.9_stable...main)
 
