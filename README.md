@@ -19,6 +19,7 @@
 Put all required files in your %localappdata% folder.
 
 ## Requirements
+click on the buttons below to download the requirements. V
 
 [![LuaLib](https://img.shields.io/badge/Download-Latest-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-Library/releases/latest/) and copy the `lnxLib.lua` file to your `%localappdata%` folder.
 
