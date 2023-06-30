@@ -39,16 +39,18 @@ https://user-images.githubusercontent.com/78664175/230738710-c0c385d0-dcb3-4c50-
 
 
 
-## describtion
-👥 The script finds best target taking into account distance, fov, health.
+## description
+👥 The script finds best target taking into account distance, fov, and health.
 
-⏱️ it checks if the user's eye position.
+⏱️ checks user position and enemy. 
 
-⏱️  then gets enemy hitbox size and adjsuts it with swing range of weapon you have.
+⏱️ then gets the enemy hitbox position and adjusts it with the swing range of the weapon you have.
 
-👊 when the predicted position of a user eyes is inside the area of predicted position of the enemy then it attacks
+👊 when the predicted position of a user's eyes and his opponent's hitbox
 
-💻 predicts enemy's movement and hit's them with their melee weapon as soon as it is possible.
+💻 calculates collision between the sphere of range of melee range and enemy hitbox in future when swing would had ended already
+
+if it predicts you would hit the enemy after swing ends it will perform a swing
 
 # Setup
 Put all required files in your %localappdata% folder.
