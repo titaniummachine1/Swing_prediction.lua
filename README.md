@@ -10,7 +10,8 @@
   <img src="https://img.shields.io/badge/YouTube%20Showcase-red?style=for-the-badge&logo=youtube" alt="YouTube Showcase Badge">
 </a>
 
-![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/5d4b98fc-5bd8-4ba3-ab4e-ab0a5cf3d9de)
+![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/f1b556b8-168c-456b-bd53-825f6cb6229d)
+
 
 
 
