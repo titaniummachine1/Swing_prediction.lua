@@ -368,13 +368,6 @@ local function OnCreateMove(pCmd)
     local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex) -- Set "pWeaponDef" to the local "pWeapon"'s item definition
     local pWeaponName = pWeaponDef:GetName()
 
---get maximum swing range
-    swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 35.7) / 2))
-
-    --maximum swign range physicly possible VV
-    --swingrange = (swingRangeMultiplier * pWeapon:GetSwingRange() + (math.sqrt(36^2 / 2)))
-
-
     local players = entities.FindByClass("CTFPlayer") -- Create a table of all players in the game
     if #players == 0 then
         return -- Immediately check if there are any players in the game. If there aren't, return.
@@ -433,6 +426,14 @@ end]]--
 
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     if not isMelee then goto continue end -- if not melee then skip code
+
+--[------------get maximum swing range--------]
+    swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 35.7) / 2))
+
+    
+    --maximum swign range physicly possible VV
+    --swingrange = (swingRangeMultiplier * pWeapon:GetSwingRange() + (math.sqrt(36^2 / 2)))
+
 --[-------get vierwhegiht--------]
 
     if pLocal == nil then
