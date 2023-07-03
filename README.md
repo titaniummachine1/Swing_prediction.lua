@@ -6,6 +6,10 @@
 
 ![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/95c03687-f1f6-4455-adf6-cf7fd15830ff)
 
+## Download
+[![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
+
+
 https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/f76d8545-6d1f-40dd-9d56-95b7dbd05b71
 
 ## Download
