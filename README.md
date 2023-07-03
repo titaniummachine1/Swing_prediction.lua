@@ -10,17 +10,13 @@
   <img src="https://img.shields.io/badge/YouTube%20Showcase-red?style=for-the-badge&logo=youtube" alt="YouTube Showcase Badge">
 </a>
 
-![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/f1b556b8-168c-456b-bd53-825f6cb6229d)
-
-
-
 
 # Setup
 
 Put all required files in your %localappdata% folder.
 
 ## Requirements
-click on the buttons below to download the requirements. V
+Click on the buttons below to download the requirements. V
 
 [![LuaLib](https://img.shields.io/badge/Download-Latest-blue?style=for-the-badge&logo=download)](https://github.com/lnx00/Lmaobox-Library/releases/latest/) and copy the `lnxLib.lua` file to your `%localappdata%` folder.
 
