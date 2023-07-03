@@ -6,10 +6,7 @@
 
 ![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/95c03687-f1f6-4455-adf6-cf7fd15830ff)
 
-<a href="https://www.youtube.com/watch?v=T8TRa1C5T2I&t=25s" target="_blank">
-  <img src="https://img.shields.io/badge/YouTube%20Showcase-red?style=for-the-badge&logo=youtube" alt="YouTube Showcase Badge">
-</a>
-
+https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/f76d8545-6d1f-40dd-9d56-95b7dbd05b71
 
 # Setup
 
