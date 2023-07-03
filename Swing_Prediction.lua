@@ -45,7 +45,7 @@ local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,5
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local AutoFakelat   = menu:AddComponent(MenuLib.Checkbox("Adaptive Latency", true, ItemFlags.FullWidth))
-local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
+local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", false, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Manual overide", key))
@@ -80,6 +80,7 @@ local can_charge = false
 local Charge_Range = 128
 local swingRangeMultiplier = 1
 local defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
+local Backtrackpositions = {}
 
 local pLocalClass = nil
 local pLocalFuture = nil
@@ -100,8 +101,8 @@ local aimposVis = nil
 local LastTarget = nil
 local ExtendedRange = nil
 local in_attack = nil
-local pitchAngle
-local pivot
+local pitchAngle = nil
+local pivot = nil
 
 local settings = {
     MinDistance = 200,
@@ -249,12 +250,11 @@ end
 local vhitbox_Height = 85
 local vhitbox_width = 18
 
--- Define function to check collision between the hitbox and the sphere
--- Define function to check collision between the hitbox and the sphere
-    local function checkCollision(vPlayerFuture, spherePos, sphereRadius)
+-- Define function to check InRange between the hitbox and the sphere
+    local function checkInRange(vPlayerFuture, spherePos, sphereRadius)
         if vPlayerFuture ~= nil and isMelee then
-            local vhitbox_Height_trigger_bottom = Vector3(0, 0, 0) --swingrange
-            local vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
+            local vhitbox_Height_trigger_bottom = Vector3(0, 0, 0)
+            local vhitbox_width_trigger = (vhitbox_width)
             local vhitbox_min = Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)
             local vhitbox_max = Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)
             local hitbox_min_trigger = (vPlayerFuture + vhitbox_min)
@@ -277,18 +277,18 @@ local vhitbox_width = 18
             if sphereRadius == 0 then
                 -- Treat the sphere as a single point
                 if distanceAlongVector <= 0 then
-                    -- Collision detected
+                    -- InRange detected
                     return true, closestPoint
                 else
-                    -- No collision
+                    -- No InRange
                     return false, nil
                 end
             else
                 if distanceAlongVector <= sphereRadius or distanceAlongVector <= sphereRadius + 0.5 then
-                    -- Collision detected (including intersecting or touching)
+                    -- InRange detected (including intersecting or touching)
                     return true, closestPoint
                 else
-                    -- No collision
+                    -- No InRange
                     return false, nil
                 end
             end
@@ -316,61 +316,75 @@ local function ChargeControll(pCmd)
     pCmd:SetViewAngles(currentAngles.pitch, newYaw, 0) --engine.SetViewAngles(aimpos1)
 end
 
+-- Calculates the FOV between two angles and returns x and y position differences
+---@param vFrom EulerAngles
+---@param vTo EulerAngles
+---@return number fov, number deltaX, number deltaY
+local function AngleFovAndPositionDifference(vFrom, vTo)
+    if vFrom == nil or vTo == nil then return 0,0,0 end
+
+    local vSrc = vFrom:Forward()
+    local vDst = vTo:Forward()
+
+    -- Calculate the FOV
+    local fov = math.deg(math.acos(vDst:Dot(vSrc) / vDst:LengthSqr()))
+
+    -- Calculate the position differences
+    local deltaX = vTo.x - vFrom.x
+    local deltaY = vTo.y - vFrom.y
+
+    return fov, deltaX, deltaY
+end
+
+
 --[[ Code needed to run 66 times a second ]]--
 local function OnCreateMove(pCmd)
-    if not Swingpred:GetValue() then goto continue end
-
-    pLocal = entities.GetLocalPlayer() -- Immediately set "pLocal" to the local player (entities.GetLocalPlayer)
-    if not pLocal or not pLocal:IsAlive() then
-        return -- Immediately check if the local player exists. If it doesn't, return.
+    -- Check if swing prediction is enabled
+    if not Swingpred:GetValue() then
+        goto continue -- Skip the rest of the code if swing prediction is disabled
     end
+
+    -- Get the local player entity
+    pLocal = entities.GetLocalPlayer()
+    if not pLocal or not pLocal:IsAlive() then
+        return -- Return if the local player entity doesn't exist or is dead
+    end
+
+    -- Get the local player's flags and charge meter
     local flags = pLocal:GetPropInt("m_fFlags")
-    --[[ping = entities.GetPlayerResources():GetPropDataTableInt("m_iPing")[pLocal:GetIndex()]]
     chargeLeft = pLocal:GetPropFloat("m_flChargeMeter")
     chargeLeft = math.floor(chargeLeft)
 
-    --[--Check local player class if spy or none then stop code--]
-
-    pLocalClass = pLocal:GetPropInt("m_iClass") -- Get local class
-    if pLocalClass == nil then
-        goto continue -- When local player did not choose class then skip code
-    end
-    if pLocalClass == 8 then
-        goto continue -- When local player is spy then skip code
+    -- Check if the local player is a spy
+    pLocalClass = pLocal:GetPropInt("m_iClass")
+    if pLocalClass == nil or pLocalClass == 8 then
+        goto continue -- Skip the rest of the code if the local player is a spy or hasn't chosen a class
     end
 
-    -- Get current latency and lerp
+    -- Get the current latency and lerp
     local latOut = clientstate.GetLatencyOut()
     local latIn = clientstate.GetLatencyIn()
     lerp = client.GetConVar("cl_interp") or 0
-    --local Tolerance = 4
-    --print(lerp)
-    -- Define the reaction time in seconds
-    Latency = (latOut + lerp)
-    -- Convert the delay to ticks
-    Latency = math.floor(Latency * tickRate + 1)
+    Latency = (latOut + lerp) -- Calculate the reaction time in seconds
+    Latency = math.floor(Latency * tickRate + 1) -- Convert the delay to ticks
 
-
-    -- Add the ticks to the current time
-    --time = time + Latency - Tolerances
-
-    --settings.MaxDistance = ((time / tickRate) * pLocal:EstimateAbsVelocity():Length()) * 2
-
-    --[--obtain secondary information after confirming we need it for fps boost when not using script--]
-
-    --[[ Features that require access to the weapon ]]--
-    pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
+    -- Get the local player's active weapon
+    pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
     if not pWeapon then
-        return
+        return -- Return if the local player doesn't have an active weapon
     end
+
+    -- Get the local player's active weapon data and definition
     local pWeaponData = pWeapon:GetWeaponData()
-    local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex") -- Set "pWeaponDefIndex" to the "pWeapon"'s item definition index
-    local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex) -- Set "pWeaponDef" to the local "pWeapon"'s item definition
+    local pWeaponID = pWeapon:GetWeaponID()
+    local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
+    local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
     local pWeaponName = pWeaponDef:GetName()
 
-    local players = entities.FindByClass("CTFPlayer") -- Create a table of all players in the game
+    -- Get all players in the game
+    local players = entities.FindByClass("CTFPlayer")
     if #players == 0 then
-        return -- Immediately check if there are any players in the game. If there aren't, return.
+        return -- Return if there are no players in the game
     end
 
     --[--if we enabled trodlier assist run auto weapon script--]
@@ -395,51 +409,23 @@ local function OnCreateMove(pCmd)
         end
     end
 
+-- Initialize the temporary fake latency value
+if gui.GetValue("Fake Latency Value (MS)") ~= 200 then
+    defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
+end
 
---[[ Auto Melee Switch ]]-- (Automatically switches to slot3 when an enemy is in range)
---[[if mAutoMelee:GetValue()  then
-    local minDistance = 200
-    local closestEnemyDist = 600
-    local closestEnemy
-
-    for i, enemy in ipairs(players) do
-        if enemy == pLocal then goto continue end
-        local pos = enemy:GetAbsOrigin()
-        local vel = enemy:EstimateAbsVelocity()
-        local futurePos = (pos + vel) * 0.5
-        print(futurePos)
-
-
-        local dist = (pLocal:GetAbsOrigin() - futurePos):Length()
-        if dist < closestEnemyDist then
-            closestEnemyDist = dist
-            closestEnemy = enemy
-        end
-    end
-
-    if closestEnemyDist < minDistance and not pWeapon:IsMeleeWeapon() then
-        client.Command("slot3", true)
-    end
-end]]--
+-- Initialize the temporary fake latency value
+if gui.GetValue("Fake Latency Value (MS)") == 200 then
+    gui.SetValue("Fake Latency Value (MS)", defFakeLatency)
+end
 
 --[-Don`t run script below when not usign melee--]
 
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     if not isMelee then goto continue end -- if not melee then skip code
 
---[------------get maximum swing range--------]
-    swingrange = (pWeapon:GetSwingRange() + ((swingRangeMultiplier * 35.7) / 2))
 
-    
-    --maximum swign range physicly possible VV
-    --swingrange = (swingRangeMultiplier * pWeapon:GetSwingRange() + (math.sqrt(36^2 / 2)))
-
---[-------get vierwhegiht--------]
-
-    if pLocal == nil then
-        pLocalOrigin = pLocal:GetAbsOrigin()
-        return pLocalOrigin
-    end
+--[-------Get pLocalOrigin--------]
 
     -- Get pLocal eye level and set vector at our eye level to ensure we check distance from eyes
     local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]") -- Vector3(0, 0, 70)
@@ -450,11 +436,39 @@ end]]--
     Vheight = Vector3(0, 0, viewheight)
     pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
 
--- Manual charge control
+--[------------get maximum swing range--------]
+swingrange = pWeapon:GetSwingRange()
 
-        if Mchargebot:GetValue() and pLocal:InCond(17) then
-            ChargeControll(pCmd)
-        end
+local hitboxSize = 36
+local multiplayer = 1
+
+if pWeaponDef:GetName() == "The Disciplinary Action" then
+    hitboxSize = 36 * 1.75
+    swingrange = 48 * 1.7
+end
+--[[
+local forwardPosition = Vector3(
+    pLocalOrigin.x + hitboxSize,
+    pLocalOrigin.y + hitboxSize + swingrange,
+    pLocalOrigin.z + hitboxSize
+)
+
+local cornerposition = Vector3( --ToDO: fix this
+    pLocalOrigin.x,
+    pLocalOrigin.y+ hitboxSize + swingrange,
+    pLocalOrigin.z
+)]]
+
+--local distanceCorner = (pLocalOrigin - cornerposition):Length()
+
+--local fov, offsetx, offsety = AngleFovAndPositionDifference(engine.GetViewAngles().x, cornerposition)
+
+swingrange = swingrange + (hitboxSize / 2)
+--[--Manual charge control--]
+
+    if Mchargebot:GetValue() and pLocal:InCond(17) then
+        ChargeControll(pCmd)
+    end
 
 --[-----Get best target------------------]
     local keybind = mKeyOverrite:GetValue()
@@ -527,7 +541,7 @@ end]]--
     fDistance = (vPlayerFuture - pLocalFuture):Length()
 
     -- Simulate swing and return result
-    local collisionPoint
+    local InRangePoint
     local pUsingMargetGarden = false
 
     if pWeaponDefIndex == 416 then
@@ -538,26 +552,28 @@ end]]--
         
         
 --[[---Check for hit detection--------]]
-ONGround = (flags & FL_ONGROUND == 1)
-local collision = false
+    ONGround = (flags & FL_ONGROUND == 1)
+    local InRange = false
+    can_charge = false
 
-    -- Check for collision with current position
-    collision, collisionPoint = checkCollision(vPlayerOrigin ,pLocalOrigin ,swingrange)
-        can_attack = collision
+-- Check for InRange with future position
 
-    -- Check for collision with future position
-    if not collision then
-        collision, collisionPoint = checkCollision(vPlayerFuture, pLocalFuture, swingrange)
-        
-        -- Check for collision with future position
-        can_attack = collision
-        can_charge = false
+
+-- Check for InRange with current position
+    InRange, InRangePoint = checkInRange(vPlayerOrigin ,pLocalOrigin ,swingrange)
+        can_attack = InRange --sets can_attack for result of colision check
+
+    if not InRange then -- if no attack succeds in melee range then attempt to check future pos
+        InRange, InRangePoint = checkInRange(vPlayerFuture, pLocalFuture, swingrange)
+            can_attack = InRange --sets can_attack for result of colision check
     end
 
-    -- Check for charge range
-    if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft == 100 then -- Check for collision during charge
-            collision = checkCollision(vPlayerFuture, pLocalOrigin, Charge_Range)
-            if collision then
+    -- Check for charge range bug
+    if pLocalClass == 4 -- player is Demoman
+        and AchargeRange:GetValue() -- menu option for such option is true
+        and chargeLeft == 100 then -- charge metter is full
+            InRange = checkInRange(vPlayerFuture, pLocalOrigin, Charge_Range) -- Check for InRange during charge
+            if InRange then
                 can_attack = true
                 tick_count = tick_count + 1
                 if tick_count % (time - Latency + 2) == 0 then
@@ -566,21 +582,16 @@ local collision = false
             end
     end
 
--- Initialize the temporary fake latency value
-if gui.GetValue("Fake Latency Value (MS)") ~= 200 then
-    defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
-end
-
 -- Check if AutoFakelat is enabled
 if AutoFakelat:GetValue() then
-    -- Check if there is a collision
-    if collision then
+    -- Check if there is a InRange
+    if InRange or fDistance < swingrange + 20 then
         -- Check if the global fake latency value is not already 200 and is greater than or equal to 200
         if defFakeLatency ~= 200 then
             -- Set the fake latency value to 200
             gui.SetValue("Fake Latency Value (MS)", 200)
         end
-    elseif not collision then
+    else
         -- Check if the fake latency value is already 200
         if gui.GetValue("Fake Latency Value (MS)") == 200 then
             -- Set the fake latency value to the global fake latency value
@@ -599,50 +610,35 @@ end
     local hitbox = hitboxes[6]
     local aimpos = nil
 
-    if collisionPoint ~= nil then
-        aimpos = collisionPoint -- + eulerAngleOffset
-        
-    --(swingrange extending and aimpos height_adjustment)
 
-        --[[local hitboxSize = Vector3(36, 36, 36) + Vector3(pWeapon:GetSwingRange(), pWeapon:GetSwingRange(), pWeapon:GetSwingRange())
-        local straightAimDistance = pWeapon:GetSwingRange() + ((swingRangeMultiplier * 36) / 2)
-        local cornerAimDistance = ((swingRangeMultiplier * 36) / 2) + math.sqrt((pWeapon:GetSwingRange())^2 + pWeapon:GetSwingRange()^2)
-        
-        local aimDirection = Vector3((collisionPoint - pLocalOrigin):Length())
-        local adjustedAimPosition = pLocalOrigin + aimDirection * (straightAimDistance + (cornerAimDistance - straightAimDistance) * (1 - hitboxSize:Length() / math.sqrt((collisionPoint.x - pLocalOrigin.x)^2 + (collisionPoint.y - pLocalOrigin.y)^2 + (collisionPoint.z - pLocalOrigin.z)^2)))
-        
-        -- Calculate the pitch angle adjustment
-        pitchAngle =  0 --vdistance * 0.1 * math.atan(adjustedAimPosition.x - pLocalOrigin.x, math.sqrt((adjustedAimPosition.x - pLocalOrigin.x)^2))
-        ]]
+    if InRangePoint ~= nil then
+
+        aimpos = InRangePoint
+        aimpos = CurrentTarget:GetAbsOrigin() + Vheight
+
     elseif aimpos == nil then
-        aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no collision point accesable then aim at defualt hitbox
+        aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
     end
 
     aimposVis = aimpos -- transfer aim point to visuals
     local Eaimpos = aimpos
 
-        flags = pLocal:GetPropInt("m_fFlags")
-        local inAttackAim = false
+    flags = pLocal:GetPropInt("m_fFlags")
 
     if Maimbot:GetValue() and Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture)
         and pLocal:InCond(17)
-        and not collision then
+        and not InRange then
         -- change angles at target
         Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
-        --aimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
-            pCmd:SetViewAngles(engine.GetViewAngles().pitch, Eaimpos.yaw, 45)      --engine.SetViewAngles(aimpos)
+        --Eaimpos = Math.PositionAngles(pLocalOrigin, vPlayerFuture + Vector3(0, 0, 70))
+            pCmd:SetViewAngles(engine.GetViewAngles().pitch, Eaimpos.yaw, 0)      --engine.SetViewAngles(aimpos)
 
-    elseif Maimbot:GetValue() and flags & FL_ONGROUND == 1 and can_attack then         -- if predicted position is visible then aim at it
+    elseif Maimbot:GetValue() and can_attack then --and flags & FL_ONGROUND == 1 then         -- if predicted position is visible then aim at it
         -- change angles at target
         Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
-            pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 0) --pCmd:SetViewAngles(aimpos:Unpack())  --engine.SetViewAngles(aimpos) --                                --  engine.SetViewAngles(aimpos) --
-
-    elseif Maimbot:GetValue() and flags & FL_ONGROUND == 0 and can_attack then         -- if we are in air then aim at target
-        -- change angles at target
-        Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
-            pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 45) --engine.SetViewAngles(aimpos)     --set angle at aim position manualy not silent aimbot
-
-    elseif not inAttackAim and Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
+        pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 0) --pCmd:SetViewAngles(aimpos:Unpack())  --                               --  engine.SetViewAngles(aimpos) --
+    
+        elseif Mchargebot:GetValue() and pLocal:InCond(17) then --manual charge controll
             -- Calculate the source and destination vectors
             ChargeControll(pCmd)
     end
@@ -650,7 +646,7 @@ end
     --[shield bashing strat]
 
     if pLocalClass == 4 and (pLocal:InCond(17)) then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
-        local Bashed = checkCollision(vPlayerOrigin, pLocalOrigin, 20)
+        local Bashed = checkInRange(vPlayerOrigin, pLocalOrigin, 20)
 
         if not Bashed then -- if demoknight bashed on enemy
             can_attack = false
@@ -664,7 +660,7 @@ end
                 time = time - 1
                 Gcan_attack = false
 
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
 
             elseif mAutoRefill:GetValue() == true then
                 if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 350 then
@@ -692,22 +688,25 @@ end
     ::continue::
 end
 
-            -- Define function to get the triggerbox dimensions
-                local function GetTriggerboxDimensions()
-                    vhitbox_Height = 85
-                    vhitbox_width = 18
-                    local vhitbox_Height_trigger_bottom = Vector3(0,0,0) --swingrange
-                    local vhitbox_width_trigger = (vhitbox_width) -- + swingrange)
-                    return vhitbox_width_trigger, vhitbox_Height_trigger_bottom
-                end
+    -- Define function to get the triggerbox dimensions
+        local function GetTriggerboxDimensions()
+            vhitbox_Height = 85
+            vhitbox_width = 18
+
+                local vhitbox_Height_trigger_bottom = Vector3(0,0,0)
+                local vhitbox_width_trigger = (vhitbox_width)
+
+                return vhitbox_width_trigger, vhitbox_Height_trigger_bottom
+        end
 
 -- debug command: ent_fire !picker Addoutput "health 99999" --superbot
 local myfont = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
-    if engine.Con_IsVisible() or engine.IsGameUIVisible() or not pLocal:IsAlive() then
+    if engine.Con_IsVisible() or engine.IsGameUIVisible() or not pLocal or pLocal:IsAlive() == nil then
         return
     end
+
     if vPlayerOrigin == nil then return end
     if vPlayerFuture == nil and pLocalFuture == nil then return end
 
@@ -720,12 +719,9 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
         draw.SetFont( myfont )
         draw.Color( 255, 255, 255, 255 )
         local w, h = draw.GetScreenSize()
-        local screenPos = { w / 2 - 15, h / 2 + 35}
-
-        local vPlayerTargetPos = vPlayerFuture
 
             --draw predicted local position with strafe prediction
-            screenPos = client.WorldToScreen(aimposVis)
+            local screenPos = client.WorldToScreen(aimposVis)
             if screenPos ~= nil then
                 draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
                 draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
@@ -735,14 +731,14 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
             -- Define function to draw the triggerbox
                 local vhitbox_width_trigger, vhitbox_Height_trigger_bottom = GetTriggerboxDimensions()
                 local vertices = {
-                    client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                    client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                    client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                    client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
-                    client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)),
-                    client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)),
-                    client.WorldToScreen(vPlayerTargetPos + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height)),
-                    client.WorldToScreen(vPlayerTargetPos + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height))
+                    client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, -vhitbox_Height_trigger_bottom)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, vhitbox_width_trigger, vhitbox_Height)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(-vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(vhitbox_width_trigger, -vhitbox_width_trigger, vhitbox_Height))
                 }
                 -- check if not nil
                 if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
