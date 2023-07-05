@@ -12,7 +12,8 @@
 
 https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/f76d8545-6d1f-40dd-9d56-95b7dbd05b71
 
-https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/663077b5-cf6b-426c-81b3-7a9fcabd7612
+
+https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/da02355b-abce-4abc-9294-1388d8fc8175
 
 
 ## Download
