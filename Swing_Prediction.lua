@@ -47,7 +47,7 @@ local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,5
 
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 --local AutoFakelat   = menu:AddComponent(MenuLib.Checkbox("Adaptive Latency", true, ItemFlags.FullWidth))
-local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", false, ItemFlags.FullWidth))
+local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Keybind", key))
@@ -68,7 +68,7 @@ local ping = 0
 local swingrange = 48
 local tickRate = 66
 local tick_count = 0
-local time = 14
+local time = 15
 local Gcan_attack = false
 local Safe_Strafe = false
 local can_charge = false
@@ -202,7 +202,7 @@ local function GetBestTarget(me)
 
     for _, target in ipairs(targetList) do
         local player = target.player
-        local aimPos = player:GetAbsOrigin()
+        local aimPos = player:GetAbsOrigin() + Vector3(0, 0, 75)
         local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), aimPos)
         local fov = Math.AngleFov(angles, engine.GetViewAngles())
         
@@ -367,16 +367,6 @@ local function OnCreateMove(pCmd)
         end
     end
 
---[[ Initialize the temporary fake latency value
-if gui.GetValue("Fake Latency Value (MS)") ~= 200 then
-    defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
-end
-
--- Initialize the temporary fake latency value
-if gui.GetValue("Fake Latency Value (MS)") == 200 then
-    gui.SetValue("Fake Latency Value (MS)", defFakeLatency)
-end]]
-
 --[-Don`t run script below when not usign melee--]
 
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
@@ -396,15 +386,15 @@ end]]
 
 --[-------- Get SwingRange --------]
     swingrange = pWeapon:GetSwingRange()
-    local hitboxData = pLocal:HitboxSurroundingBox()
-    local hitboxSize = hitboxData[1] - hitboxData[2]
-local hitboxHeight = hitboxSize.z
+   -- local hitboxData = pLocal:EntitySpaceHitboxSurroundingBox()
+    --local hitboxSize = hitboxData[1]
+--local hitboxHeight = hitboxSize.z
 
-hitboxSize.z = 0 -- Set z component to 0 to get the horizontal size
-
+--hitboxSize.z = 0 -- Set z component to 0 to get the horizontal size
+--print(-hitboxSize.y)
 -- Now you can use hitboxSize and hitboxHeight as variables representing the size and height of the hitbox respectively
 
-hitboxSize = 36
+local hitboxSize = 36
 
 if pWeaponDef:GetName() == "The Disciplinary Action" then
     hitboxSize = 55.8
@@ -565,34 +555,15 @@ local cornerposition = Vector3( --ToDO: fix this
     if pLocalClass == 4 -- player is Demoman
         and AchargeRange:GetValue() -- menu option for such option is true
         and chargeLeft == 100 then -- charge metter is full
-            InRange = checkInRange(vPlayerFuture, pLocalOrigin, Charge_Range) -- Check for InRange during charge
+            InRange = checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) -- Check for InRange during charge
             if InRange then
                 can_attack = true
                 tick_count = tick_count + 1
-                if tick_count % (time - Latency + 2) == 0 then
+                if tick_count % (time - Latency) == 0 then
                     can_charge = true
                 end
             end
     end
-
---[[ Check if AutoFakelat is enabled
-if AutoFakelat:GetValue() then
-    -- Check if there is a InRange
-    if InRange or fDistance < swingrange + 20 then
-        -- Check if the global fake latency value is not already 200 and is greater than or equal to 200
-        if defFakeLatency ~= 200 then
-            -- Set the fake latency value to 200
-            gui.SetValue("Fake Latency Value (MS)", 200)
-        end
-    else
-        -- Check if the fake latency value is already 200
-        if gui.GetValue("Fake Latency Value (MS)") == 200 then
-            -- Set the fake latency value to the global fake latency value
-            gui.SetValue("Fake Latency Value (MS)", defFakeLatency)
-            
-        end
-    end
-end]]
 
 
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
@@ -829,6 +800,7 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
     end
 
     -- Draw a second circle if AchargeRange is enabled
+    --center = pLocal:GetAbsOrigin()
     if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft >= 100 then
         -- Define the color for the second circle
         color = {r = 255, g = 0, b = 0, a = 255} -- red
