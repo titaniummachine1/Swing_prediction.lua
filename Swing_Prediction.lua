@@ -13,7 +13,7 @@ assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!")
 ---@type boolean, lnxLib
 local libLoaded, lnxLib = pcall(require, "lnxLib")
 assert(libLoaded, "lnxLib not found, please install it!")
-assert(lnxLib.GetVersion() >= 0.995, "lnxLib version is too old, please update it!")
+assert(lnxLib.GetVersion() <= 0.995, "lnxLib version is too old, please update it!")
 UnloadLib() --unloads all packages
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
@@ -38,25 +38,26 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 
 
-local Swingpred     = menu:AddComponent(MenuLib.Checkbox("Enable", true, ItemFlags.FullWidth))
+
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot", true, ItemFlags.FullWidth))
 local MSilent       = menu:AddComponent(MenuLib.Checkbox("Silent ^", true, ItemFlags.FullWidth))
 local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", true, ItemFlags.FullWidth))
-local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,50 ,10 ))
-
+local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,100 ,50 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 --local AutoFakelat   = menu:AddComponent(MenuLib.Checkbox("Adaptive Latency", true, ItemFlags.FullWidth))
-local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", true, ItemFlags.FullWidth))
+local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", false, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
 local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
 local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Keybind", key))
+
 local Visuals = {
     ["Range Circle"] = true,
     ["Visualization"] = true
 }
-
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
+
+
 local closestDistance = 2000
 local fDistance = 1
 local hitbox_Height = 82
@@ -98,12 +99,10 @@ local aimposVis = nil
 local in_attack = nil
 
 local settings = {
-    MinDistance = 200,
+    MinDistance = 100,
     MaxDistance = 1000,
-    MinHealth = 10,
-    MaxHealth = 100,
     MinFOV = 0,
-    MaxFOV = mFov:GetValue(),
+    MaxFOV = 360,
 }
 
 local latency = 0
@@ -149,66 +148,82 @@ end
 ---@return AimTarget? target
 local function GetBestTarget(me)
     settings = {
-        MinDistance = swingrange * 2,
+        MinDistance = swingrange,
         MaxDistance = 1000,
-        MinHealth = 10,
-        MaxHealth = 100,
         MinFOV = 0,
-        MaxFOV = mFov:GetValue(),
+        MaxFOV = 360,
     }
-    
+
     local players = entities.FindByClass("CTFPlayer")
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
 
-    ---@type Target[]
     local targetList = {}
     local targetCount = 0
 
     -- Calculate target factors
-    for i, player in pairs(players) do
-        if not Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin()) then goto continue end
-        if player == localPlayer or player:GetTeamNumber() == localPlayer:GetTeamNumber() then goto continue end
-        if player == nil or not player:IsAlive() then goto continue end
-        if gui.GetValue("ignore cloaked") == 1 and (player:InCond(4)) then goto continue end
-        if player:IsDormant() then goto continue end
-        
+    for i, player in ipairs(players) do
+        if not Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin()) then
+            -- Skip players not visible
+            goto continue
+        end
+
+        if player == localPlayer or player:GetTeamNumber() == localPlayer:GetTeamNumber() then
+            -- Skip local player and teammates
+            goto continue
+        end
+
+        if player == nil or not player:IsAlive() then
+            -- Skip dead players or nil references
+            goto continue
+        end
+
+        if gui.GetValue("ignore cloaked") == 1 and player:InCond(4) then
+            -- Skip cloaked players if enabled
+            goto continue
+        end
+
+        if player:IsDormant() then
+            -- Skip dormant players
+            goto continue
+        end
+
         local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
 
         -- Visibility Check
         local angles = Math.PositionAngles(pLocalOrigin, player:GetAbsOrigin() + Vector3(0, 0, viewheight))
         local fov = Math.AngleFov(engine.GetViewAngles(), angles)
-        
-        local health = player:GetHealth()
 
-        local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.1)
-        local healthFactor = Math.RemapValClamped(health, settings.MinHealth, settings.MaxHealth, 1, 0.5)
-        local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.5)
+        local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.07)
+        local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 1)
 
-        local factor = distanceFactor * healthFactor * fovFactor
+        local factor = distanceFactor * fovFactor
 
         targetCount = targetCount + 1
         targetList[targetCount] = { player = player, factor = factor }
-        
+
         ::continue::
     end
 
-    -- Sort target list by factor
-    table.sort(targetList, function(a, b)
-        return a.factor > b.factor
-    end)
+    -- Sort target list by factor in descending order manually
+    for i = 1, targetCount - 1 do
+        for j = 1, targetCount - i do
+            if targetList[j].factor < targetList[j + 1].factor then
+                targetList[j], targetList[j + 1] = targetList[j + 1], targetList[j]
+            end
+        end
+    end
 
     local bestTarget = nil
 
-    for _, target in ipairs(targetList) do
-        local player = target.player
+    if targetCount > 0 then
+        local player = targetList[1].player
         local aimPos = player:GetAbsOrigin() + Vector3(0, 0, 75)
         local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), aimPos)
         local fov = Math.AngleFov(angles, engine.GetViewAngles())
-        
+
         -- Set as best target
-        bestTarget = { entity = player, pos = aimPos, angles = angles, factor = target.factor }
-        break
+        bestTarget = { entity = player, angles = angles, factor = targetList[1].factor }
     end
 
     return bestTarget
@@ -256,18 +271,29 @@ local Hitbox = {
     Chest = 7
 }
 
-local function ChargeControll(pCmd)
+-- Control the player's charge by adjusting the view angles based on mouse input
+-- Parameters:
+--   pCmd (CUserCmd): The user command
+local function ChargeControl(pCmd)
     -- Get the current view angles
-    local sensetivity = mSensetivity:GetValue() --client.GetConVar("sensitivity") --mSensetivity:GetValue() / 10 --0.4 --client.GetConVar("sensitivity") +
+    local sensitivity = mSensetivity:GetValue() / 2
     local currentAngles = engine.GetViewAngles()
+
     -- Get the mouse motion
-    local mouseDeltaX = -(pCmd.mousedx * sensetivity / 100)
+    local mouseDeltaX = -(pCmd.mousedx * sensitivity / 10)
+
     -- Calculate the new yaw angle
     local newYaw = currentAngles.yaw + mouseDeltaX
 
+    -- Interpolate between the current yaw and the new yaw
+    local interpolationFraction = 1 / 66  -- Assuming the function is called 66 times per second
+    local interpolatedYaw = currentAngles.yaw + (newYaw - currentAngles.yaw) * interpolationFraction
+
     -- Set the new view angles
-    pCmd:SetViewAngles(currentAngles.pitch, newYaw, 0) --engine.SetViewAngles(aimpos1)
+    pCmd:SetViewAngles(currentAngles.pitch, interpolatedYaw, 0)
 end
+
+
 
 --[[Calculates the FOV between two angles and returns x and y position differences
 ---@param vFrom EulerAngles
@@ -297,11 +323,6 @@ end]]
 ---@param targetEntity number
 ---@param strafeAngle number
 local function OnCreateMove(pCmd)
-    -- Check if swing prediction is enabled
-    if not Swingpred:GetValue() then
-        goto continue -- Skip the rest of the code if swing prediction is disabled
-    end
-
 
     -- Get the local player entity
     pLocal = entities.GetLocalPlayer()
@@ -336,6 +357,7 @@ local function OnCreateMove(pCmd)
 
     -- Get the local player's flags and charge meter
         local flags = pLocal:GetPropInt("m_fFlags")
+        local airbone = flags & FL_ONGROUND == 0
         chargeLeft = pLocal:GetPropFloat("m_flChargeMeter")
         chargeLeft = math.floor(chargeLeft)
     -- Get the local player's active weapon data and definition
@@ -345,24 +367,28 @@ local function OnCreateMove(pCmd)
         local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
         local pWeaponName = pWeaponDef:GetName()
 
-    --[--if we enabled trodlier assist run auto weapon script--]
+        local pUsingMargetGarden = false
+
+        if pWeaponDefIndex == 416 then
+            -- If "pWeapon" is not set, break
+            pUsingMargetGarden = true
+            -- Set "pUsingProjectileWeapon" to true
+        end                                        -- Set "pUsingProjectileWeapon" to false
+    
+--[--Troldier assist--]
     if mAutoGarden:GetValue() == true then
-        local bhopping = false
         local state = ""
         local downheight = Vector3(0, 0, -250)
-        if input.IsButtonDown(KEY_SPACE) then
-            bhopping = true
-        end
-        if flags & FL_ONGROUND == 0 or bhopping then
+        if airbone then
             state = "slot3"
         else
             state = "slot1"
         end
-        if state then
+        if state and airbone then
             client.Command(state, true)
         end
 
-        if flags & FL_ONGROUND == 0 and not bhopping then
+        if airbone then
             pCmd:SetButtons(pCmd.buttons | IN_DUCK)
         end
     end
@@ -394,14 +420,14 @@ local function OnCreateMove(pCmd)
 --print(-hitboxSize.y)
 -- Now you can use hitboxSize and hitboxHeight as variables representing the size and height of the hitbox respectively
 
-local hitboxSize = 36
+local SwingHullSize = 36
 
 if pWeaponDef:GetName() == "The Disciplinary Action" then
-    hitboxSize = 55.8
+    SwingHullSize = 55.8
     swingrange = 81.6
 end
 
-    swingrange = swingrange + (hitboxSize / 2)
+    swingrange = swingrange + (SwingHullSize / 2)
 
     --[[
 local forwardPosition = Vector3(
@@ -423,12 +449,11 @@ local cornerposition = Vector3( --ToDO: fix this
 --[--Manual charge control--]
 
     if Mchargebot:GetValue() and pLocal:InCond(17) then
-        ChargeControll(pCmd)
+        ChargeControl(pCmd)
     end
 
 --[-----Get best target------------------]
     local keybind = mKeyOverrite:GetValue()
-    if not pLocal:InCond(17) then
         if keybind == KEY_NONE and GetBestTarget(pLocal) ~= nil then
             -- Check if player has no key bound
             CurrentTarget = GetBestTarget(pLocal).entity
@@ -440,7 +465,6 @@ local cornerposition = Vector3( --ToDO: fix this
         else
             CurrentTarget = nil
         end
-    end
 
     -- Refill and return when noone to target
     if CurrentTarget == nil then
@@ -525,15 +549,7 @@ local cornerposition = Vector3( --ToDO: fix this
 
     -- Simulate swing and return result
     local InRangePoint
-    local pUsingMargetGarden = false
 
-    if pWeaponDefIndex == 416 then
-        -- If "pWeapon" is not set, break
-        pUsingMargetGarden = true
-        -- Set "pUsingProjectileWeapon" to true
-    end                                        -- Set "pUsingProjectileWeapon" to false
-        
-        
 --[[---Check for hit detection--------]]
     ONGround = (flags & FL_ONGROUND == 1)
     local InRange = false
@@ -544,7 +560,7 @@ local cornerposition = Vector3( --ToDO: fix this
     InRange, InRangePoint = checkInRange(vPlayerOrigin, pLocalOrigin, swingrange)
     can_attack = InRange --sets can_attack for result of colision check
 
-    if InRange == false then
+    if not InRange then
         InRange = checkInRange(vPlayerFuture, pLocalFuture, swingrange)
         can_attack = InRange --sets can_attack for result of colision check    
     end
@@ -559,7 +575,7 @@ local cornerposition = Vector3( --ToDO: fix this
             if InRange then
                 can_attack = true
                 tick_count = tick_count + 1
-                if tick_count % (time - Latency) == 0 then
+                if tick_count % (time - 2) == 0 then
                     can_charge = true
                 end
             end
@@ -605,7 +621,7 @@ local cornerposition = Vector3( --ToDO: fix this
             engine.SetViewAngles(EulerAngles(Eaimpos.pitch, Eaimpos.yaw, 0))
         end
     elseif Mchargebot:GetValue() and pLocal:InCond(17) then
-        ChargeControll(pCmd)
+        ChargeControl(pCmd)
     end
     
     -- Shield bashing strat
@@ -621,6 +637,7 @@ local cornerposition = Vector3( --ToDO: fix this
         --Check if attack simulation was succesfull
             if can_attack == true then
                 --remove tick
+                
                 Gcan_attack = false
 
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
@@ -631,6 +648,7 @@ local cornerposition = Vector3( --ToDO: fix this
                 end
                 Gcan_attack = true
             else
+                
                 Gcan_attack = true
             end
 
@@ -638,7 +656,10 @@ local cornerposition = Vector3( --ToDO: fix this
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
             end
 
+
+
         -- Update last variables
+
             Safe_Strafe = false -- reset safe strafe
             aimposVis = aimpos -- transfer aim point to visuals
     ::continue::
