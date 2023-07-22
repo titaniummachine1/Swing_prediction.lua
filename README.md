@@ -22,7 +22,7 @@ https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/da02355
 
 # Setup
 
-Tutorial for instaling requirements:
+Tutorial for installing requirements:
 
 https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/4dc3951f-8a5f-41b6-9c5a-e090e6267f00
 
