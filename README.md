@@ -9,17 +9,6 @@
 ## Download
 [![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
 
-
-https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/f76d8545-6d1f-40dd-9d56-95b7dbd05b71
-
-
-https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/da02355b-abce-4abc-9294-1388d8fc8175
-
-
-## Download
-[![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
-
-
 # Setup
 
 Tutorial for installing requirements:
@@ -37,6 +26,11 @@ Click on the buttons below to download the requirements. V
 
 ## Download
 [![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
+
+https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/f76d8545-6d1f-40dd-9d56-95b7dbd05b71
+
+
+https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/da02355b-abce-4abc-9294-1388d8fc8175
 
 
 # Lmaobox Beta Setup
