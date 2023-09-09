@@ -6,14 +6,11 @@
 
 local menuLoaded, MenuLib = pcall(require, "Menu")                                -- Load MenuLib
 assert(menuLoaded, "MenuLib not found, please install it!")                       -- If not found, throw error
-assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!")  -- If version is too old, throw error
-
 ---@alias AimTarget { entity : Entity, angles : EulerAngles, factor : number }
 
 ---@type boolean, lnxLib
 local libLoaded, lnxLib = pcall(require, "lnxLib")
 assert(libLoaded, "lnxLib not found, please install it!")
-assert(lnxLib.GetVersion() <= 0.995, "lnxLib version is too old, please update it!")
 UnloadLib() --unloads all packages
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
