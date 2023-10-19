@@ -106,14 +106,19 @@ local latency = 0
 local lerp = 0
 local lastAngles = {} ---@type table<number, EulerAngles>
 local strafeAngles = {} ---@type table<number, number>
+local strafeAngleHistories = {} ---@type table<number, table<number, number>>
+local MAX_ANGLE_HISTORY = 10  -- Number of past angles to consider for averaging
 
 ---@param me WPlayer
 local function CalcStrafe(me)
     local players = entities.FindByClass("CTFPlayer")
     for idx, entity in ipairs(players) do
+        local entityIndex = entity:GetIndex()  -- Get the entity's index
+
         if entity:IsDormant() or not entity:IsAlive() then
-            lastAngles[entity:GetIndex()] = nil
-            strafeAngles[entity:GetIndex()] = nil
+            lastAngles[entityIndex] = nil
+            strafeAngles[entityIndex] = nil
+            strafeAngleHistories[entityIndex] = nil
             goto continue
         end
 
@@ -125,21 +130,40 @@ local function CalcStrafe(me)
         local v = entity:EstimateAbsVelocity()
         local angle = v:Angles()
 
-        -- Play doesn't have a last angle
-        if lastAngles[entity:GetIndex()] == nil then
-            lastAngles[entity:GetIndex()] = angle
+        -- Initialize angle history for the player if needed
+        strafeAngleHistories[entityIndex] = strafeAngleHistories[entityIndex] or {}
+
+        -- Player doesn't have a last angle
+        if lastAngles[entityIndex] == nil then
+            lastAngles[entityIndex] = angle
             goto continue
         end
 
         -- Calculate the delta angle
-        if angle.y ~= lastAngles[entity:GetIndex()].y then
-            strafeAngles[entity:GetIndex()] = angle.y - lastAngles[entity:GetIndex()].y
+        local delta = 0
+        delta = angle.y - lastAngles[entityIndex].y
+
+        -- Update the angle history
+        table.insert(strafeAngleHistories[entityIndex], delta)
+        if #strafeAngleHistories[entityIndex] > MAX_ANGLE_HISTORY then
+            table.remove(strafeAngleHistories[entityIndex], 1)
         end
-        lastAngles[entity:GetIndex()] = angle
+
+        -- Calculate the average delta from the history
+        local sum = 0
+        for i, delta in ipairs(strafeAngleHistories[entityIndex]) do
+            sum = sum + delta
+        end
+        local avgDelta = sum / #strafeAngleHistories[entityIndex]
+
+        -- Set the average delta as the strafe angle
+        strafeAngles[entityIndex] = avgDelta
+        lastAngles[entityIndex] = angle
 
         ::continue::
     end
 end
+
 
 ---@param me WPlayer
 ---@return AimTarget? target
@@ -311,6 +335,32 @@ local function AngleFovAndPositionDifference(vFrom, vTo)
 
     return fov, deltaX, deltaY
 end]]
+
+local function calculateHitChancePercentage(lastPredictedPos, currentPos)
+    if not lastPredictedPos then
+        print("lastPosiion is NiLL ~~!!!!")
+        return 0
+    end
+    local horizontalDistance = math.sqrt((currentPos.x - lastPredictedPos.x)^2 + (currentPos.y - lastPredictedPos.y)^2)
+
+    local verticalDistanceUp = currentPos.z - lastPredictedPos.z + 10
+
+    local verticalDistanceDown = (lastPredictedPos.z - currentPos.z) - 10
+    
+    -- You can adjust these values based on game's mechanics
+    local maxHorizontalDistance = 40
+    local maxVerticalDistanceUp = 50
+    local maxVerticalDistanceDown = 50
+    
+    if horizontalDistance > maxHorizontalDistance or verticalDistanceUp > maxVerticalDistanceUp or verticalDistanceDown > maxVerticalDistanceDown then
+        return 0 -- No chance to hit
+    else
+        local horizontalHitChance = 100 - (horizontalDistance / maxHorizontalDistance) * 100
+        local verticalHitChance = 100 - (verticalDistanceUp / maxVerticalDistanceUp) * 100
+        local overallHitChance = (horizontalHitChance + verticalHitChance) / 2
+        return overallHitChance
+    end
+end
 
 
 --[[ Code needed to run 66 times a second ]]--
@@ -494,14 +544,16 @@ local cornerposition = Vector3( --ToDO: fix this
         strafeAngle = strafeAngles[pLocal:GetIndex()] or 0
 
         local predData = Prediction.Player(player, time, strafeAngle)
+        local straightPredData = Prediction.Player(player, time, 0)
 
         if not predData then
             goto continue
         end
 
-        if (predData.pos[time] - (pLocal:GetAbsOrigin() + pLocal:EstimateAbsVelocity() * 0.25)):Length() >= 50 then
-            strafeAngle = 0
-            predData = Prediction.Player(player, time, strafeAngle)
+        local hitchance = calculateHitChancePercentage(predData.pos[time], straightPredData.pos[time])
+        print(hitchance)
+        if hitchance < 10 then
+            predData = straightPredData
         end
 
         pLocalPath = predData.pos
@@ -522,14 +574,16 @@ local cornerposition = Vector3( --ToDO: fix this
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
 
         local predData = Prediction.Player(player, time, strafeAngle)
+        local straightPredData = Prediction.Player(player, time, 0)
 
         if not predData then
             goto continue
         end
 
-        if (predData.pos[time] - (CurrentTarget:GetAbsOrigin() + CurrentTarget:EstimateAbsVelocity() * 0.225)):Length() >= 50 then
-            strafeAngle = 0
-            predData = Prediction.Player(player, time, strafeAngle)
+        local hitchance = calculateHitChancePercentage(predData.pos[time], straightPredData.pos[time])
+        print(hitchance)
+        if hitchance < 10 then
+            predData = straightPredData
         end
 
         vPlayerPath = predData.pos
