@@ -35,7 +35,6 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 
 
-warp.TriggerWarp()
 local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
 local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot", true, ItemFlags.FullWidth))
 local MSilent       = menu:AddComponent(MenuLib.Checkbox("Silent ^", true, ItemFlags.FullWidth))
@@ -531,7 +530,7 @@ local cornerposition = Vector3( --ToDO: fix this
 --[--------------Prediction-------------------]
 -- Predict both players' positions after swing
     strafeAngle = 0
-
+    warp.TriggerWarp()
     -- Local player prediction
     if pLocal:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position
@@ -580,7 +579,6 @@ local cornerposition = Vector3( --ToDO: fix this
         end
 
         local hitchance = calculateHitChancePercentage(predData.pos[time], straightPredData.pos[time])
-        print(hitchance)
         if hitchance < 10 then
             predData = straightPredData
         end
