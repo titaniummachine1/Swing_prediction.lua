@@ -41,6 +41,7 @@ local MSilent       = menu:AddComponent(MenuLib.Checkbox("Silent ^", true, ItemF
 local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", true, ItemFlags.FullWidth))
 local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,100 ,50 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
+local mInstaHit   = menu:AddComponent(MenuLib.Checkbox("Instant attack", true))
 --local AutoFakelat   = menu:AddComponent(MenuLib.Checkbox("Adaptive Latency", true, ItemFlags.FullWidth))
 local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", false, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
@@ -530,7 +531,6 @@ local cornerposition = Vector3( --ToDO: fix this
 --[--------------Prediction-------------------]
 -- Predict both players' positions after swing
     strafeAngle = 0
-    warp.TriggerWarp()
     -- Local player prediction
     if pLocal:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position
@@ -589,29 +589,31 @@ local cornerposition = Vector3( --ToDO: fix this
 
             
 --[--------------Distance check-------------------]
-    -- Get current distance between local player and closest player
-    vdistance = (vPlayerOrigin - pLocalOrigin):Length()
+-- Get current distance between local player and closest player
+vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
-    -- Get distance between local player and closest player after swing
-    fDistance = (vPlayerFuture - pLocalFuture):Length()
+-- Get distance between local player and closest player after swing
+fDistance = (vPlayerFuture - pLocalFuture):Length()
 
-    -- Simulate swing and return result
-    local InRangePoint
+-- Simulate swing and return result
+local InRangePoint
 
 --[[---Check for hit detection--------]]
-    ONGround = (flags & FL_ONGROUND == 1)
-    local InRange = false
-    can_charge = false
+ONGround = (flags & FL_ONGROUND == 1)
+local InRange = false
+can_charge = false
 
 -- Check for InRange with current position
+InRange, InRangePoint = checkInRange(vPlayerOrigin, pLocalOrigin, swingrange)
+-- Trigger doubletap only if in range, attacking, and doubletap conditions are met
 
-    InRange, InRangePoint = checkInRange(vPlayerOrigin, pLocalOrigin, swingrange)
-    can_attack = InRange --sets can_attack for result of colision check
+if not InRange then
+    -- If not in range, check future positions
+    InRange = checkInRange(vPlayerFuture, pLocalFuture, swingrange)
+end
 
-    if not InRange then
-        InRange = checkInRange(vPlayerFuture, pLocalFuture, swingrange)
-        can_attack = InRange --sets can_attack for result of colision check    
-    end
+-- Decide if can attack based on InRange
+can_attack = InRange
     
 
 
@@ -687,11 +689,15 @@ local cornerposition = Vector3( --ToDO: fix this
                 --remove tick
                 
                 Gcan_attack = false
-
+                if mInstaHit:GetValue() == true and warp.GetChargedTicks() > 15 then
+                    --warp.TriggerDoubleTap()
+                    warp.TriggerWarp()
+                end
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
 
             elseif mAutoRefill:GetValue() == true then
-                if pWeapon:GetCritTokenBucket() <= 27 and fDistance > 350 then
+                if pWeapon:GetCritTokenBucket() <= 18 and fDistance > 350 then
+                    print(pWeapon:GetCritTokenBucket())
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
                 Gcan_attack = true
