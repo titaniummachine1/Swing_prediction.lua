@@ -690,7 +690,7 @@ can_attack = InRange
                 
                 Gcan_attack = false
                 if mInstaHit:GetValue() == true and warp.GetChargedTicks() > 15 then
-                    --warp.TriggerDoubleTap()
+                    warp.TriggerDoubleTap()
                     warp.TriggerWarp()
                 end
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
