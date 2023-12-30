@@ -327,6 +327,8 @@ local function GetBestTarget(me)
         -- Check if we have a whip and the "whip teammates" option is off, but the player is on the local player's team
         if not mWhipMate:GetValue() and swingrange == 109.5 and playerTeam == localPlayerTeam then
             goto continue
+        elseif mWhipMate:GetValue() and swingrange ~= 109.5 and playerTeam == localPlayerTeam then
+            goto continue
         end
     
         if gui.GetValue("ignore cloaked") == 1 and player:InCond(4) then
