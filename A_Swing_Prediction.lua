@@ -42,6 +42,7 @@ local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", true
 local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,100 ,50 ))
 local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
 local mInstaHit   = menu:AddComponent(MenuLib.Checkbox("Instant attack", true))
+local mWhipMate   = menu:AddComponent(MenuLib.Checkbox("Whip teamamtes", true))
 --local AutoFakelat   = menu:AddComponent(MenuLib.Checkbox("Adaptive Latency", true, ItemFlags.FullWidth))
 local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", false, ItemFlags.FullWidth))
 local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
@@ -298,7 +299,7 @@ end
 local function GetBestTarget(me)
     settings = {
         MinDistance = swingrange,
-        MaxDistance = 1000,
+        MaxDistance = 770,
         MinFOV = 0,
         MaxFOV = 360,
     }
@@ -307,41 +308,49 @@ local function GetBestTarget(me)
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
 
+    local localPlayerOrigin = localPlayer:GetAbsOrigin()
+    local localPlayerTeam = localPlayer:GetTeamNumber()
+    local localPlayerViewAngles = engine.GetViewAngles()
+
     local targetList = {}
     local targetCount = 0
-
     -- Calculate target factors
     for i, player in ipairs(players) do
-        if not Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin()) then
-            -- Skip players not visible
+        local playerTeam = player:GetTeamNumber()
+        local playerOrigin = player:GetAbsOrigin()
+
+        -- Check if the player is invalid
+        if player == nil or player == pLocal or not player:IsAlive() or player:IsDormant() then
             goto continue
         end
 
-        if player == localPlayer or player:GetTeamNumber() == localPlayer:GetTeamNumber() then
-            -- Skip local player and teammates
+        -- Check if we have a whip and the "whip teammates" option is off, but the player is on the local player's team
+        if not mWhipMate:GetValue() and swingrange == 109.5 and playerTeam == localPlayerTeam then
             goto continue
         end
-
-        if player == nil or not player:IsAlive() then
-            -- Skip dead players or nil references
-            goto continue
-        end
-
+    
         if gui.GetValue("ignore cloaked") == 1 and player:InCond(4) then
-            -- Skip cloaked players if enabled
+            goto continue
+        end
+    
+        if not Helpers.VisPos(player, localPlayerOrigin, playerOrigin) then
             goto continue
         end
 
-        if player:IsDormant() then
-            -- Skip dormant players
+    
+        -- Calculate Manhattan distance
+        local distance = math.abs(playerOrigin.x - localPlayerOrigin.x) + math.abs(playerOrigin.y - localPlayerOrigin.y) + math.abs(playerOrigin.z - localPlayerOrigin.z)
+    
+        if distance > settings.MaxDistance then
             goto continue
         end
 
-        local distance = (player:GetAbsOrigin() - localPlayer:GetAbsOrigin()):Length()
+        local angles = Math.PositionAngles(localPlayerOrigin, playerOrigin + Vector3(0, 0, viewheight))
+        local fov = Math.AngleFov(localPlayerViewAngles, angles)
 
-        -- Visibility Check
-        local angles = Math.PositionAngles(pLocalOrigin, player:GetAbsOrigin() + Vector3(0, 0, viewheight))
-        local fov = Math.AngleFov(engine.GetViewAngles(), angles)
+        if fov > settings.MaxFOV then
+            goto continue
+        end
 
         local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.07)
         local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 1)
@@ -366,20 +375,22 @@ local function GetBestTarget(me)
     local bestTarget = nil
 
     if targetCount > 0 then
-        local player = targetList[1].player
-        local aimPos = player:GetAbsOrigin() + Vector3(0, 0, 75)
-        local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), aimPos)
-        local fov = Math.AngleFov(angles, engine.GetViewAngles())
+        local bestPlayer = targetList[1].player
+        local bestPlayerOrigin = bestPlayer:GetAbsOrigin()
+        local aimPos = bestPlayerOrigin + Vector3(0, 0, 75)
+        local angles = Math.PositionAngles(localPlayerOrigin, aimPos)
+        local fov = Math.AngleFov(angles, localPlayerViewAngles)
 
         -- Set as best target
-        bestTarget = { entity = player, angles = angles, factor = targetList[1].factor }
+        bestTarget = { entity = bestPlayer, angles = angles, factor = targetList[1].factor }
     end
 
     return bestTarget
 end
 
+
 -- Define function to check InRange between the hitbox and the sphere
-    local function checkInRange(targetPos, spherePos, sphereRadius)
+    local function checkInRange(targetPos, spherePos, sphereRadius, target)
         if vPlayerFuture == nil or not isMelee then
             return false, nil
         end
@@ -670,7 +681,6 @@ local cornerposition = Vector3( --ToDO: fix this
 
 --[--------------Prediction-------------------]
 -- Predict both players' positions after swing
-    strafeAngle = 0
     gravity = client.GetConVar("sv_gravity")
     stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize")
 
@@ -678,7 +688,6 @@ local cornerposition = Vector3( --ToDO: fix this
     if pLocal:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position
         pLocalFuture = pLocalOrigin
-        strafeAngle = 0
     else
         local player = WPlayer.FromEntity(pLocal)
         CalcStrafe(player)
@@ -687,7 +696,7 @@ local cornerposition = Vector3( --ToDO: fix this
         local pHitbox = CalculateHitboxOffsets(player)
 
         local predData = PredictPlayer(player, time, strafeAngle, pHitbox)
-        local straightPredData = PredictPlayer(player, time, 0, pHitbox)
+        --local straightPredData = PredictPlayer(player, time, 0, pHitbox)
 
         if predData == nil then
             goto continue
@@ -698,12 +707,9 @@ local cornerposition = Vector3( --ToDO: fix this
     end
 
     -- Target player prediction
-    strafeAngle = 0
-
     if CurrentTarget:EstimateAbsVelocity() == 0 then
         -- If the target player is not accelerating, set the predicted position to their current position
         vPlayerFuture = CurrentTarget:GetAbsOrigin()
-        strafeAngle = 0
     else
         local player = WPlayer.FromEntity(CurrentTarget)
         CalcStrafe(player)
@@ -712,16 +718,16 @@ local cornerposition = Vector3( --ToDO: fix this
         local pHitbox = CalculateHitboxOffsets(player)
 
         local predData = PredictPlayer(player, time, strafeAngle, pHitbox)
-        local straightPredData = PredictPlayer(player, time, 0, pHitbox)
+        --local straightPredData = PredictPlayer(player, time, 0, pHitbox)
 
         if not predData then
             goto continue
         end
 
-        local hitchance = calculateHitChancePercentage(predData.pos[time], straightPredData.pos[time])
-        if hitchance < 10 then
-            predData = straightPredData
-        end
+        --local hitchance = calculateHitChancePercentage(predData.pos[time], straightPredData.pos[time])
+        --if hitchance < 10 then
+            --predData = straightPredData
+        --end
 
         vPlayerPath = predData.pos
         vPlayerFuture = predData.pos[time]
@@ -738,25 +744,33 @@ fDistance = (vPlayerFuture - pLocalFuture):Length()
 -- Simulate swing and return result
 local InRangePoint
 
---[[---Check for hit detection--------]]
-ONGround = (flags & FL_ONGROUND == 1)
-local InRange = false
-can_charge = false
-
 -- Check for InRange with current position
 InRange, InRangePoint = checkInRange(vPlayerOrigin, pLocalOrigin, swingrange)
--- Trigger doubletap only if in range, attacking, and doubletap conditions are met
-
-if not InRange then
-    -- If not in range, check future positions
-    InRange = checkInRange(vPlayerFuture, pLocalFuture, swingrange)
-end
 
 -- Decide if can attack based on InRange
 can_attack = InRange
-    
 
+if can_attack then
+    -- If in range, move players to their future positions
+    CurrentTarget:SetPropVector(vPlayerFuture, "tfnonlocaldata", "m_vecOrigin")
+    pLocal:SetPropVector(pLocalFuture, "tfnonlocaldata", "m_vecOrigin")
 
+    -- Make pLocal aim at the InRangePoint
+    local aimAngles = Math.PositionAngles(pLocalFuture, InRangePoint)
+    pCmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
+
+    -- Run a swing trace from pLocal to the target
+    local swingTrace = pLocal:DoSwingTrace()
+
+    -- If the entity hit by the swing trace is the same as the target, consider the attack successful
+    if swingTrace then
+        can_charge = true
+    end
+
+    -- Move players back to their original positions
+    CurrentTarget:SetPropVector(vPlayerOrigin, "tfnonlocaldata", "m_vecOrigin")
+    pLocal:SetPropVector(pLocalOrigin, "tfnonlocaldata", "m_vecOrigin")
+end
     -- Check for charge range bug
     if pLocalClass == 4 -- player is Demoman
         and AchargeRange:GetValue() -- menu option for such option is true
@@ -797,20 +811,23 @@ can_attack = InRange
         goto continue
     end
     
-    if Maimbot:GetValue() and Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture)
-        and pLocal:InCond(17)
-        and not InRange
-    then
-        Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
-        pCmd:SetViewAngles(engine.GetViewAngles().pitch, Eaimpos.yaw, 0)
-    elseif Maimbot:GetValue() and can_attack then
-        Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
-        if MSilent:GetValue() then
-            pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 0)
-        else
-            engine.SetViewAngles(EulerAngles(Eaimpos.pitch, Eaimpos.yaw, 0))
+    -- Calculate aim position only once
+    Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
+
+    if Maimbot:GetValue() then
+        if Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not InRange then
+            -- Set view angles based on the future position of the local player
+            pCmd:SetViewAngles(engine.GetViewAngles().pitch, Eaimpos.yaw, 0)
+        elseif can_attack then
+            -- Set view angles based on whether silent aim is enabled
+            if MSilent:GetValue() then
+                pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 0)
+            else
+                engine.SetViewAngles(EulerAngles(Eaimpos.pitch, Eaimpos.yaw, 0))
+            end
         end
     elseif Mchargebot:GetValue() and pLocal:InCond(17) then
+        -- Control charge if charge bot is enabled and the local player is in condition 17
         ChargeControl(pCmd)
     end
     
