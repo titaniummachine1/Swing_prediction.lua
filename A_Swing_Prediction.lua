@@ -534,7 +534,7 @@ local function OnCreateMove(pCmd)
 
     -- Get the local player's flags and charge meter
         local flags = pLocal:GetPropInt("m_fFlags")
-        local airbone = flags & FL_ONGROUND == 0
+        local airbone = pLocal:InCond(81)
         chargeLeft = pLocal:GetPropFloat("m_flChargeMeter")
         chargeLeft = math.floor(chargeLeft)
     -- Get the local player's active weapon data and definition
@@ -557,17 +557,13 @@ local function OnCreateMove(pCmd)
         local state = ""
         local downheight = Vector3(0, 0, -250)
         if airbone then
+            pCmd:SetButtons(pCmd.buttons | IN_DUCK)
             state = "slot3"
         else
             state = "slot1"
         end
-        if state and airbone then
-            client.Command(state, true)
-        end
 
-        if airbone then
-            pCmd:SetButtons(pCmd.buttons | IN_DUCK)
-        end
+        client.Command(state, true)
     end
 
 --[-Don`t run script below when not usign melee--]
@@ -819,7 +815,7 @@ can_attack = InRange
                 Gcan_attack = true
             end
 
-            if can_charge then
+            if can_charge and CurrentTarget:IsAlive() then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
             end
 
