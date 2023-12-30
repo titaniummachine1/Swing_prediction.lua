@@ -14,7 +14,7 @@ assert(libLoaded, "lnxLib not found, please install it!")
 UnloadLib() --unloads all packages
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
-local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
+local WPlayer, WWeapon, WEntity = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon, lnxLib.TF2.WEntity
 local Helpers = lnxLib.TF2.Helpers
 local Prediction = lnxLib.TF2.Prediction
 local Fonts = lnxLib.UI.Fonts
@@ -78,6 +78,8 @@ local pLocalPath = {}
 local vPlayerPath = {}
 local PredPath = {}
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
+local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
 
 local vdistance = nil
 local pLocalClass = nil
@@ -109,7 +111,7 @@ local lerp = 0
 local lastAngles = {} ---@type table<number, EulerAngles>
 local strafeAngles = {} ---@type table<number, number>
 local strafeAngleHistories = {} ---@type table<number, table<number, number>>
-local MAX_ANGLE_HISTORY = 2  -- Number of past angles to consider for averaging
+local MAX_ANGLE_HISTORY = 4  -- Number of past angles to consider for averaging
 
 ---@param me WPlayer
 local function CalculateHitboxOffsets(me)
@@ -128,7 +130,7 @@ end
 local function CalcStrafe(me)
     local players = entities.FindByClass("CTFPlayer")
     for idx, entity in ipairs(players) do
-        local entityIndex = entity:GetIndex()  -- Get the entity's index
+        local entityIndex = entity:GetIndex()
 
         if entity:IsDormant() or not entity:IsAlive() then
             lastAngles[entityIndex] = nil
@@ -137,7 +139,6 @@ local function CalcStrafe(me)
             goto continue
         end
 
-        -- Ignore teammates (for now)
         if entity:GetTeamNumber() == me:GetTeamNumber() then
             goto continue
         end
@@ -145,33 +146,40 @@ local function CalcStrafe(me)
         local v = entity:EstimateAbsVelocity()
         local angle = v:Angles()
 
-        -- Initialize angle history for the player if needed
         strafeAngleHistories[entityIndex] = strafeAngleHistories[entityIndex] or {}
-
-        -- Player doesn't have a last angle
+        
         if lastAngles[entityIndex] == nil then
             lastAngles[entityIndex] = angle
             goto continue
         end
 
-        -- Calculate the delta angle
-        local delta = 0
-        delta = angle.y - lastAngles[entityIndex].y
+        local delta = angle.y - lastAngles[entityIndex].y
 
-        -- Update the angle history
-        table.insert(strafeAngleHistories[entityIndex], delta)
+        -- Filtering out excessive changes
+        if #strafeAngleHistories[entityIndex] > 0 then
+            local lastDelta = strafeAngleHistories[entityIndex][#strafeAngleHistories[entityIndex]]
+            if math.abs(delta - lastDelta) <= 90 then
+                table.insert(strafeAngleHistories[entityIndex], delta)
+            end
+        else
+            table.insert(strafeAngleHistories[entityIndex], delta)
+        end
+
         if #strafeAngleHistories[entityIndex] > MAX_ANGLE_HISTORY then
             table.remove(strafeAngleHistories[entityIndex], 1)
         end
 
-        -- Calculate the average delta from the history
-        local sum = 0
-        for i, delta in ipairs(strafeAngleHistories[entityIndex]) do
-            sum = sum + delta
+        -- Smoothing
+        local weightedSum = 0
+        local weight = 0.5
+        local totalWeight = 0
+        for i, delta1 in ipairs(strafeAngleHistories[entityIndex]) do
+            weightedSum = weightedSum + delta1 * weight
+            totalWeight = totalWeight + weight
+            weight = weight * 0.9
         end
-        local avgDelta = sum / #strafeAngleHistories[entityIndex]
+        local avgDelta = weightedSum / totalWeight
 
-        -- Set the average delta as the strafe angle
         strafeAngles[entityIndex] = avgDelta
         lastAngles[entityIndex] = angle
 
@@ -179,131 +187,111 @@ local function CalcStrafe(me)
     end
 end
 
--- Constants
-local MAX_SPEED = 320  -- Maximum speed
-local SIMULATION_TICKS = 23  -- Number of ticks for simulation
-local positions = {}
 
-local FORWARD_COLLISION_ANGLE = 55
-local GROUND_COLLISION_ANGLE_LOW = 45
-local GROUND_COLLISION_ANGLE_HIGH = 55
 
--- Helper function for forward collision
-local function handleForwardCollision(vel, wallTrace)
-    local normal = wallTrace.plane
-    local angle = math.deg(math.acos(normal:Dot(Vector3(0, 0, 1))))
+    local fFalse = function () return false end
 
-     -- Adjust velocity if angle is greater than forward collision angle
-    if angle > FORWARD_COLLISION_ANGLE then
-        -- The wall is steep, adjust velocity to prevent moving into the wall
-        local dot = vel:Dot(normal)
-        vel = vel - normal * dot
+    -- [WIP] Predict the position of a player
+    ---@param player WPlayer
+    ---@param t integer
+    ---@param d number?
+    ---@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
+    ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
+    local function PredictPlayer(player, t, d, pHitbox, shouldHitEntity)
+        if not gravity or not stepSize then return nil end
+        local vUp = Vector3(0, 0, 1)
+        local vStep = Vector3(0, 0, stepSize)
+        shouldHitEntity = shouldHitEntity or fFalse
+        local pFlags = player:GetPropInt("m_fFlags")
+        -- Add the current record
+        local _out = {
+            pos = { [0] = player:GetAbsOrigin() },
+            vel = { [0] = player:EstimateAbsVelocity() },
+            onGround = { [0] = player:IsOnGround() }
+        }
+
+        -- Perform the prediction
+        for i = 1, t do
+            local lastP, lastV, lastG = _out.pos[i - 1], _out.vel[i - 1], _out.onGround[i - 1]
+
+            local pos = lastP + lastV * globals.TickInterval()
+            local vel = lastV
+            local onGround1 = lastG
+
+            -- Apply deviation
+            if d then
+                local ang = vel:Angles()
+                ang.y = ang.y + d
+                vel = ang:Forward() * vel:Length()
+            end
+
+            --[[ Forward collision ]]
+
+            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, pHitbox[1], pHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+            --DrawLine(last.p + vStep, pos + vStep)
+            if wallTrace.fraction < 1 then
+                -- We'll collide
+                local normal = wallTrace.plane
+                local angle = math.deg(math.acos(normal:Dot(vUp)))
+
+                -- Check the wall angle
+                if angle > 55 then
+                    -- The wall is too steep, we'll collide
+                    local dot = vel:Dot(normal)
+                    vel = vel - normal * dot
+                end
+
+                pos.x, pos.y = wallTrace.endpos.x, wallTrace.endpos.y
+            end
+
+            --[[ Ground collision ]]
+
+            -- Don't step down if we're in-air
+            local downStep = vStep
+            local simulateJump = false
+            if not onGround1 then downStep = Vector3() end
+
+            -- Ground collision
+            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, pHitbox[1], pHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+            if groundTrace.fraction < 1 then
+                -- We'll hit the ground
+                local normal = groundTrace.plane
+                local angle = math.deg(math.acos(normal:Dot(vUp)))
+
+                -- Check the ground angle
+                if angle < 45 then
+                    if onGround1 and player:GetName() == pLocal:GetName() and gui.GetValue("Bunny Hop") and input.IsButtonDown(KEY_SPACE) then
+                        -- Jump
+                        vel.z = 300
+                        onGround1 = false
+                    else
+                        pos = groundTrace.endpos
+                        onGround1 = true
+                    end
+                elseif angle < 55 then
+                    vel.x, vel.y, vel.z = 0, 0, 0
+                    onGround1 = false
+                else
+                    local dot = vel:Dot(normal)
+                        vel = vel - normal * dot
+                        onGround1 = true
+                end
+            else
+                -- We're in the air
+                onGround1 = false
+            end
+
+            -- Gravity
+            if not onGround1 then
+                vel.z = vel.z - gravity * globals.TickInterval()
+            end
+
+            -- Add the prediction record
+            _out.pos[i], _out.vel[i], _out.onGround[i] = pos, vel, onGround1
+        end
+
+        return _out
     end
-
-    return wallTrace.endpos.x, wallTrace.endpos.y, alreadyWithinStep
-end
-
-
--- Helper function for ground collision
-local function handleGroundCollision(vel, groundTrace, vUp)
-    local normal = groundTrace.plane
-    local angle = math.deg(math.acos(normal:Dot(vUp)))
-    local onGround = false
-    if angle < GROUND_COLLISION_ANGLE_LOW then
-        onGround = true
-    elseif angle < GROUND_COLLISION_ANGLE_HIGH then
-        vel.x, vel.y, vel.z = 0, 0, 0
-    else
-        local dot = vel:Dot(normal)
-        vel = vel - normal * dot
-        onGround = true
-    end
-    if onGround then vel.z = 0 end
-    return groundTrace.endpos, onGround
-end
-
--- Cache structure
-local simulationCache = {
-    tickInterval = globals.TickInterval(),
-    gravity = client.GetConVar("sv_gravity"),
-    stepSize = pLocal and pLocal:GetPropFloat("localdata", "m_flStepSize") or 0,
-    flags = pLocal and pLocal:GetPropInt("m_fFlags") or 0
-}
-
--- Function to update cache (call this when game environment changes)
-local function UpdateSimulationCache()
-    simulationCache.tickInterval = globals.TickInterval()
-    simulationCache.gravity = client.GetConVar("sv_gravity")
-    simulationCache.stepSize = pLocal and pLocal:GetPropFloat("localdata", "m_flStepSize") or 0
-    simulationCache.flags = pLocal and pLocal:GetPropInt("m_fFlags") or 0
-end
-
-local shouldHitEntity = function (e, _) return false end
-
--- Simulates movement for a player over a given number of ticks
-local function SimulatePlayer(me, ticks, strafeAngle)
-    -- Update the simulation cache
-    UpdateSimulationCache()
-    PredPath = {pos = {}, vel = {}, onGround = {}}
-
-    -- Get the player's velocity
-    local lastV = me:EstimateAbsVelocity()
-
-    -- Calculate the tick interval based on the server's settings
-    local tick_interval = globals.TickInterval()
-
-    local gravity = simulationCache.gravity * tick_interval
-    local stepSize = simulationCache.stepSize
-    local vUp = Vector3(0, 0, 1)
-    local vStep = Vector3(0, 0, stepSize / 2)
-
-    local lastP = me:GetAbsOrigin()
-    local flags = simulationCache.flags
-    local lastG = (flags & 1 == 1)
-    local Endpos = Vector3(0, 0, 0)
-
-    for i = 1, ticks do
-        local pos = lastP + lastV * tick_interval
-        local vel = lastV
-        local onGround1 = lastG
-
-        -- Apply strafeAngle
-        if strafeAngle then
-            local ang = vel:Angles()
-            ang.y = ang.y + strafeAngle
-            vel = ang:Forward() * vel:Length()
-        end
-
-        -- Forward collision
-        local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
-        if wallTrace.fraction < 1 then
-            pos.x, pos.y = handleForwardCollision(vel, wallTrace)
-        end
-
-        -- Ground collision
-        local downStep = onGround1 and vStep or Vector3()
-        local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
-        if groundTrace.fraction < 1 then
-            pos, onGround1 = handleGroundCollision(vel, groundTrace, vUp)
-        else
-            onGround1 = false
-        end
-
-        -- Apply gravity if not on ground
-        if not onGround then
-            vel.z = vel.z - gravity * tick_interval
-        end
-
-        lastP, lastV, lastG = pos, vel, onGround1
-        Endpos = lastP
-         -- Store data in separate tables
-         table.insert(PredPath.pos, pos)
-         table.insert(PredPath.vel, vel)
-         table.insert(PredPath.onGround, onGround1)
-    end
-
-    return PredPath
-end
 
 ---@param me WPlayer
 ---@return AimTarget? target
@@ -502,6 +490,18 @@ local function calculateHitChancePercentage(lastPredictedPos, currentPos)
     end
 end
 
+---@param me WPlayer
+local function CalculateHitboxOffsets(me)
+    local absOrigin = me:GetAbsOrigin()
+    local box1 = me:HitboxSurroundingBox()
+    local min = box1[1]
+    local max = box1[2]
+
+    local minOffset = min - absOrigin
+    local maxOffset = max - absOrigin
+
+    return {minOffset, maxOffset}
+end
 
 --[[ Code needed to run 66 times a second ]]--
 -- Predicts player position after set amount of ticks
@@ -671,6 +671,9 @@ local cornerposition = Vector3( --ToDO: fix this
 --[--------------Prediction-------------------]
 -- Predict both players' positions after swing
     strafeAngle = 0
+    gravity = client.GetConVar("sv_gravity")
+    stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize")
+
     -- Local player prediction
     if pLocal:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position
@@ -681,9 +684,10 @@ local cornerposition = Vector3( --ToDO: fix this
         CalcStrafe(player)
 
         strafeAngle = strafeAngles[pLocal:GetIndex()] or 0
+        local pHitbox = CalculateHitboxOffsets(player)
 
-        local predData = SimulatePlayer(player, time, strafeAngle)
-        local straightPredData = SimulatePlayer(player, time, 0)
+        local predData = PredictPlayer(player, time, strafeAngle, pHitbox)
+        local straightPredData = PredictPlayer(player, time, 0, pHitbox)
 
         if predData == nil then
             goto continue
@@ -705,9 +709,10 @@ local cornerposition = Vector3( --ToDO: fix this
         CalcStrafe(player)
 
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
+        local pHitbox = CalculateHitboxOffsets(player)
 
-        local predData = SimulatePlayer(player, time, strafeAngle)
-        local straightPredData = SimulatePlayer(player, time, 0)
+        local predData = PredictPlayer(player, time, strafeAngle, pHitbox)
+        local straightPredData = PredictPlayer(player, time, 0, pHitbox)
 
         if not predData then
             goto continue
