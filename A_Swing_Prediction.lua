@@ -115,19 +115,6 @@ local strafeAngleHistories = {} ---@type table<number, table<number, number>>
 local MAX_ANGLE_HISTORY = 4  -- Number of past angles to consider for averaging
 
 ---@param me WPlayer
-local function CalculateHitboxOffsets(me)
-    local absOrigin = me:GetAbsOrigin()
-    local box1 = me:HitboxSurroundingBox()
-    local min = box1[1]
-    local max = box1[2]
-
-    local minOffset = min - absOrigin
-    local maxOffset = max - absOrigin
-
-    return {minOffset, maxOffset}
-end
-
----@param me WPlayer
 local function CalcStrafe(me)
     local players = entities.FindByClass("CTFPlayer")
     for idx, entity in ipairs(players) do
@@ -198,7 +185,7 @@ end
     ---@param d number?
     ---@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
     ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
-    local function PredictPlayer(player, t, d, pHitbox, shouldHitEntity)
+    local function PredictPlayer(player, t, d, shouldHitEntity)
         if not gravity or not stepSize then return nil end
         local vUp = Vector3(0, 0, 1)
         local vStep = Vector3(0, 0, stepSize)
@@ -228,7 +215,7 @@ end
 
             --[[ Forward collision ]]
 
-            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, pHitbox[1], pHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
             --DrawLine(last.p + vStep, pos + vStep)
             if wallTrace.fraction < 1 then
                 -- We'll collide
@@ -253,7 +240,7 @@ end
             if not onGround1 then downStep = Vector3() end
 
             -- Ground collision
-            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, pHitbox[1], pHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
             if groundTrace.fraction < 1 then
                 -- We'll hit the ground
                 local normal = groundTrace.plane
@@ -263,7 +250,7 @@ end
                 if angle < 45 then
                     if onGround1 and player:GetName() == pLocal:GetName() and gui.GetValue("Bunny Hop") and input.IsButtonDown(KEY_SPACE) then
                         -- Jump
-                        vel.z = 300
+                        vel.z = 271
                         onGround1 = false
                     else
                         pos = groundTrace.endpos
@@ -503,18 +490,8 @@ local function calculateHitChancePercentage(lastPredictedPos, currentPos)
     end
 end
 
----@param me WPlayer
-local function CalculateHitboxOffsets(me)
-    local absOrigin = me:GetAbsOrigin()
-    local box1 = me:HitboxSurroundingBox()
-    local min = box1[1]
-    local max = box1[2]
-
-    local minOffset = min - absOrigin
-    local maxOffset = max - absOrigin
-
-    return {minOffset, maxOffset}
-end
+-- Initialize a counter outside of your game loop
+local attackCounter = 0
 
 --[[ Code needed to run 66 times a second ]]--
 -- Predicts player position after set amount of ticks
@@ -695,10 +672,9 @@ local cornerposition = Vector3( --ToDO: fix this
         CalcStrafe(player)
 
         strafeAngle = strafeAngles[pLocal:GetIndex()] or 0
-        local pHitbox = CalculateHitboxOffsets(player)
 
-        local predData = PredictPlayer(player, time, strafeAngle, pHitbox)
-        --local straightPredData = PredictPlayer(player, time, 0, pHitbox)
+        local predData = PredictPlayer(player, time, strafeAngle)
+        --local straightPredData = PredictPlayer(player, time, 0, vHitbox)
 
         if predData == nil then
             goto continue
@@ -717,10 +693,9 @@ local cornerposition = Vector3( --ToDO: fix this
         CalcStrafe(player)
 
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
-        local pHitbox = CalculateHitboxOffsets(player)
 
-        local predData = PredictPlayer(player, time, strafeAngle, pHitbox)
-        --local straightPredData = PredictPlayer(player, time, 0, pHitbox)
+        local predData = PredictPlayer(player, time, strafeAngle)
+        --local straightPredData = PredictPlayer(player, time, 0, vHitbox)
 
         if not predData then
             goto continue
@@ -743,41 +718,20 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 -- Get distance between local player and closest player after swing
 fDistance = (vPlayerFuture - pLocalFuture):Length()
 
--- Simulate swing and return result
-local InRangePoint
-
 -- Check for InRange with current position
-InRange, InRangePoint = checkInRange(vPlayerOrigin, pLocalOrigin, swingrange)
+local InRange1, InRangePoint = checkInRange(vPlayerOrigin, pLocalOrigin, swingrange)
+local InRange2 = checkInRange(vPlayerFuture, pLocalFuture, swingrange)
+
+-- Use an OR gate to set InRange to true if either InRange1 or InRange2 is true
+InRange = InRange1 or InRange2
 
 -- Decide if can attack based on InRange
 can_attack = InRange
 
-if can_attack then
-    -- If in range, move players to their future positions
-    CurrentTarget:SetPropVector(vPlayerFuture, "tfnonlocaldata", "m_vecOrigin")
-    pLocal:SetPropVector(pLocalFuture, "tfnonlocaldata", "m_vecOrigin")
-
-    -- Make pLocal aim at the InRangePoint
-    local aimAngles = Math.PositionAngles(pLocalFuture, InRangePoint)
-    pCmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
-
-    -- Run a swing trace from pLocal to the target
-    local swingTrace = pLocal:DoSwingTrace()
-
-    -- If the entity hit by the swing trace is the same as the target, consider the attack successful
-    if swingTrace then
-        can_charge = true
-    end
-
-    -- Move players back to their original positions
-    CurrentTarget:SetPropVector(vPlayerOrigin, "tfnonlocaldata", "m_vecOrigin")
-    pLocal:SetPropVector(pLocalOrigin, "tfnonlocaldata", "m_vecOrigin")
-end
     -- Check for charge range bug
     if pLocalClass == 4 -- player is Demoman
         and AchargeRange:GetValue() -- menu option for such option is true
         and chargeLeft == 100 then -- charge metter is full
-            InRange = checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) -- Check for InRange during charge
             if InRange then
                 can_attack = true
                 tick_count = tick_count + 1
@@ -815,18 +769,18 @@ end
     
     -- Calculate aim position only once
     Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
-
+    -- Inside your game loop
     if Maimbot:GetValue() then
-        if Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not InRange then
+        if Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not can_attack and pLocal:InCond(17) then
             -- Set view angles based on the future position of the local player
             pCmd:SetViewAngles(engine.GetViewAngles().pitch, Eaimpos.yaw, 0)
-        elseif can_attack then
-            -- Set view angles based on whether silent aim is enabled
-            if MSilent:GetValue() then
-                pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 0)
-            else
-                engine.SetViewAngles(EulerAngles(Eaimpos.pitch, Eaimpos.yaw, 0))
-            end
+        elseif InRange then
+                -- Set view angles based on whether silent aim is enabled
+                if MSilent:GetValue() then
+                    pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 0)
+                else
+                    engine.SetViewAngles(EulerAngles(Eaimpos.pitch, Eaimpos.yaw, 0))
+                end
         end
     elseif Mchargebot:GetValue() and pLocal:InCond(17) then
         -- Control charge if charge bot is enabled and the local player is in condition 17
@@ -868,8 +822,6 @@ end
             if can_charge then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
             end
-
-
 
         -- Update last variables
 
