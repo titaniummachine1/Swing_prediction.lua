@@ -34,26 +34,126 @@ menu.Style.Outline = true                 -- Outline around the menu
     client.SetConVar("mp_teams_unbalance_limit", 1000)
 end, ItemFlags.FullWidth))]]
 
+local Menu = {
+    Aimbot = {
+        AimbotFOV = 360,
+        Aimbot = true,
+        Silent = true,
+        ChargeControl = true,
+        ChargeSensitivity = 50,
+        CritRefill = true,
+        InstantAttack = true,
+        WhipTeammates = true,
+        ChargeReach = false,
+        TroldierAssist = false,
+        EnableVisuals = false,
+    },
+    Visuals = {
+        RangeCircle = true,
+        Visualization = true,
+    },
+    Keybind = 0,
+}
 
-local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,360 ))
-local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot", true, ItemFlags.FullWidth))
-local MSilent       = menu:AddComponent(MenuLib.Checkbox("Silent ^", true, ItemFlags.FullWidth))
-local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", true, ItemFlags.FullWidth))
-local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,100 ,50 ))
-local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", true))
-local mInstaHit   = menu:AddComponent(MenuLib.Checkbox("Instant attack", true))
-local mWhipMate   = menu:AddComponent(MenuLib.Checkbox("Whip teamamtes", true))
---local AutoFakelat   = menu:AddComponent(MenuLib.Checkbox("Adaptive Latency", true, ItemFlags.FullWidth))
-local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", false, ItemFlags.FullWidth))
-local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", false))
-local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", false))
-local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Keybind", key))
+local Lua__fullPath = GetScriptName()
+local Lua__fileName = Lua__fullPath:match("\\([^\\]-)$"):gsub("%.lua$", "")
+
+local function CreateCFG(folder_name, table)
+    local success, fullPath = filesystem.CreateDirectory(folder_name)
+    local filepath = tostring(fullPath .. "/config.cfg")
+    local file = io.open(filepath, "w")
+    
+    if file then
+        local function serializeTable(tbl, level)
+            level = level or 0
+            local result = string.rep("    ", level) .. "{\n"
+            for key, value in pairs(tbl) do
+                result = result .. string.rep("    ", level + 1)
+                if type(key) == "string" then
+                    result = result .. '["' .. key .. '"] = '
+                else
+                    result = result .. "[" .. key .. "] = "
+                end
+                if type(value) == "table" then
+                    result = result .. serializeTable(value, level + 1) .. ",\n"
+                elseif type(value) == "string" then
+                    result = result .. '"' .. value .. '",\n'
+                else
+                    result = result .. tostring(value) .. ",\n"
+                end
+            end
+            result = result .. string.rep("    ", level) .. "}"
+            return result
+        end
+        
+        local serializedConfig = serializeTable(table)
+        file:write(serializedConfig)
+        file:close()
+        printc( 255, 183, 0, 255, "["..os.date("%H:%M:%S").."] Saved Config to ".. tostring(fullPath))
+    end
+end
+
+local function LoadCFG(folder_name)
+    local success, fullPath = filesystem.CreateDirectory(folder_name)
+    local filepath = tostring(fullPath .. "/config.cfg")
+    local file = io.open(filepath, "r")
+
+    if file then
+        local content = file:read("*a")
+        file:close()
+        local chunk, err = load("return " .. content)
+        if chunk then
+            printc( 0, 255, 140, 255, "["..os.date("%H:%M:%S").."] Loaded Config from ".. tostring(fullPath))
+            return chunk()
+        else
+            CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
+            print("Error loading configuration:", err)
+        end
+    end
+end
+
+local status, loadedMenu = pcall(function() return assert(LoadCFG(string.format([[Lua %s]], Lua__fileName))) end) --auto load config
+
+if status then --ensure config is not causing errors
+    local allFunctionsExist = true
+    for k, v in pairs(Menu) do
+        if type(v) == 'function' then
+            if not loadedMenu[k] or type(loadedMenu[k]) ~= 'function' then
+                allFunctionsExist = false
+                break
+            end
+        end
+    end
+
+    if allFunctionsExist then
+        Menu = loadedMenu
+    else
+        print("config is outdated")
+        CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
+    end
+end
+
+
+
+local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,Menu.Aimbot.AimbotFOV))
+local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot", Menu.Aimbot.Aimbot, ItemFlags.FullWidth))
+local MSilent       = menu:AddComponent(MenuLib.Checkbox("Silent ^", Menu.Aimbot.Silent, ItemFlags.FullWidth))
+local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", Menu.Aimbot.ChargeControl, ItemFlags.FullWidth))
+local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,100 ,Menu.Aimbot.ChargeSensitivity))
+local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", Menu.Aimbot.CritRefill))
+local mInstaHit     = menu:AddComponent(MenuLib.Checkbox("Instant attack", Menu.Aimbot.InstantAttack))
+local mWhipMate     = menu:AddComponent(MenuLib.Checkbox("Whip teamamtes", Menu.Aimbot.WhipTeammates))
+local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", Menu.Aimbot.ChargeReach, ItemFlags.FullWidth))
+local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", Menu.Aimbot.TroldierAssist))
+local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", Menu.Aimbot.EnableVisuals))
 
 local Visuals = {
-    ["Range Circle"] = true,
-    ["Visualization"] = true
+    ["Range Circle"] = Menu.Visuals.RangeCircle,
+    ["Visualization"] = Menu.Visuals.Visualization
 }
 local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
+
+local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Keybind", Menu.Keybind))
 
 
 local closestDistance = 2000
@@ -500,7 +600,6 @@ local attackCounter = 0
 ---@param targetEntity number
 ---@param strafeAngle number
 local function OnCreateMove(pCmd)
-
     -- Get the local player entity
     pLocal = entities.GetLocalPlayer()
     if not pLocal or not pLocal:IsAlive() then
@@ -1030,11 +1129,33 @@ doDraw()
 
 --[[ Remove the menu when unloaded ]]--
 local function OnUnload()                                -- Called when the script is unloaded
+    
+    Menu = {
+        Aimbot = {
+            AimbotFOV = mFov:GetValue(),
+            Aimbot = Maimbot:GetValue(),
+            Silent = MSilent:GetValue(),
+            ChargeControl = Mchargebot:GetValue(),
+            ChargeSensitivity = mSensetivity:GetValue(),
+            CritRefill = mAutoRefill:GetValue(),
+            InstantAttack = mInstaHit:GetValue(),
+            WhipTeammates = mWhipMate:GetValue(),
+            ChargeReach = AchargeRange:GetValue(),
+            TroldierAssist = mAutoGarden:GetValue(),
+            EnableVisuals = mmVisuals:GetValue(),
+        },
+        Visuals = {
+            RangeCircle = mVisuals:IsSelected("Range Circle"),
+            Visualization = mVisuals:IsSelected("Visualization"),
+        },
+        Keybind = mKeyOverrite:GetValue(),
+    }
+
     MenuLib.RemoveMenu(menu)                             -- Remove the menu
+    CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
     UnloadLib() --unloading lualib
     client.Command('play "ui/buttonclickrelease"', true) -- Play the "buttonclickrelease" sound
 end
-
 
 --[[ Unregister previous callbacks ]]--
 callbacks.Unregister("CreateMove", "MCT_CreateMove")            -- Unregister the "CreateMove" callback
