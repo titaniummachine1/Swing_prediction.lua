@@ -55,6 +55,7 @@ local Menu = {
 
     Aimbot = {
         Aimbot = true,
+        ChargeBot = true,
         AimbotFOV = 360,
         Silent = true,
     },
@@ -62,6 +63,7 @@ local Menu = {
         EnableVisuals = false,
         RangeCircle = true,
         Visualization = true,
+        Sphere = false,
     },
     Misc = {
         ChargeControl = true,
@@ -896,6 +898,76 @@ local toggleCooldown = 0.2  -- 200 milliseconds
 local bindTimer = 0
 local bindDelay = 0.15  -- Delay of 0.2 seconds
 
+local sphere_cache = { vertices = {}, segments = 16, radius = 90, center = Vector3(0, 0, 0) }  -- Cache for the sphere's vertices
+
+-- Function to setup the sphere's vertices
+local function setup_sphere(center, radius, segments)
+    sphere_cache.center = center
+    sphere_cache.radius = radius
+    sphere_cache.segments = segments
+    sphere_cache.vertices = {}  -- Clear the old vertices
+
+    for i = 0, segments - 1 do
+        local theta1 = math.pi * (i / segments)
+        local theta2 = math.pi * ((i + 1) / segments)
+
+        for j = 0, segments - 1 do
+            local phi1 = 2 * math.pi * (j / segments)
+            local phi2 = 2 * math.pi * ((j + 1) / segments)
+
+            -- Generate two triangles for each square segment
+            table.insert(sphere_cache.vertices, {
+                Vector3(math.sin(theta1) * math.cos(phi1), math.sin(theta1) * math.sin(phi1), math.cos(theta1)),
+                Vector3(math.sin(theta1) * math.cos(phi2), math.sin(theta1) * math.sin(phi2), math.cos(theta1)),
+                Vector3(math.sin(theta2) * math.cos(phi1), math.sin(theta2) * math.sin(phi1), math.cos(theta2)),
+            })
+            table.insert(sphere_cache.vertices, {
+                Vector3(math.sin(theta2) * math.cos(phi1), math.sin(theta2) * math.sin(phi1), math.cos(theta2)),
+                Vector3(math.sin(theta1) * math.cos(phi2), math.sin(theta1) * math.sin(phi2), math.cos(theta1)),
+                Vector3(math.sin(theta2) * math.cos(phi2), math.sin(theta2) * math.sin(phi2), math.cos(theta2)),
+            })
+        end
+    end
+end
+
+-- Call setup_sphere once at the start of your program
+setup_sphere(Vector3(0, 0, 0), 90, 16)
+
+local white_texture = draw.CreateTextureRGBA(string.char(
+	0xff, 0xff, 0xff, 25,
+	0xff, 0xff, 0xff, 25,
+	0xff, 0xff, 0xff, 25,
+	0xff, 0xff, 0xff, 25
+), 2, 2);
+
+local drawPolygon = (function()
+	local v1x, v1y = 0, 0;
+	local function cross(a, b)
+		return (b[1] - a[1]) * (v1y - a[2]) - (b[2] - a[2]) * (v1x - a[1])
+	end
+
+	local TexturedPolygon = draw.TexturedPolygon;
+
+	return function(vertices)
+		local cords, reverse_cords = {}, {};
+		local sizeof = #vertices;
+		local sum = 0;
+
+		v1x, v1y = vertices[1][1], vertices[1][2];
+		for i, pos in pairs(vertices) do
+			local convertedTbl = {pos[1], pos[2], 0, 0};
+
+			cords[i], reverse_cords[sizeof - i + 1] = convertedTbl, convertedTbl;
+
+			sum = sum + cross(pos, vertices[(i % sizeof) + 1]);
+		end
+
+
+		TexturedPolygon(white_texture, (sum < 0) and reverse_cords or cords, true)
+	end
+end)();
+
+
 local function toggleMenu()
     local currentTime = globals.RealTime()
     if currentTime - lastToggleTime >= toggleCooldown then
@@ -965,23 +1037,57 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                             draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
                         end
                     end
-                end
+---------------------------------------------------------sphere
+                        if Menu.Visuals.Sphere then
+                            -- Function to draw the sphere
+                            local function draw_sphere()
+                                for _, vertex in ipairs(sphere_cache.vertices) do
+                                    local worldPos1 = sphere_cache.center + vertex[1] * sphere_cache.radius
+                                    local worldPos2 = sphere_cache.center + vertex[2] * sphere_cache.radius
+                                    local worldPos3 = sphere_cache.center + vertex[3] * sphere_cache.radius
 
-                --[[Draw crosses at the positions stored in playerTicks for all players
-                if playerTicks then
-                    for playerIndex, positions in pairs(playerTicks) do
-                        for i = 1, #positions do
-                            local pos = positions[i]
+                                    -- Trace from the center to the vertices
+                                    local trace1 = engine.TraceHull(sphere_cache.center, worldPos1, Vector3(-18, -18, -18), Vector3(18, 18, 18), MASK_SHOT_HULL)
+                                    local trace2 = engine.TraceHull(sphere_cache.center, worldPos2, Vector3(-18, -18, -18), Vector3(18, 18, 18), MASK_SHOT_HULL)
+                                    local trace3 = engine.TraceHull(sphere_cache.center, worldPos3, Vector3(-18, -18, -18), Vector3(18, 18, 18), MASK_SHOT_HULL)
 
-                            local screenPos = client.WorldToScreen(pos)
+                                    -- Adjust the end position of the vertices based on the trace results
+                                    local endPos1 = trace1.fraction < 1.0 and trace1.endpos or worldPos1
+                                    local endPos2 = trace2.fraction < 1.0 and trace2.endpos or worldPos2
+                                    local endPos3 = trace3.fraction < 1.0 and trace3.endpos or worldPos3
 
-                            if screenPos ~= nil then
-                                draw.Line(screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
-                                draw.Line(screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+                                    local screenPos1 = client.WorldToScreen(endPos1)
+                                    local screenPos2 = client.WorldToScreen(endPos2)
+                                    local screenPos3 = client.WorldToScreen(endPos3)
+
+                                    if screenPos1 and screenPos2 and screenPos3 then
+                                        -- Convert the screen positions to the format expected by drawPolygon
+                                        local polygonVertices = {
+                                            {screenPos1[1], screenPos1[2]},
+                                            {screenPos2[1], screenPos2[2]},
+                                            {screenPos3[1], screenPos3[2]}
+                                        }
+
+                                        -- Call drawPolygon to draw the triangle
+                                        drawPolygon(polygonVertices)
+
+                                        -- Set the color and alpha for the lines
+                                        draw.Color(255, 255, 255, 25)
+
+                                        -- Draw the lines
+                                        draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                                        draw.Line(screenPos2[1], screenPos2[2], screenPos3[1], screenPos3[2])
+                                        draw.Line(screenPos3[1], screenPos3[2], screenPos1[1], screenPos1[2])
+                                    end
+                                end
                             end
+                            -- Example draw call, to be done every tick to draw the sphere at the current position and radius
+                            ---setup_sphere(Vector3(0, 0, 0), 90, 16)
+                            sphere_cache.center = pLocalOrigin
+                            sphere_cache.radius = swingrange
+                            draw_sphere()
                         end
                     end
-                end]]
 
                     -- enemy
                     if vPlayerFuture then
@@ -1076,6 +1182,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
 
                 ImMenu.BeginFrame(1)
                     Menu.Aimbot.Silent = ImMenu.Checkbox("Silent Aim", Menu.Aimbot.Silent)
+                    Menu.Aimbot.ChargeBot = ImMenu.Checkbox("Charge Bot", Menu.Aimbot.ChargeBot)
                 ImMenu.EndFrame()
 
                 ImMenu.BeginFrame(1)
@@ -1145,6 +1252,11 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                 ImMenu.BeginFrame(1)
                 Menu.Visuals.Visualization = ImMenu.Checkbox("Visualization", Menu.Visuals.Visualization)
                 Menu.Visuals.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.RangeCircle)
+                ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
+                ImMenu.Text("Experimental")
+                Menu.Visuals.Sphere = ImMenu.Checkbox("Range Sphere", Menu.Visuals.Sphere)
                 ImMenu.EndFrame()
             end
         ImMenu.End()
