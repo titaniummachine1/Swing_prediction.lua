@@ -52,7 +52,7 @@ local Menu = {
         RangeCircle = true,
         Visualization = true,
     },
-    Keybind = 0,
+    Keybind = KEY_NONE,
 }
 
 local Lua__fullPath = GetScriptName()
@@ -181,6 +181,7 @@ local PredPath = {}
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
 local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
+local backtrackTicks =  {}
 
 local vdistance = nil
 local pLocalClass = nil
@@ -201,10 +202,10 @@ local aimposVis = nil
 local in_attack = nil
 
 local settings = {
-    MinDistance = 100,
-    MaxDistance = 1000,
+    MinDistance = 0,
+    MaxDistance = 570,
     MinFOV = 0,
-    MaxFOV = 360,
+    MaxFOV = mFov:GetValue(),
 }
 
 local latency = 0
@@ -275,9 +276,19 @@ local function CalcStrafe(me)
     end
 end
 
+local function checkPlayerState(player)
+    local flags = player:GetPropInt("m_fFlags")
+    local waterLevel = player:GetPropInt("m_nWaterLevel")
 
+    -- Constants for flag bits
+    local FL_ONGROUND = 1 << 0  -- Bit for being on the ground
+    local FL_INWATER = 1 << 9   -- Bit for being in water
 
-    local fFalse = function () return false end
+    local isSwimming = (flags & FL_INWATER) ~= 0 and waterLevel > 1
+    local isWalking = (flags & FL_ONGROUND) ~= 0 and waterLevel <= 1
+
+    return isSwimming, isWalking
+end
 
     -- [WIP] Predict the position of a player
     ---@param player WPlayer
@@ -289,7 +300,7 @@ end
         if not gravity or not stepSize then return nil end
         local vUp = Vector3(0, 0, 1)
         local vStep = Vector3(0, 0, stepSize)
-        shouldHitEntity = shouldHitEntity or fFalse
+        shouldHitEntity = shouldHitEntity or function(entity) return entity:GetIndex() ~= player:GetIndex() end --trace ignore simulated player 
         local pFlags = player:GetPropInt("m_fFlags")
         -- Add the current record
         local _out = {
@@ -315,7 +326,7 @@ end
 
             --[[ Forward collision ]]
 
-            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
             --DrawLine(last.p + vStep, pos + vStep)
             if wallTrace.fraction < 1 then
                 -- We'll collide
@@ -340,7 +351,7 @@ end
             if not onGround1 then downStep = Vector3() end
 
             -- Ground collision
-            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
             if groundTrace.fraction < 1 then
                 -- We'll hit the ground
                 local normal = groundTrace.plane
@@ -370,7 +381,8 @@ end
             end
 
             -- Gravity
-            if not onGround1 then
+            --local isSwimming, isWalking = checkPlayerState(player) -- todo: fix this
+            if not onGround1 and isSwimming then
                 vel.z = vel.z - gravity * globals.TickInterval()
             end
 
@@ -381,97 +393,73 @@ end
         return _out
     end
 
----@param me WPlayer
----@return AimTarget? target
+    local function getBacktrackTicks(fakeLatency)
+        local tickInterval = 0.015  -- Typical value is 0.015 for 66-tick servers
+        local totalLatencyMs = fakeLatency + 200  -- Total latency in milliseconds
+        local totalLatencySeconds = totalLatencyMs / 1000  -- Convert milliseconds to seconds
+        local backtrackTicks = math.floor(totalLatencySeconds / tickInterval)  -- Calculate the number of ticks
+        return backtrackTicks
+    end
+
+local playerTicks = {}
+
 local function GetBestTarget(me)
-    settings = {
-        MinDistance = swingrange,
-        MaxDistance = 770,
-        MinFOV = 0,
-        MaxFOV = 360,
-    }
 
     local players = entities.FindByClass("CTFPlayer")
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
 
+    local bestTarget = nil
+    local bestFactor = 0
+
     local localPlayerOrigin = localPlayer:GetAbsOrigin()
-    local localPlayerTeam = localPlayer:GetTeamNumber()
     local localPlayerViewAngles = engine.GetViewAngles()
 
-    local targetList = {}
-    local targetCount = 0
-    -- Calculate target factors
-    for i, player in ipairs(players) do
-        local playerTeam = player:GetTeamNumber()
-        local playerOrigin = player:GetAbsOrigin()
-
-        -- Check if the player is invalid
-        if player == nil or player == pLocal or not player:IsAlive() or player:IsDormant() then
-            goto continue
-        end
-
-        -- Check if we have a whip and the "whip teammates" option is off, but the player is on the local player's team
-        if not mWhipMate:GetValue() and swingrange == 109.5 and playerTeam == localPlayerTeam then
-            goto continue
-        elseif mWhipMate:GetValue() and swingrange ~= 109.5 and playerTeam == localPlayerTeam then
-            goto continue
-        end
     
-        if gui.GetValue("ignore cloaked") == 1 and player:InCond(4) then
-            goto continue
-        end
-    
-        if not Helpers.VisPos(player, localPlayerOrigin, playerOrigin) then
-            goto continue
-        end
+    for _, player in ipairs(players) do
+        if player:GetIndex() ~= pLocal:GetIndex() and player:IsAlive() and not player:IsDormant() then
+            if player:GetTeamNumber() ~= localPlayer:GetTeamNumber() or mWhipMate:GetValue() and swingrange == 109.5 then
+                if Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin()) then
+        
+                    local minTick = math.floor((defFakeLatency / 900) / 0.015)
+                    local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
 
-    
-        -- Calculate Manhattan distance
-        local distance = math.abs(playerOrigin.x - localPlayerOrigin.x) + math.abs(playerOrigin.y - localPlayerOrigin.y) + math.abs(playerOrigin.z - localPlayerOrigin.z)
-    
-        if distance > settings.MaxDistance then
-            goto continue
-        end
+                    local numBacktrackTicks = gui.GetValue("Fake Latency") == 1 and maxTick or gui.GetValue("Fake Latency") == 0 and gui.GetValue("Backtrack") == 1 and 5 or 0
 
-        local angles = Math.PositionAngles(localPlayerOrigin, playerOrigin + Vector3(0, 0, viewheight))
-        local fov = Math.AngleFov(localPlayerViewAngles, angles)
+                    if numBacktrackTicks ~= 0 then
+                        local playerIndex = player:GetIndex()
+                        playerTicks[playerIndex] = playerTicks[playerIndex] or {}
+                        table.insert(playerTicks[playerIndex], player:GetAbsOrigin())
 
-        if fov > settings.MaxFOV then
-            goto continue
-        end
+                        -- If the player's tick count exceeds maxinteger, remove the oldest tick
+                        if #playerTicks[playerIndex] > numBacktrackTicks then
+                            table.remove(playerTicks[playerIndex], 1)
+                        end
+                    end
 
-        local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.07)
-        local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 1)
+                    local playerOrigin = player:GetAbsOrigin()
+                    local distance = math.abs(playerOrigin.x - localPlayerOrigin.x) + 
+                                     math.abs(playerOrigin.y - localPlayerOrigin.y) + 
+                                     math.abs(playerOrigin.z - localPlayerOrigin.z)
 
-        local factor = distanceFactor * fovFactor
+                    if distance <= settings.MaxDistance then
+                        local angles = Math.PositionAngles(localPlayerOrigin, playerOrigin + Vector3(0, 0, viewheight))
+                        local fov = Math.AngleFov(localPlayerViewAngles, angles)
 
-        targetCount = targetCount + 1
-        targetList[targetCount] = { player = player, factor = factor }
+                        if fov <= settings.MaxFOV and distance < settings.MaxDistance then
+                            local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.07)
+                            local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.9)
+                            local factor = distanceFactor * fovFactor
 
-        ::continue::
-    end
-
-    -- Sort target list by factor in descending order manually
-    for i = 1, targetCount - 1 do
-        for j = 1, targetCount - i do
-            if targetList[j].factor < targetList[j + 1].factor then
-                targetList[j], targetList[j + 1] = targetList[j + 1], targetList[j]
+                            if factor > bestFactor then
+                                bestTarget = player
+                                bestFactor = factor
+                            end
+                        end
+                    end
+                end
             end
         end
-    end
-
-    local bestTarget = nil
-
-    if targetCount > 0 then
-        local bestPlayer = targetList[1].player
-        local bestPlayerOrigin = bestPlayer:GetAbsOrigin()
-        local aimPos = bestPlayerOrigin + Vector3(0, 0, 75)
-        local angles = Math.PositionAngles(localPlayerOrigin, aimPos)
-        local fov = Math.AngleFov(angles, localPlayerViewAngles)
-
-        -- Set as best target
-        bestTarget = { entity = bestPlayer, angles = angles, factor = targetList[1].factor }
     end
 
     return bestTarget
@@ -479,33 +467,27 @@ end
 
 
 -- Define function to check InRange between the hitbox and the sphere
-    local function checkInRange(targetPos, spherePos, sphereRadius, target)
-        if vPlayerFuture == nil or not isMelee then
-            return false, nil
-        end
-        
-        local hitbox_min = Vector3(-hitbox_Width, -hitbox_Width, 0)
-        local hitbox_max = Vector3(hitbox_Width, hitbox_Width, hitbox_Height)
-        local hitbox_min_trigger = (targetPos + hitbox_min)
-        local hitbox_max_trigger = (targetPos + hitbox_max)
-    
+    local function checkInRange(targetPos, spherePos, sphereRadius)
+
+        local hitbox_min_trigger = (targetPos + vHitbox[1])
+        local hitbox_max_trigger = (targetPos + vHitbox[2])
+
         -- Calculate the closest point on the hitbox to the sphere
         local closestPoint = Vector3(
             math.max(hitbox_min_trigger.x, math.min(spherePos.x, hitbox_max_trigger.x)),
             math.max(hitbox_min_trigger.y, math.min(spherePos.y, hitbox_max_trigger.y)),
             math.max(hitbox_min_trigger.z, math.min(spherePos.z, hitbox_max_trigger.z))
         )
-    
+
         -- Calculate the vector from the closest point to the sphere center
         local distanceAlongVector = (spherePos - closestPoint):Length()
-        
+
         -- Compare the distance along the vector to the sum of the radius
         if sphereRadius > distanceAlongVector then
             -- InRange detected (including intersecting)
             return true, closestPoint
-            
         else
-            -- No InRange
+            -- Not InRange
             return false, nil
         end
     end
@@ -542,52 +524,85 @@ local function ChargeControl(pCmd)
     pCmd:SetViewAngles(currentAngles.pitch, interpolatedYaw, 0)
 end
 
+local function checkInRangeWithLatency(playerIndex, swingRange)
+        -- If latency is enabled, check if pLocalFuture or pLocalOrigin are in range to attack the ticks
+        local closestPoint = nil
+        local inRange = false
+        local point = nil
 
+        local Backtrack = gui.GetValue("Backtrack")
+        local fakelatencyON = gui.GetValue("Fake Latency")
 
---[[Calculates the FOV between two angles and returns x and y position differences
----@param vFrom EulerAngles
----@param vTo EulerAngles
----@return number fov, number deltaX, number deltaY
-local function AngleFovAndPositionDifference(vFrom, vTo)
-    if vFrom == nil or vTo == nil then return 0,0,0 end
+        if Backtrack == 0 and fakelatencyON == 0 then
+            -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
+            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
+            
+            if inRange then
+                return inRange, point
+            else
+                local inRange2, point2 = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+                if inRange2 then
+                    return inRange2, point2
+                end
+            end
+        elseif fakelatencyON == 1 then
+            -- Calculate the range of ticks to check based on the current latency
+            local minTick = 1
+            local maxTick = math.min(5, #playerTicks[playerIndex])
 
-    local vSrc = vFrom:Forward()
-    local vDst = vTo:Forward()
+            -- Check from the newest to the oldest tick within the range
+            for tick = minTick, maxTick do
+                if playerTicks[playerIndex] then
+                    local pastOrigin = playerTicks[playerIndex][tick]
 
-    -- Calculate the FOV
-    local fov = math.deg(math.acos(vDst:Dot(vSrc) / vDst:LengthSqr()))
+                    inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
+                    print(inRange)
+                    if inRange then
+                        return inRange, point
+                    else
+                        local inRange2, point2 = checkInRange(pastOrigin, pLocalFuture, swingRange)
+                        if inRange2 then
+                            return inRange2, point2
+                        end
+                    end
+                end
+            end
+        elseif Backtrack == 1 then
+            -- Calculate the range of ticks to check based on the current latency
+            local minTick = 1
+            local maxTick = 5
 
-    -- Calculate the position differences
-    local deltaX = vTo.x - vFrom.x
-    local deltaY = vTo.y - vFrom.y
+            -- Check from the newest to the oldest tick within the range
+            for tick = maxTick, minTick, -1 do
+                if playerTicks[playerIndex] and playerTicks[playerIndex][tick] then
+                    local pastOrigin = playerTicks[playerIndex][tick]
 
-    return fov, deltaX, deltaY
-end]]
+                    -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
+                    inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
+                    if inRange then
+                        return inRange, point
+                    else
+                        local inRange2, point2 = checkInRange(pastOrigin, pLocalFuture, swingRange)
+                        if inRange2 then
+                            return inRange2, point2
+                        end
+                    end
+                end
+            end
 
-local function calculateHitChancePercentage(lastPredictedPos, currentPos)
-    if not lastPredictedPos then
-        print("lastPosiion is NiLL ~~!!!!")
-        return 0
-    end
-    local horizontalDistance = math.sqrt((currentPos.x - lastPredictedPos.x)^2 + (currentPos.y - lastPredictedPos.y)^2)
-
-    local verticalDistanceUp = currentPos.z - lastPredictedPos.z + 10
-
-    local verticalDistanceDown = (lastPredictedPos.z - currentPos.z) - 10
-    
-    -- You can adjust these values based on game's mechanics
-    local maxHorizontalDistance = 40
-    local maxVerticalDistanceUp = 50
-    local maxVerticalDistanceDown = 50
-    
-    if horizontalDistance > maxHorizontalDistance or verticalDistanceUp > maxVerticalDistanceUp or verticalDistanceDown > maxVerticalDistanceDown then
-        return 0 -- No chance to hit
-    else
-        local horizontalHitChance = 100 - (horizontalDistance / maxHorizontalDistance) * 100
-        local verticalHitChance = 100 - (verticalDistanceUp / maxVerticalDistanceUp) * 100
-        local overallHitChance = (horizontalHitChance + verticalHitChance) / 2
-        return overallHitChance
-    end
+            -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
+            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
+            
+            if inRange then
+                return inRange, point
+            else
+                local inRange2, point2 = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+                if inRange2 then
+                    return inRange2, point2
+                end
+            end
+        end
+    return false, nil
 end
 
 -- Initialize a counter outside of your game loop
@@ -595,9 +610,6 @@ local attackCounter = 0
 
 --[[ Code needed to run 66 times a second ]]--
 -- Predicts player position after set amount of ticks
----@param targetLastPos Vector3
----@param Ltime integer
----@param targetEntity number
 ---@param strafeAngle number
 local function OnCreateMove(pCmd)
     -- Get the local player entity
@@ -606,15 +618,11 @@ local function OnCreateMove(pCmd)
         goto continue -- Return if the local player entity doesn't exist or is dead
     end
 
-
-
     -- Check if the local player is a spy
     pLocalClass = pLocal:GetPropInt("m_iClass")
     if pLocalClass == nil or pLocalClass == 8 then
         goto continue -- Skip the rest of the code if the local player is a spy or hasn't chosen a class
     end
-
-
 
     -- Get the local player's active weapon
     pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
@@ -622,27 +630,26 @@ local function OnCreateMove(pCmd)
         goto continue -- Return if the local player doesn't have an active weapon
     end
 
-
-
     -- Get the current latency and lerp
     local latOut = clientstate.GetLatencyOut()
     local latIn = clientstate.GetLatencyIn()
         lerp = client.GetConVar("cl_interp") or 0
         Latency = (latOut + lerp) -- Calculate the reaction time in seconds
         Latency = math.floor(Latency * tickRate + 1) -- Convert the delay to ticks
+        defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
 
     -- Get the local player's flags and charge meter
         local flags = pLocal:GetPropInt("m_fFlags")
         local airbone = pLocal:InCond(81)
         chargeLeft = pLocal:GetPropFloat("m_flChargeMeter")
         chargeLeft = math.floor(chargeLeft)
+
     -- Get the local player's active weapon data and definition
         local pWeaponData = pWeapon:GetWeaponData()
         local pWeaponID = pWeapon:GetWeaponID()
         local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
         local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
         local pWeaponName = pWeaponDef:GetName()
-
         local pUsingMargetGarden = false
 
         if pWeaponDefIndex == 416 then
@@ -701,23 +708,6 @@ end
 
     swingrange = swingrange + (SwingHullSize / 2)
 
-    --[[
-local forwardPosition = Vector3(
-    pLocalOrigin.x + hitboxSize,
-    pLocalOrigin.y + hitboxSize + swingrange,
-    pLocalOrigin.z + hitboxSize
-)
-
-local cornerposition = Vector3( --ToDO: fix this
-    pLocalOrigin.x,
-    pLocalOrigin.y+ hitboxSize + swingrange,
-    pLocalOrigin.z
-)]]
-
---local distanceCorner = (pLocalOrigin - cornerposition):Length()
-
---local fov, offsetx, offsety = AngleFovAndPositionDifference(engine.GetViewAngles().x, cornerposition)
-
 --[--Manual charge control--]
 
     if Mchargebot:GetValue() and pLocal:InCond(17) then
@@ -726,16 +716,17 @@ local cornerposition = Vector3( --ToDO: fix this
 
 --[-----Get best target------------------]
     local keybind = mKeyOverrite:GetValue()
-        if keybind == KEY_NONE and GetBestTarget(pLocal) ~= nil then
+        if keybind == 0 then
             -- Check if player has no key bound
-            CurrentTarget = GetBestTarget(pLocal).entity
+            CurrentTarget = GetBestTarget(pLocal)
             vPlayer = CurrentTarget
-        elseif input.IsButtonDown(keybind) and GetBestTarget(pLocal) ~= nil then
+        elseif input.IsButtonDown(keybind) then
             -- If player has bound key for aimbot, only work when it's on
-            CurrentTarget = GetBestTarget(pLocal).entity
+            CurrentTarget = GetBestTarget(pLocal)
             vPlayer = CurrentTarget
         else
             CurrentTarget = nil
+            vPlayer = nil
         end
 
     -- Refill and return when noone to target
@@ -743,10 +734,8 @@ local cornerposition = Vector3( --ToDO: fix this
         if mAutoRefill:GetValue() and pWeapon:GetCritTokenBucket() <= 27 then
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
         end
-        goto continue
     end
 
-    vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
     local ONGround
     local Target_ONGround
     local strafeAngle = 0
@@ -769,16 +758,18 @@ local cornerposition = Vector3( --ToDO: fix this
         strafeAngle = strafeAngles[pLocal:GetIndex()] or 0
 
         local predData = PredictPlayer(player, time, strafeAngle)
-        --local straightPredData = PredictPlayer(player, time, 0, vHitbox)
-
-        if predData == nil then
-            goto continue
-        end
 
         pLocalPath = predData.pos
         pLocalFuture = predData.pos[time] + viewOffset
     end
 
+-- stop if no target
+if CurrentTarget == nil then 
+    vPlayerFuture = nil
+    return 
+end
+
+    vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
     -- Target player prediction
     if CurrentTarget:EstimateAbsVelocity() == 0 then
         -- If the target player is not accelerating, set the predicted position to their current position
@@ -790,16 +781,6 @@ local cornerposition = Vector3( --ToDO: fix this
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
 
         local predData = PredictPlayer(player, time, strafeAngle)
-        --local straightPredData = PredictPlayer(player, time, 0, vHitbox)
-
-        if not predData then
-            goto continue
-        end
-
-        --local hitchance = calculateHitChancePercentage(predData.pos[time], straightPredData.pos[time])
-        --if hitchance < 10 then
-            --predData = straightPredData
-        --end
 
         vPlayerPath = predData.pos
         vPlayerFuture = predData.pos[time]
@@ -810,18 +791,12 @@ local cornerposition = Vector3( --ToDO: fix this
 -- Get current distance between local player and closest player
 vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
--- Get distance between local player and closest player after swing
-fDistance = (vPlayerFuture - pLocalFuture):Length()
+    -- Get distance between local player and closest player after swing
+    fDistance = (vPlayerFuture - pLocalFuture):Length()
 
--- Check for InRange with current position
-local InRange1, InRangePoint = checkInRange(vPlayerOrigin, pLocalOrigin, swingrange)
-local InRange2 = checkInRange(vPlayerFuture, pLocalFuture, swingrange)
-
--- Use an OR gate to set InRange to true if either InRange1 or InRange2 is true
-InRange = InRange1 or InRange2
-
--- Decide if can attack based on InRange
-can_attack = InRange
+    local inRange, InRangePoint = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange)
+    -- Use inRange to decide if can attack
+    can_attack = inRange
 
     -- Check for charge range bug
     if pLocalClass == 4 -- player is Demoman
@@ -836,45 +811,33 @@ can_attack = InRange
             end
     end
 
-
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = CurrentTarget:GetHitboxes()
     local hitbox = hitboxes[6]
     local aimpos = nil
 
 
-    if InRangePoint ~= nil then
-
+    if InRangePoint then
         aimpos = InRangePoint
-
-    elseif aimpos == nil then
+    else
         aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
     end
-
     aimposVis = aimpos -- transfer aim point to visuals
-    local Eaimpos = aimpos
 
-    local angles = Math.PositionAngles(pLocalOrigin, Eaimpos)
-    local fov = Math.AngleFov(engine.GetViewAngles(), angles)
-
-    flags = pLocal:GetPropInt("m_fFlags")
-    if fov > settings.MaxFOV then
-        goto continue
-    end
-    
     -- Calculate aim position only once
-    Eaimpos = Math.PositionAngles(pLocalOrigin, Eaimpos)
+    aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+
     -- Inside your game loop
     if Maimbot:GetValue() then
         if Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not can_attack and pLocal:InCond(17) then
             -- Set view angles based on the future position of the local player
-            pCmd:SetViewAngles(engine.GetViewAngles().pitch, Eaimpos.yaw, 0)
-        elseif InRange then
+            pCmd:SetViewAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0)
+        elseif can_attack then
                 -- Set view angles based on whether silent aim is enabled
                 if MSilent:GetValue() then
-                    pCmd:SetViewAngles(Eaimpos.pitch, Eaimpos.yaw, 0)
+                    pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0)
                 else
-                    engine.SetViewAngles(EulerAngles(Eaimpos.pitch, Eaimpos.yaw, 0))
+                    engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
                 end
         end
     elseif Mchargebot:GetValue() and pLocal:InCond(17) then
@@ -921,7 +884,6 @@ can_attack = InRange
         -- Update last variables
 
             Safe_Strafe = false -- reset safe strafe
-            aimposVis = aimpos -- transfer aim point to visuals
     ::continue::
 end
 
@@ -932,59 +894,13 @@ local function doDraw()
     if engine.Con_IsVisible() or engine.IsGameUIVisible() or not pLocal or pLocal:IsAlive() == nil then
         return
     end
-    if vPlayerOrigin == nil then return end
-    if vPlayerFuture == nil or pLocalFuture == nil then return end
 
     --local pLocal = entities.GetLocalPlayer()
     pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
 if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
-
     if pLocalFuture == nil or not pLocal:IsAlive() then return end
-    if CurrentTarget == nil then return end
         draw.Color( 255, 255, 255, 255 )
         local w, h = draw.GetScreenSize()
-
-            --draw predicted local position with strafe prediction
-            local screenPos = client.WorldToScreen(aimposVis)
-            if screenPos ~= nil then
-                draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
-                draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
-            end
-
-                -- Calculate trigger box vertices
-                local vertices = {
-                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, 0)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, 0)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, 0)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, 0)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, hitbox_Height)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, hitbox_Height)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, hitbox_Height)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, hitbox_Height))
-                }
-
-                -- Check if vertices are not nil
-                if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
-                    -- Draw front face
-                    draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
-                    draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
-                    draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
-                    draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
-
-                    -- Draw back face
-                    draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
-                    draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
-                    draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
-                    draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
-
-                    -- Draw connecting lines
-                    if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
-                    if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
-                    if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
-                    if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
-                end
-
-
         -- Strafe prediction visualization
         if mVisuals:IsSelected("Visualization") then
             draw.Color(255, 255, 255, 255)
@@ -1019,109 +935,82 @@ if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
                 
             end
 
-        -- Check if the range circle is selected, the player future is not nil, and the player is melee
-    if not pLocal:IsAlive() and not mVisuals:IsSelected("Range Circle") or vPlayerFuture == nil  or isMelee == nil  and GetBestTarget(pLocal) == nil then
-        return
-    end
 
-    -- Define the two colors to interpolate between
-    local color_close = {r = 255, g = 0, b = 0, a = 255} -- red
-    local color_far = {r = 0, g = 0, b = 255, a = 255} -- blue
-
-    -- Calculate the target distance for the color to be completely at the close color
-    local target_distance = swingrange
-
-    -- Calculate the vertex positions around the circle
-    local center = pLocalFuture - Vheight
-    local radius = swingrange -- radius of the circle
-    local segments = 32 -- number of segments to use for the circle
-    vertices = {} -- table to store circle vertices
-    local colors = {} -- table to store colors for each vertex
-
-    for i = 1, segments do
-        local angle = math.rad(i * (360 / segments))
-        local direction = Vector3(math.cos(angle), math.sin(angle), 0)
-        if center == nil or direction == nil or radius == nil then return end
+            local center = pLocalFuture - Vheight -- Center of the circle at the player's feet
+            local viewPos = pLocalOrigin -- View position to shoot traces from
+            local radius = AchargeRange:GetValue() and Charge_Range or swingrange  -- Radius of the circle
+            local segments = 32 -- Number of segments to draw the circle
+            local angleStep = (2 * math.pi) / segments
         
-        local endpos = center + direction * radius
-        local trace = engine.TraceLine(pLocalFuture, endpos, MASK_SHOT_HULL)
-
-        local distance_to_hit = math.min((trace.endpos - center):Length(), radius)
-
-        local x = center.x + math.cos(angle) * distance_to_hit
-        local y = center.y + math.sin(angle) * distance_to_hit
-        local z = center.z + 1
-
-        -- adjust the height based on distance to trace hit point
-        if distance_to_hit > 0 then
-            local max_height_adjustment = 82 -- adjust as needed
-            local height_adjustment = (1 - distance_to_hit / radius) * max_height_adjustment
-            z = z + height_adjustment
-        end
-
-        vertices[i] = client.WorldToScreen(Vector3(x, y, z))
-    end
-
-    -- Calculate the top vertex position
-    local top_height = 82 -- adjust as needed
-    local top_vertex = client.WorldToScreen(Vector3(center.x, center.y, center.z + top_height))
-    local color = {r = 0, g = 0, b = 255, a = 255} -- blue
-    draw.Color(color.r, color.g, color.b, color.a)
-    if not Gcan_attack then
-        color = {r = 52, g = 235, b = 97, a = 255} -- red
-        draw.Color(color.r, color.g, color.b, color.a)
-    end
-    -- Draw the circle and connect all the vertices to the top point
-    for i = 1, segments do
-        local j = i + 1
-        if j > segments then j = 1 end
-        if vertices[i] and vertices[j] then
-            draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
-        end
-    end
-
-    -- Draw a second circle if AchargeRange is enabled
-    --center = pLocal:GetAbsOrigin()
-    if pLocalClass == 4 and AchargeRange:GetValue() and chargeLeft >= 100 then
-        -- Define the color for the second circle
-        color = {r = 255, g = 0, b = 0, a = 255} -- red
-
-        -- Calculate the radius for the second circle
-        local radius2 = Charge_Range
-
-        -- Calculate the vertex positions around the second circle
-        local vertices2 = {} -- table to store circle vertices
-        for i = 1, segments do
-            local angle = math.rad(i * (360 / segments))
-            local direction = Vector3(math.cos(angle), math.sin(angle), 0)
-            local endpos = center + direction * radius2
-            local trace = engine.TraceLine(pLocalFuture, endpos, MASK_SHOT_HULL)
-
-            local distance_to_hit = math.min((trace.endpos - center):Length(), radius2)
-
-            local x = center.x + math.cos(angle) * distance_to_hit
-            local y = center.y + math.sin(angle) * distance_to_hit
-            local z = center.z + 1
-
-            -- adjust the height based on distance to trace hit point
-            if distance_to_hit > 0 then
-                local max_height_adjustment = 82 -- adjust as needed
-                local height_adjustment = (1 - distance_to_hit / radius2) * max_height_adjustment
-                z = z + height_adjustment
+            -- Determine the color of the circle based on TargetPlayer
+            local circleColor = TargetPlayer and {0, 255, 0, 255} or {255, 255, 255, 255} -- Green if TargetPlayer exists, otherwise white
+        
+            -- Set the drawing color
+            draw.Color(table.unpack(circleColor))
+        
+            local vertices = {} -- Table to store adjusted vertices
+        
+            -- Calculate vertices and adjust based on trace results
+            for i = 1, segments do
+                local angle = angleStep * i
+                local circlePoint = center + Vector3(math.cos(angle), math.sin(angle), 0) * radius
+        
+                local trace = engine.TraceLine(viewPos, circlePoint, MASK_SHOT_HULL) --engine.TraceHull(viewPos, circlePoint, vHitbox[1], vHitbox[2], MASK_SHOT_HULL)
+                local endPoint = trace.fraction < 1.0 and trace.endpos or circlePoint
+        
+                vertices[i] = client.WorldToScreen(endPoint)
+            end
+        
+            -- Draw the circle using adjusted vertices
+            for i = 1, segments do
+                local j = (i % segments) + 1 -- Wrap around to the first vertex after the last one
+                if vertices[i] and vertices[j] then
+                    draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
+                end
             end
 
-            vertices2[i] = client.WorldToScreen(Vector3(x, y, z))
-        end
-
-        -- Draw the second circle and connect all the vertices to the top point
-        for i = 1, segments do
-            local j = i + 1
-            if j > segments then j = 1 end
-            if vertices2[i] and vertices2[j] then
-                draw.Color(color.r, color.g, color.b, color.a)
-                draw.Line(vertices2[i][1], vertices2[i][2], vertices2[j][1], vertices2[j][2])
+    if vPlayerFuture then
+        if aimposVis then
+            --draw predicted local position with strafe prediction
+            local screenPos = client.WorldToScreen(aimposVis)
+            if screenPos ~= nil then
+                draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
+                draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
             end
         end
+
+                -- Calculate trigger box vertices
+                local vertices = {
+                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, 0)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, 0)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, 0)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, 0)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, hitbox_Height)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, hitbox_Height)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, hitbox_Height)),
+                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, hitbox_Height))
+                }
+
+                -- Check if vertices are not nil
+                if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
+                    -- Draw front face
+                    draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
+                    draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
+                    draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
+                    draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
+
+                    -- Draw back face
+                    draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
+                    draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
+                    draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
+                    draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
+
+                    -- Draw connecting lines
+                    if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
+                    if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
+                    if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
+                    if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
+                end
     end
 end
 
@@ -1129,7 +1018,6 @@ doDraw()
 
 --[[ Remove the menu when unloaded ]]--
 local function OnUnload()                                -- Called when the script is unloaded
-    
     Menu = {
         Aimbot = {
             AimbotFOV = mFov:GetValue(),
@@ -1150,9 +1038,9 @@ local function OnUnload()                                -- Called when the scri
         },
         Keybind = mKeyOverrite:GetValue(),
     }
+    CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
 
     MenuLib.RemoveMenu(menu)                             -- Remove the menu
-    CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
     UnloadLib() --unloading lualib
     client.Command('play "ui/buttonclickrelease"', true) -- Play the "buttonclickrelease" sound
 end
