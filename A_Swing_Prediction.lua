@@ -832,16 +832,18 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
     -- Inside your game loop
     if Menu.Aimbot.Aimbot then
-        if Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not can_attack and pLocal:InCond(17) then
-            -- Set view angles based on the future position of the local player
-            pCmd:SetViewAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0)
+        if pLocal:InCond(17) then
+            if Menu.Aimbot.ChargeBot and Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not can_attack then
+                -- Set view angles based on the future position of the local player
+                pCmd:SetViewAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0)
+            end
         elseif can_attack then
-                -- Set view angles based on whether silent aim is enabled
-                if Menu.Aimbot.Silent then
-                    pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0)
-                else
-                    engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
-                end
+            -- Set view angles based on whether silent aim is enabled
+            if Menu.Aimbot.Silent then
+                pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0)
+            else
+                engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
+            end
         end
     elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
         -- Control charge if charge bot is enabled and the local player is in condition 17
