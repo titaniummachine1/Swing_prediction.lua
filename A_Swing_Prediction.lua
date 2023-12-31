@@ -4,25 +4,36 @@
 --[[           Terminator           ]]--
 --[[  (github.com/titaniummachine1  ]]--
 
-local menuLoaded, MenuLib = pcall(require, "Menu")                                -- Load MenuLib
-assert(menuLoaded, "MenuLib not found, please install it!")                       -- If not found, throw error
----@alias AimTarget { entity : Entity, angles : EulerAngles, factor : number }
-
 ---@type boolean, lnxLib
 local libLoaded, lnxLib = pcall(require, "lnxLib")
 assert(libLoaded, "lnxLib not found, please install it!")
-UnloadLib() --unloads all packages
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
-local WPlayer, WWeapon, WEntity = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon, lnxLib.TF2.WEntity
+local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
 local Helpers = lnxLib.TF2.Helpers
 local Prediction = lnxLib.TF2.Prediction
 local Fonts = lnxLib.UI.Fonts
+local Input = lnxLib.Utils.Input
+local Notify = lnxLib.UI.Notify
 
---[[ Menu ]]--
-local menu = MenuLib.Create("Swing Prediction", MenuFlags.AutoSize)
-menu.Style.TitleBg = { 205, 95, 50, 255 } -- Title Background Color (Flame Pea)
-menu.Style.Outline = true                 -- Outline around the menu
+local function GetPressedkey()
+    local pressedKey = Input.GetPressedKey()
+        if not pressedKey then
+            -- Check for standard mouse buttons
+            if input.IsButtonDown(MOUSE_LEFT) then return MOUSE_LEFT end
+            if input.IsButtonDown(MOUSE_RIGHT) then return MOUSE_RIGHT end
+            if input.IsButtonDown(MOUSE_MIDDLE) then return MOUSE_MIDDLE end
+
+            -- Check for additional mouse buttons
+            for i = 1, 10 do
+                if input.IsButtonDown(MOUSE_FIRST + i - 1) then return MOUSE_FIRST + i - 1 end
+            end
+        end
+        return pressedKey
+    end
+
+local menuLoaded, ImMenu = pcall(require, "ImMenu")
+assert(menuLoaded, "ImMenu not found, please install it!")
 
 --[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
@@ -35,24 +46,34 @@ menu.Style.Outline = true                 -- Outline around the menu
 end, ItemFlags.FullWidth))]]
 
 local Menu = {
+
+    tabs = { -- dont touch this, this is just for managing the tabs in the menu
+    Aimbot = true,
+    Visuals = false,
+    Misc = false
+    },
+
     Aimbot = {
-        AimbotFOV = 360,
         Aimbot = true,
+        AimbotFOV = 360,
         Silent = true,
+    },
+    Visuals = {
+        EnableVisuals = false,
+        RangeCircle = true,
+        Visualization = true,
+    },
+    Misc = {
         ChargeControl = true,
         ChargeSensitivity = 50,
         CritRefill = true,
         InstantAttack = true,
-        WhipTeammates = true,
         ChargeReach = false,
         TroldierAssist = false,
-        EnableVisuals = false,
-    },
-    Visuals = {
-        RangeCircle = true,
-        Visualization = true,
     },
     Keybind = KEY_NONE,
+    KeybindName = "Always On",
+    Is_Listening_For_Key = false,
 }
 
 local Lua__fullPath = GetScriptName()
@@ -133,29 +154,6 @@ if status then --ensure config is not causing errors
     end
 end
 
-
-
-local mFov          = menu:AddComponent(MenuLib.Slider("Aimbot FOV",10 ,360 ,Menu.Aimbot.AimbotFOV))
-local Maimbot       = menu:AddComponent(MenuLib.Checkbox("Aimbot", Menu.Aimbot.Aimbot, ItemFlags.FullWidth))
-local MSilent       = menu:AddComponent(MenuLib.Checkbox("Silent ^", Menu.Aimbot.Silent, ItemFlags.FullWidth))
-local Mchargebot    = menu:AddComponent(MenuLib.Checkbox("Charge Controll", Menu.Aimbot.ChargeControl, ItemFlags.FullWidth))
-local mSensetivity  = menu:AddComponent(MenuLib.Slider("Charge Sensetivity",1 ,100 ,Menu.Aimbot.ChargeSensitivity))
-local mAutoRefill   = menu:AddComponent(MenuLib.Checkbox("Crit Refill", Menu.Aimbot.CritRefill))
-local mInstaHit     = menu:AddComponent(MenuLib.Checkbox("Instant attack", Menu.Aimbot.InstantAttack))
-local mWhipMate     = menu:AddComponent(MenuLib.Checkbox("Whip teamamtes", Menu.Aimbot.WhipTeammates))
-local AchargeRange  = menu:AddComponent(MenuLib.Checkbox("Charge Reach", Menu.Aimbot.ChargeReach, ItemFlags.FullWidth))
-local mAutoGarden   = menu:AddComponent(MenuLib.Checkbox("Troldier assist", Menu.Aimbot.TroldierAssist))
-local mmVisuals     = menu:AddComponent(MenuLib.Checkbox("Enable Visuals", Menu.Aimbot.EnableVisuals))
-
-local Visuals = {
-    ["Range Circle"] = Menu.Visuals.RangeCircle,
-    ["Visualization"] = Menu.Visuals.Visualization
-}
-local mVisuals = menu:AddComponent(MenuLib.MultiCombo("^Visuals", Visuals, ItemFlags.FullWidth))
-
-local mKeyOverrite  = menu:AddComponent(MenuLib.Keybind("Keybind", Menu.Keybind))
-
-
 local closestDistance = 2000
 local fDistance = 1
 local hitbox_Height = 82
@@ -203,9 +201,9 @@ local in_attack = nil
 
 local settings = {
     MinDistance = 0,
-    MaxDistance = 570,
+    MaxDistance = 770,
     MinFOV = 0,
-    MaxFOV = mFov:GetValue(),
+    MaxFOV = Menu.Aimbot.AimbotFOV,
 }
 
 local latency = 0
@@ -213,7 +211,7 @@ local lerp = 0
 local lastAngles = {} ---@type table<number, EulerAngles>
 local strafeAngles = {} ---@type table<number, number>
 local strafeAngleHistories = {} ---@type table<number, table<number, number>>
-local MAX_ANGLE_HISTORY = 4  -- Number of past angles to consider for averaging
+local MAX_ANGLE_HISTORY = 3  -- Number of past angles to consider for averaging
 
 ---@param me WPlayer
 local function CalcStrafe(me)
@@ -276,6 +274,10 @@ local function CalcStrafe(me)
     end
 end
 
+function Normalize(vec)
+    local length = math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
+    return Vector3(vec.x / length, vec.y / length, vec.z / length)
+end
 local function checkPlayerState(player)
     local flags = player:GetPropInt("m_fFlags")
     local waterLevel = player:GetPropInt("m_nWaterLevel")
@@ -415,16 +417,16 @@ local function GetBestTarget(me)
     local localPlayerOrigin = localPlayer:GetAbsOrigin()
     local localPlayerViewAngles = engine.GetViewAngles()
 
-    
+
     for _, player in ipairs(players) do
         if player:GetIndex() ~= pLocal:GetIndex() and player:IsAlive() and not player:IsDormant() then
-            if player:GetTeamNumber() ~= localPlayer:GetTeamNumber() or mWhipMate:GetValue() and swingrange == 109.5 then
+            if player:GetTeamNumber() ~= localPlayer:GetTeamNumber() then
                 if Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin()) then
         
-                    local minTick = math.floor((defFakeLatency / 900) / 0.015)
+                    --local minTick = math.floor((defFakeLatency / 900) / 0.015)
                     local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
 
-                    local numBacktrackTicks = gui.GetValue("Fake Latency") == 1 and maxTick or gui.GetValue("Fake Latency") == 0 and gui.GetValue("Backtrack") == 1 and 5 or 0
+                    local numBacktrackTicks = gui.GetValue("Fake Latency") == 1 and maxTick or gui.GetValue("Fake Latency") == 0 and gui.GetValue("Backtrack") == 1 and 4 or 0
 
                     if numBacktrackTicks ~= 0 then
                         local playerIndex = player:GetIndex()
@@ -438,8 +440,8 @@ local function GetBestTarget(me)
                     end
 
                     local playerOrigin = player:GetAbsOrigin()
-                    local distance = math.abs(playerOrigin.x - localPlayerOrigin.x) + 
-                                     math.abs(playerOrigin.y - localPlayerOrigin.y) + 
+                    local distance = math.abs(playerOrigin.x - localPlayerOrigin.x) +
+                                     math.abs(playerOrigin.y - localPlayerOrigin.y) +
                                      math.abs(playerOrigin.z - localPlayerOrigin.z)
 
                     if distance <= settings.MaxDistance then
@@ -465,9 +467,8 @@ local function GetBestTarget(me)
     return bestTarget
 end
 
-
 -- Define function to check InRange between the hitbox and the sphere
-    local function checkInRange(targetPos, spherePos, sphereRadius)
+    local function checkInRange(targetPos, spherePos, sphereRadius, isAdvanced)
 
         local hitbox_min_trigger = (targetPos + vHitbox[1])
         local hitbox_max_trigger = (targetPos + vHitbox[2])
@@ -481,14 +482,30 @@ end
 
         -- Calculate the vector from the closest point to the sphere center
         local distanceAlongVector = (spherePos - closestPoint):Length()
+        if isAdvanced then
+            local atackPos = Normalize(spherePos - closestPoint) * sphereRadius
 
-        -- Compare the distance along the vector to the sum of the radius
-        if sphereRadius > distanceAlongVector then
-            -- InRange detected (including intersecting)
-            return true, closestPoint
+            -- Compare the distance along the vector to the sum of the radius
+            if sphereRadius > distanceAlongVector then
+                local swingtrace = engine.TraceHull(spherePos, atackPos, Vector3(-18,-18,-18),Vector3(18,18,18), MASK_SHOT_HULL)
+                -- InRange detected (including intersecting)
+                if swingtrace.entity == vPlayer then
+                    return true, closestPoint
+                else
+                    return false, nil
+                end
+            else
+                -- Not InRange
+                return false, nil
+            end
         else
-            -- Not InRange
-            return false, nil
+            -- Compare the distance along the vector to the sum of the radius
+            if sphereRadius > distanceAlongVector then
+                return true, closestPoint
+            else
+                -- Not InRange
+                return false, nil
+            end
         end
     end
     
@@ -507,7 +524,7 @@ local Hitbox = {
 --   pCmd (CUserCmd): The user command
 local function ChargeControl(pCmd)
     -- Get the current view angles
-    local sensitivity = mSensetivity:GetValue() / 2
+    local sensitivity = Menu.Misc.ChargeSensitivity / 2
     local currentAngles = engine.GetViewAngles()
 
     -- Get the mouse motion
@@ -524,6 +541,7 @@ local function ChargeControl(pCmd)
     pCmd:SetViewAngles(currentAngles.pitch, interpolatedYaw, 0)
 end
 
+local hasNotified = false
 local function checkInRangeWithLatency(playerIndex, swingRange)
         -- If latency is enabled, check if pLocalFuture or pLocalOrigin are in range to attack the ticks
         local closestPoint = nil
@@ -535,7 +553,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
 
         if Backtrack == 0 and fakelatencyON == 0 then
             -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
-            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
+            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18, true)
             
             if inRange then
                 return inRange, point
@@ -546,9 +564,15 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
                 end
             end
         elseif fakelatencyON == 1 then
+            -- Inside your function
+            if not hasNotified then
+                Notify.Simple("Fake Latency is enabled", " this may cause issues with the script", 7)
+                hasNotified = true
+            end
+
             -- Calculate the range of ticks to check based on the current latency
             local minTick = 1
-            local maxTick = math.min(5, #playerTicks[playerIndex])
+            local maxTick = #playerTicks[playerIndex]
 
             -- Check from the newest to the oldest tick within the range
             for tick = minTick, maxTick do
@@ -556,7 +580,6 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
                     local pastOrigin = playerTicks[playerIndex][tick]
 
                     inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
-                    print(inRange)
                     if inRange then
                         return inRange, point
                     else
@@ -568,39 +591,17 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
                 end
             end
         elseif Backtrack == 1 then
-            -- Calculate the range of ticks to check based on the current latency
-            local minTick = 1
-            local maxTick = 5
-
-            -- Check from the newest to the oldest tick within the range
-            for tick = maxTick, minTick, -1 do
-                if playerTicks[playerIndex] and playerTicks[playerIndex][tick] then
-                    local pastOrigin = playerTicks[playerIndex][tick]
-
-                    -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
-                    inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
-                    if inRange then
-                        return inRange, point
-                    else
-                        local inRange2, point2 = checkInRange(pastOrigin, pLocalFuture, swingRange)
-                        if inRange2 then
-                            return inRange2, point2
-                        end
-                    end
-                end
-            end
-
-            -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
-            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
+             -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
+             inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
             
-            if inRange then
-                return inRange, point
-            else
-                local inRange2, point2 = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
-                if inRange2 then
-                    return inRange2, point2
-                end
-            end
+             if inRange then
+                 return inRange, point
+             else
+                 local inRange2, point2 = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+                 if inRange2 then
+                     return inRange2, point2
+                 end
+             end
         end
     return false, nil
 end
@@ -659,7 +660,7 @@ local function OnCreateMove(pCmd)
         end                                        -- Set "pUsingProjectileWeapon" to false
     
 --[--Troldier assist--]
-    if mAutoGarden:GetValue() == true then
+    if Menu.Misc.TroldierAssist then
         local state = ""
         local downheight = Vector3(0, 0, -250)
         if airbone then
@@ -710,12 +711,12 @@ end
 
 --[--Manual charge control--]
 
-    if Mchargebot:GetValue() and pLocal:InCond(17) then
+    if Menu.Misc.ChargeControl and pLocal:InCond(17) then
         ChargeControl(pCmd)
     end
 
 --[-----Get best target------------------]
-    local keybind = mKeyOverrite:GetValue()
+    local keybind = Menu.Keybind
         if keybind == 0 then
             -- Check if player has no key bound
             CurrentTarget = GetBestTarget(pLocal)
@@ -731,7 +732,7 @@ end
 
     -- Refill and return when noone to target
     if CurrentTarget == nil then
-        if mAutoRefill:GetValue() and pWeapon:GetCritTokenBucket() <= 27 then
+        if Menu.Misc.CritRefill and pWeapon:GetCritTokenBucket() <= 27 then
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
         end
     end
@@ -800,9 +801,9 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
     -- Check for charge range bug
     if pLocalClass == 4 -- player is Demoman
-        and AchargeRange:GetValue() -- menu option for such option is true
+        and Menu.Misc.ChargeReach -- menu option for such option is true
         and chargeLeft == 100 then -- charge metter is full
-            if InRange then
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
                 can_attack = true
                 tick_count = tick_count + 1
                 if tick_count % (time - 2) == 0 then
@@ -828,26 +829,26 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
 
     -- Inside your game loop
-    if Maimbot:GetValue() then
+    if Menu.Aimbot.Aimbot then
         if Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not can_attack and pLocal:InCond(17) then
             -- Set view angles based on the future position of the local player
             pCmd:SetViewAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0)
         elseif can_attack then
                 -- Set view angles based on whether silent aim is enabled
-                if MSilent:GetValue() then
+                if Menu.Aimbot.Silent then
                     pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0)
                 else
                     engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
                 end
         end
-    elseif Mchargebot:GetValue() and pLocal:InCond(17) then
+    elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
         -- Control charge if charge bot is enabled and the local player is in condition 17
         ChargeControl(pCmd)
     end
     
-    -- Shield bashing strat
+    --Shield bashing strat
         if pLocalClass == 4 and pLocal:InCond(17) then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
-            local Bashed = checkInRange(vPlayerOrigin, pLocalOrigin, 20)
+            local Bashed = (pLocalOrigin - vPlayerOrigin):Length() < swingrange - 18 -- If we bashed on enemy
 
             if not Bashed then -- If Demoknight bashed on enemy
                 can_attack = false
@@ -860,13 +861,13 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 --remove tick
                 
                 Gcan_attack = false
-                if mInstaHit:GetValue() == true and warp.GetChargedTicks() > 15 then
+                if Menu.Misc.InstantAttack == true and warp.GetChargedTicks() > 15 then
                     warp.TriggerDoubleTap()
                     warp.TriggerWarp()
                 end
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
 
-            elseif mAutoRefill:GetValue() == true then
+            elseif Menu.Misc.CritRefill then
                 if pWeapon:GetCritTokenBucket() <= 18 and fDistance > 350 then
                     print(pWeapon:GetCritTokenBucket())
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
@@ -877,140 +878,276 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 Gcan_attack = true
             end
 
-            if can_charge and CurrentTarget:IsAlive() then
+            if can_charge then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
             end
 
         -- Update last variables
 
             Safe_Strafe = false -- reset safe strafe
+            can_charge = false
     ::continue::
+end
+
+local lastToggleTime = 0
+local Lbox_Menu_Open = true
+local toggleCooldown = 0.2  -- 200 milliseconds
+
+local bindTimer = 0
+local bindDelay = 0.15  -- Delay of 0.2 seconds
+
+local function toggleMenu()
+    local currentTime = globals.RealTime()
+    if currentTime - lastToggleTime >= toggleCooldown then
+        Lbox_Menu_Open = not Lbox_Menu_Open  -- Toggle the state
+        lastToggleTime = currentTime  -- Reset the last toggle time
+    end
 end
 
 -- debug command: ent_fire !picker Addoutput "health 99999" --superbot
 local Verdana = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
-    if engine.Con_IsVisible() or engine.IsGameUIVisible() or not pLocal or pLocal:IsAlive() == nil then
-        return
-    end
+if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
 
-    --local pLocal = entities.GetLocalPlayer()
-    pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
-if not mmVisuals:GetValue() or not pWeapon:IsMeleeWeapon() then return end
-    if pLocalFuture == nil or not pLocal:IsAlive() then return end
-        draw.Color( 255, 255, 255, 255 )
-        local w, h = draw.GetScreenSize()
-        -- Strafe prediction visualization
-        if mVisuals:IsSelected("Visualization") then
-            draw.Color(255, 255, 255, 255)
+        --local pLocal = entities.GetLocalPlayer()
+        pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
+    if Menu.Visuals.EnableVisuals or pWeapon:IsMeleeWeapon() and pLocal and pLocal:IsAlive() then
+            draw.Color( 255, 255, 255, 255 )
+            local w, h = draw.GetScreenSize()
+            -- Strafe prediction visualization
+            if Menu.Visuals.Visualization then
+                if Menu.Visuals.RangeCircle and pLocalFuture then
+                    draw.Color(255, 255, 255, 255)
 
-            -- Draw lines between the predicted positions
-            for i = 1, #pLocalPath - 1 do
-                local pos1 = pLocalPath[i]
-                local pos2 = pLocalPath[i + 1]
+                    -- Draw lines between the predicted positions
+                    for i = 1, #pLocalPath - 1 do
+                        local pos1 = pLocalPath[i]
+                        local pos2 = pLocalPath[i + 1]
+    
+                        local screenPos1 = client.WorldToScreen(pos1)
+                        local screenPos2 = client.WorldToScreen(pos2)
+    
+                        if screenPos1 ~= nil and screenPos2 ~= nil then
+                            draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                        end
+                    end
 
-                local screenPos1 = client.WorldToScreen(pos1)
-                local screenPos2 = client.WorldToScreen(pos2)
+                    local center = pLocalFuture - Vheight -- Center of the circle at the player's feet
+                    local viewPos = pLocalOrigin -- View position to shoot traces from
+                    local radius = Menu.Misc.ChargeReach and Charge_Range or swingrange  -- Radius of the circle
+                    local segments = 32 -- Number of segments to draw the circle
+                    local angleStep = (2 * math.pi) / segments
 
-                if screenPos1 ~= nil and screenPos2 ~= nil then
-                    draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
-                end
-            end
+                    -- Determine the color of the circle based on TargetPlayer
+                    local circleColor = TargetPlayer and {0, 255, 0, 255} or {255, 255, 255, 255} -- Green if TargetPlayer exists, otherwise white
 
-            -- enemy
+                    -- Set the drawing color
+                    draw.Color(table.unpack(circleColor))
 
-            -- Draw lines between the predicted positions
-                for i = 1, #vPlayerPath - 1 do
-                    local pos1 = vPlayerPath[i]
-                    local pos2 = vPlayerPath[i + 1]
+                    local vertices = {} -- Table to store adjusted vertices
 
-                    local screenPos3 = client.WorldToScreen(pos1)
-                    local screenPos4 = client.WorldToScreen(pos2)
+                    -- Calculate vertices and adjust based on trace results
+                    for i = 1, segments do
+                        local angle = angleStep * i
+                        local circlePoint = center + Vector3(math.cos(angle), math.sin(angle), 0) * radius
 
-                    if screenPos3 ~= nil and screenPos4 ~= nil then
-                        draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                        local trace = engine.TraceLine(viewPos, circlePoint, MASK_SHOT_HULL) --engine.TraceHull(viewPos, circlePoint, vHitbox[1], vHitbox[2], MASK_SHOT_HULL)
+                        local endPoint = trace.fraction < 1.0 and trace.endpos or circlePoint
+
+                        vertices[i] = client.WorldToScreen(endPoint)
+                    end
+
+                    -- Draw the circle using adjusted vertices
+                    for i = 1, segments do
+                        local j = (i % segments) + 1 -- Wrap around to the first vertex after the last one
+                        if vertices[i] and vertices[j] then
+                            draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
+                        end
                     end
                 end
+
+                --[[Draw crosses at the positions stored in playerTicks for all players
+                if playerTicks then
+                    for playerIndex, positions in pairs(playerTicks) do
+                        for i = 1, #positions do
+                            local pos = positions[i]
+
+                            local screenPos = client.WorldToScreen(pos)
+
+                            if screenPos ~= nil then
+                                draw.Line(screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
+                                draw.Line(screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+                            end
+                        end
+                    end
+                end]]
+
+                    -- enemy
+                    if vPlayerFuture then
+
+                        -- Draw lines between the predicted positions
+                        for i = 1, #vPlayerPath - 1 do
+                            local pos1 = vPlayerPath[i]
+                            local pos2 = vPlayerPath[i + 1]
+
+                            local screenPos3 = client.WorldToScreen(pos1)
+                            local screenPos4 = client.WorldToScreen(pos2)
+
+                            if screenPos3 ~= nil and screenPos4 ~= nil then
+                                draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                            end
+                        end
+
+                        if aimposVis then
+                            --draw predicted local position with strafe prediction
+                            local screenPos = client.WorldToScreen(aimposVis)
+                            if screenPos ~= nil then
+                                draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
+                                draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+                            end
+                        end
                 
-            end
-
-
-            local center = pLocalFuture - Vheight -- Center of the circle at the player's feet
-            local viewPos = pLocalOrigin -- View position to shoot traces from
-            local radius = AchargeRange:GetValue() and Charge_Range or swingrange  -- Radius of the circle
-            local segments = 32 -- Number of segments to draw the circle
-            local angleStep = (2 * math.pi) / segments
-        
-            -- Determine the color of the circle based on TargetPlayer
-            local circleColor = TargetPlayer and {0, 255, 0, 255} or {255, 255, 255, 255} -- Green if TargetPlayer exists, otherwise white
-        
-            -- Set the drawing color
-            draw.Color(table.unpack(circleColor))
-        
-            local vertices = {} -- Table to store adjusted vertices
-        
-            -- Calculate vertices and adjust based on trace results
-            for i = 1, segments do
-                local angle = angleStep * i
-                local circlePoint = center + Vector3(math.cos(angle), math.sin(angle), 0) * radius
-        
-                local trace = engine.TraceLine(viewPos, circlePoint, MASK_SHOT_HULL) --engine.TraceHull(viewPos, circlePoint, vHitbox[1], vHitbox[2], MASK_SHOT_HULL)
-                local endPoint = trace.fraction < 1.0 and trace.endpos or circlePoint
-        
-                vertices[i] = client.WorldToScreen(endPoint)
-            end
-        
-            -- Draw the circle using adjusted vertices
-            for i = 1, segments do
-                local j = (i % segments) + 1 -- Wrap around to the first vertex after the last one
-                if vertices[i] and vertices[j] then
-                    draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
-                end
-            end
-
-    if vPlayerFuture then
-        if aimposVis then
-            --draw predicted local position with strafe prediction
-            local screenPos = client.WorldToScreen(aimposVis)
-            if screenPos ~= nil then
-                draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
-                draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+                                -- Calculate trigger box vertices
+                                local vertices = {
+                                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, 0)),
+                                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, 0)),
+                                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, 0)),
+                                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, 0)),
+                                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, hitbox_Height)),
+                                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, hitbox_Height)),
+                                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, hitbox_Height)),
+                                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, hitbox_Height))
+                                }
+                
+                                -- Check if vertices are not nil
+                                if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
+                                    -- Draw front face
+                                    draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
+                                    draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
+                                    draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
+                                    draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
+                
+                                    -- Draw back face
+                                    draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
+                                    draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
+                                    draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
+                                    draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
+                
+                                    -- Draw connecting lines
+                                    if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
+                                    if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
+                                    if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
+                                    if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
+                                end
+                            end
             end
         end
+    end
+        -- Inside your OnCreateMove or similar function where you check for input
+    if input.IsButtonDown(KEY_INSERT) then  -- Replace 72 with the actual key code for the button you want to use
+        toggleMenu()
+    end
 
-                -- Calculate trigger box vertices
-                local vertices = {
-                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, 0)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, 0)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, 0)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, 0)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, hitbox_Height)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, hitbox_Height)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, hitbox_Height)),
-                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, hitbox_Height))
-                }
-
-                -- Check if vertices are not nil
-                if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
-                    -- Draw front face
-                    draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
-                    draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
-                    draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
-                    draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
-
-                    -- Draw back face
-                    draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
-                    draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
-                    draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
-                    draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
-
-                    -- Draw connecting lines
-                    if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
-                    if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
-                    if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
-                    if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
+    if Lbox_Menu_Open == true and ImMenu and ImMenu.Begin("Swing Prediction", true) then
+            ImMenu.BeginFrame(1) -- tabs
+                if ImMenu.Button("Aimbot") then
+                    Menu.tabs.Aimbot = true
+                    Menu.tabs.Misc = false
+                    Menu.tabs.Visuals = false
                 end
+                if ImMenu.Button("Misc") then
+                    Menu.tabs.Aimbot = false
+                    Menu.tabs.Misc = true
+                    Menu.tabs.Visuals = false
+                end
+                if ImMenu.Button("Visuals") then
+                    Menu.tabs.Aimbot = false
+                    Menu.tabs.Misc = false
+                    Menu.tabs.Visuals = true
+                end
+            ImMenu.EndFrame()
+        
+
+            if Menu.tabs.Aimbot then
+                ImMenu.BeginFrame(1)
+                    Menu.Aimbot.Aimbot = ImMenu.Checkbox("Enable", Menu.Aimbot.Aimbot)
+                ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
+                    Menu.Aimbot.Silent = ImMenu.Checkbox("Silent Aim", Menu.Aimbot.Silent)
+                ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
+                    Menu.Aimbot.AimbotFOV = ImMenu.Slider("Fov", Menu.Aimbot.AimbotFOV, 1, 360)
+                ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
+                    ImMenu.Text("Keybind: ")
+                    if Menu.KeybindName ~= "Press The Key" and ImMenu.Button(Menu.KeybindName) then
+                        Menu.Is_Listening_For_Key = not Menu.Is_Listening_For_Key
+                        if Menu.Is_Listening_For_Key then
+                            bindTimer = os.clock() + bindDelay
+                            Menu.KeybindName = "Press The Key"
+                        else
+                            Menu.KeybindName = "Always On"
+                        end
+                    elseif Menu.KeybindName == "Press The Key" then
+                        ImMenu.Text("Press the key")
+                    end
+
+                    if Menu.Is_Listening_For_Key then
+                        if os.clock() >= bindTimer then
+                            local pressedKey = GetPressedkey()
+                            if pressedKey then
+                                if pressedKey == KEY_ESCAPE then
+                                    -- Reset keybind if the Escape key is pressed
+                                    Menu.KeybindName = "Always On"
+                                    Menu.Is_Listening_For_Key = false
+                                else
+                                    -- Update keybind with the pressed key
+                                    Menu.keybind = pressedKey
+                                    Menu.KeybindName = Input.GetKeyName(pressedKey)
+                                    Notify.Simple("Keybind Success", "Bound Key: " .. Menu.KeybindName, 2)
+                                    Menu.Is_Listening_For_Key = false
+                                end
+                            end
+                        end
+                    end
+                ImMenu.EndFrame()
+            end
+
+            if Menu.tabs.Misc then
+                ImMenu.BeginFrame(1)
+                    Menu.Misc.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Misc.ChargeReach)
+                    Menu.Misc.CritRefill = ImMenu.Checkbox("Auto Crit refill", Menu.Misc.CritRefill)
+                ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
+                    Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
+                    Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
+                ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
+                    Menu.Misc.ChargeControl = ImMenu.Checkbox("Charge Control", Menu.Misc.ChargeControl)
+                ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
+                    Menu.Misc.ChargeSensitivity = ImMenu.Slider("Control Sensetivity", Menu.Misc.ChargeSensitivity, 1, 100)
+                ImMenu.EndFrame()
+            end
+            
+            if Menu.tabs.Visuals then
+                ImMenu.BeginFrame(1)
+                Menu.Visuals.EnableVisuals = ImMenu.Checkbox("Enable", Menu.Visuals.EnableVisuals)
+                ImMenu.EndFrame()
+        
+                ImMenu.BeginFrame(1)
+                Menu.Visuals.Visualization = ImMenu.Checkbox("Visualization", Menu.Visuals.Visualization)
+                Menu.Visuals.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.RangeCircle)
+                ImMenu.EndFrame()
+            end
+        ImMenu.End()
     end
 end
 
@@ -1018,29 +1155,7 @@ doDraw()
 
 --[[ Remove the menu when unloaded ]]--
 local function OnUnload()                                -- Called when the script is unloaded
-    Menu = {
-        Aimbot = {
-            AimbotFOV = mFov:GetValue(),
-            Aimbot = Maimbot:GetValue(),
-            Silent = MSilent:GetValue(),
-            ChargeControl = Mchargebot:GetValue(),
-            ChargeSensitivity = mSensetivity:GetValue(),
-            CritRefill = mAutoRefill:GetValue(),
-            InstantAttack = mInstaHit:GetValue(),
-            WhipTeammates = mWhipMate:GetValue(),
-            ChargeReach = AchargeRange:GetValue(),
-            TroldierAssist = mAutoGarden:GetValue(),
-            EnableVisuals = mmVisuals:GetValue(),
-        },
-        Visuals = {
-            RangeCircle = mVisuals:IsSelected("Range Circle"),
-            Visualization = mVisuals:IsSelected("Visualization"),
-        },
-        Keybind = mKeyOverrite:GetValue(),
-    }
     CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
-
-    MenuLib.RemoveMenu(menu)                             -- Remove the menu
     UnloadLib() --unloading lualib
     client.Command('play "ui/buttonclickrelease"', true) -- Play the "buttonclickrelease" sound
 end
