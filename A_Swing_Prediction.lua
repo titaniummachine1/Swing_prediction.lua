@@ -4,6 +4,10 @@
 --[[           Terminator           ]]--
 --[[  (github.com/titaniummachine1  ]]--
 
+local menuLoaded, ImMenu = pcall(require, "ImMenu")
+assert(menuLoaded, "ImMenu not found, please install it!")
+assert(ImMenu.GetVersion() >= 0.66, "ImMenu version is too old, please update it!")
+
 ---@type boolean, lnxLib
 local libLoaded, lnxLib = pcall(require, "lnxLib")
 assert(libLoaded, "lnxLib not found, please install it!")
@@ -16,8 +20,6 @@ local Fonts = lnxLib.UI.Fonts
 local Input = lnxLib.Utils.Input
 local Notify = lnxLib.UI.Notify
 
-local menuLoaded, ImMenu = pcall(require, "ImMenu")
-assert(menuLoaded, "ImMenu not found, please install it!")
 
 local function GetPressedkey()
     local pressedKey = Input.GetPressedKey()
@@ -903,43 +905,40 @@ local lastToggleTime = 0
 local Lbox_Menu_Open = true
 local toggleCooldown = 0.2  -- 200 milliseconds
 
-local bindTimer = 0
-local bindDelay = 0.15  -- Delay of 0.2 seconds
+-- Sphere cache and drawn edges cache
+local sphere_cache = { vertices = {}, radius = 90, center = Vector3(0, 0, 0) }
+local drawnEdges = {}
 
-local sphere_cache = { vertices = {}, segments = 16, radius = 90, center = Vector3(0, 0, 0) }  -- Cache for the sphere's vertices
-
--- Function to setup the sphere's vertices
 local function setup_sphere(center, radius, segments)
     sphere_cache.center = center
     sphere_cache.radius = radius
     sphere_cache.segments = segments
     sphere_cache.vertices = {}  -- Clear the old vertices
 
+    local thetaStep = math.pi / segments
+    local phiStep = 2 * math.pi / segments
+
     for i = 0, segments - 1 do
-        local theta1 = math.pi * (i / segments)
-        local theta2 = math.pi * ((i + 1) / segments)
+        local theta1 = thetaStep * i
+        local theta2 = thetaStep * (i + 1)
 
         for j = 0, segments - 1 do
-            local phi1 = 2 * math.pi * (j / segments)
-            local phi2 = 2 * math.pi * ((j + 1) / segments)
+            local phi1 = phiStep * j
+            local phi2 = phiStep * (j + 1)
 
-            -- Generate two triangles for each square segment
+            -- Generate a square for each segment
             table.insert(sphere_cache.vertices, {
                 Vector3(math.sin(theta1) * math.cos(phi1), math.sin(theta1) * math.sin(phi1), math.cos(theta1)),
                 Vector3(math.sin(theta1) * math.cos(phi2), math.sin(theta1) * math.sin(phi2), math.cos(theta1)),
-                Vector3(math.sin(theta2) * math.cos(phi1), math.sin(theta2) * math.sin(phi1), math.cos(theta2)),
-            })
-            table.insert(sphere_cache.vertices, {
-                Vector3(math.sin(theta2) * math.cos(phi1), math.sin(theta2) * math.sin(phi1), math.cos(theta2)),
-                Vector3(math.sin(theta1) * math.cos(phi2), math.sin(theta1) * math.sin(phi2), math.cos(theta1)),
                 Vector3(math.sin(theta2) * math.cos(phi2), math.sin(theta2) * math.sin(phi2), math.cos(theta2)),
+                Vector3(math.sin(theta2) * math.cos(phi1), math.sin(theta2) * math.sin(phi1), math.cos(theta2))
             })
         end
     end
 end
 
 -- Call setup_sphere once at the start of your program
-setup_sphere(Vector3(0, 0, 0), 90, 16)
+setup_sphere(Vector3(0, 0, 0), 90, 7)
 
 local white_texture = draw.CreateTextureRGBA(string.char(
 	0xff, 0xff, 0xff, 25,
@@ -982,6 +981,38 @@ local function toggleMenu()
         Lbox_Menu_Open = not Lbox_Menu_Open  -- Toggle the state
         lastToggleTime = currentTime  -- Reset the last toggle time
     end
+end
+
+Menu.Keybind = 0
+Menu.Is_Listening_For_Key = true
+Menu.KeybindName = "Always On"
+
+local function handleKeybind(noKeyText, keybind, keybindName)
+    if KeybindName ~= "Press The Key" and ImMenu.Button(KeybindName or noKeyText) then
+        bindTimer = os.clock() + 0.1
+        KeybindName = "Press The Key"
+    elseif KeybindName == "Press The Key" then
+        ImMenu.Text("Press the key")
+    end
+
+    if KeybindName == "Press The Key" then
+        if os.clock() >= bindTimer then
+            local pressedKey = GetPressedkey()
+            if pressedKey then
+                if pressedKey == KEY_ESCAPE then
+                    -- Reset keybind if the Escape key is pressed
+                    KeybindName = "Always On"
+                else
+                    -- Update keybind with the pressed key
+                    keybind = pressedKey
+                    KeybindName = Input.GetKeyName(pressedKey)
+                    Notify.Simple("Keybind Success", "Bound Key: " .. KeybindName, 2)
+                end
+            end
+        end
+    end
+
+    return keybind, keybindName
 end
 
 -- debug command: ent_fire !picker Addoutput "health 99999" --superbot
@@ -1045,57 +1076,72 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                             draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
                         end
                     end
+                end
 ---------------------------------------------------------sphere
-                        if Menu.Visuals.Sphere then
-                            -- Function to draw the sphere
-                            local function draw_sphere()
-                                for _, vertex in ipairs(sphere_cache.vertices) do
-                                    local worldPos1 = sphere_cache.center + vertex[1] * sphere_cache.radius
-                                    local worldPos2 = sphere_cache.center + vertex[2] * sphere_cache.radius
-                                    local worldPos3 = sphere_cache.center + vertex[3] * sphere_cache.radius
+if Menu.Visuals.Sphere then
+    -- Function to draw the sphere
+    local function draw_sphere()
+        local playerYaw = engine.GetViewAngles().yaw
+        local cos_yaw = math.cos(math.rad(playerYaw))
+        local sin_yaw = math.sin(math.rad(playerYaw))
 
-                                    -- Trace from the center to the vertices
-                                    local trace1 = engine.TraceHull(sphere_cache.center, worldPos1, Vector3(-18, -18, -18), Vector3(18, 18, 18), MASK_SHOT_HULL)
-                                    local trace2 = engine.TraceHull(sphere_cache.center, worldPos2, Vector3(-18, -18, -18), Vector3(18, 18, 18), MASK_SHOT_HULL)
-                                    local trace3 = engine.TraceHull(sphere_cache.center, worldPos3, Vector3(-18, -18, -18), Vector3(18, 18, 18), MASK_SHOT_HULL)
+        local playerForward = Vector3(-cos_yaw, -sin_yaw, 0)  -- Forward vector based on player's yaw
 
-                                    -- Adjust the end position of the vertices based on the trace results
-                                    local endPos1 = trace1.fraction < 1.0 and trace1.endpos or worldPos1
-                                    local endPos2 = trace2.fraction < 1.0 and trace2.endpos or worldPos2
-                                    local endPos3 = trace3.fraction < 1.0 and trace3.endpos or worldPos3
+        for _, vertex in ipairs(sphere_cache.vertices) do
+            local rotated_vertex1 = Vector3(-vertex[1].x * cos_yaw + vertex[1].y * sin_yaw, -vertex[1].x * sin_yaw - vertex[1].y * cos_yaw, vertex[1].z)
+            local rotated_vertex2 = Vector3(-vertex[2].x * cos_yaw + vertex[2].y * sin_yaw, -vertex[2].x * sin_yaw - vertex[2].y * cos_yaw, vertex[2].z)
+            local rotated_vertex3 = Vector3(-vertex[3].x * cos_yaw + vertex[3].y * sin_yaw, -vertex[3].x * sin_yaw - vertex[3].y * cos_yaw, vertex[3].z)
+            local rotated_vertex4 = Vector3(-vertex[4].x * cos_yaw + vertex[4].y * sin_yaw, -vertex[4].x * sin_yaw - vertex[4].y * cos_yaw, vertex[4].z)
 
-                                    local screenPos1 = client.WorldToScreen(endPos1)
-                                    local screenPos2 = client.WorldToScreen(endPos2)
-                                    local screenPos3 = client.WorldToScreen(endPos3)
+            local worldPos1 = sphere_cache.center + rotated_vertex1 * sphere_cache.radius
+            local worldPos2 = sphere_cache.center + rotated_vertex2 * sphere_cache.radius
+            local worldPos3 = sphere_cache.center + rotated_vertex3 * sphere_cache.radius
+            local worldPos4 = sphere_cache.center + rotated_vertex4 * sphere_cache.radius
 
-                                    if screenPos1 and screenPos2 and screenPos3 then
-                                        -- Convert the screen positions to the format expected by drawPolygon
-                                        local polygonVertices = {
-                                            {screenPos1[1], screenPos1[2]},
-                                            {screenPos2[1], screenPos2[2]},
-                                            {screenPos3[1], screenPos3[2]}
-                                        }
+            -- Trace from the center to the vertices with a hull size of 18x18
+            local hullSize = Vector3(18, 18, 18)
+            local trace1 = engine.TraceHull(sphere_cache.center, worldPos1, -hullSize, hullSize, MASK_SHOT_HULL)
+            local trace2 = engine.TraceHull(sphere_cache.center, worldPos2, -hullSize, hullSize, MASK_SHOT_HULL)
+            local trace3 = engine.TraceHull(sphere_cache.center, worldPos3, -hullSize, hullSize, MASK_SHOT_HULL)
+            local trace4 = engine.TraceHull(sphere_cache.center, worldPos4, -hullSize, hullSize, MASK_SHOT_HULL)
 
-                                        -- Call drawPolygon to draw the triangle
-                                        drawPolygon(polygonVertices)
+            local endPos1 = trace1.fraction < 1.0 and trace1.endpos or worldPos1
+            local endPos2 = trace2.fraction < 1.0 and trace2.endpos or worldPos2
+            local endPos3 = trace3.fraction < 1.0 and trace3.endpos or worldPos3
+            local endPos4 = trace4.fraction < 1.0 and trace4.endpos or worldPos4
 
-                                        -- Set the color and alpha for the lines
-                                        draw.Color(255, 255, 255, 25)
+            local screenPos1 = client.WorldToScreen(endPos1)
+            local screenPos2 = client.WorldToScreen(endPos2)
+            local screenPos3 = client.WorldToScreen(endPos3)
+            local screenPos4 = client.WorldToScreen(endPos4)
 
-                                        -- Draw the lines
-                                        draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
-                                        draw.Line(screenPos2[1], screenPos2[2], screenPos3[1], screenPos3[2])
-                                        draw.Line(screenPos3[1], screenPos3[2], screenPos1[1], screenPos1[2])
-                                    end
-                                end
-                            end
-                            -- Example draw call, to be done every tick to draw the sphere at the current position and radius
-                            ---setup_sphere(Vector3(0, 0, 0), 90, 16)
-                            sphere_cache.center = pLocalOrigin
-                            sphere_cache.radius = swingrange
-                            draw_sphere()
-                        end
-                    end
+            -- Calculate normal vector of the square
+            local normal = Normalize(rotated_vertex2 - rotated_vertex1):Cross(rotated_vertex3 - rotated_vertex1)
+
+            -- Draw square only if its normal faces towards the player
+            if normal:Dot(playerForward) > 0.1 then
+                if screenPos1 and screenPos2 and screenPos3 and screenPos4 then
+                    -- Draw the square
+                    drawPolygon({screenPos1, screenPos2, screenPos3, screenPos4})
+
+                    -- Optionally, draw lines between the vertices of the square for wireframe visualization
+                    draw.Color(255, 255, 255, 25) -- Set color and alpha for lines
+                    draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                    draw.Line(screenPos2[1], screenPos2[2], screenPos3[1], screenPos3[2])
+                    draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                    draw.Line(screenPos4[1], screenPos4[2], screenPos1[1], screenPos1[2])
+                end
+            end
+        end
+    end
+
+    -- Example draw call
+    sphere_cache.center = pLocalOrigin  -- Replace with actual player origin
+    sphere_cache.radius = swingrange    -- Replace with actual swing range value
+    draw_sphere()
+end
+
+
 
                     -- enemy
                     if vPlayerFuture then
@@ -1198,36 +1244,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
 
                 ImMenu.BeginFrame(1)
                     ImMenu.Text("Keybind: ")
-                    if Menu.KeybindName ~= "Press The Key" and ImMenu.Button(Menu.KeybindName) then
-                        Menu.Is_Listening_For_Key = not Menu.Is_Listening_For_Key
-                        if Menu.Is_Listening_For_Key then
-                            bindTimer = os.clock() + bindDelay
-                            Menu.KeybindName = "Press The Key"
-                        else
-                            Menu.KeybindName = "Always On"
-                        end
-                    elseif Menu.KeybindName == "Press The Key" then
-                        ImMenu.Text("Press the key")
-                    end
-
-                    if Menu.Is_Listening_For_Key then
-                        if os.clock() >= bindTimer then
-                            local pressedKey = GetPressedkey()
-                            if pressedKey then
-                                if pressedKey == KEY_ESCAPE then
-                                    -- Reset keybind if the Escape key is pressed
-                                    Menu.KeybindName = "Always On"
-                                    Menu.Is_Listening_For_Key = false
-                                else
-                                    -- Update keybind with the pressed key
-                                    Menu.keybind = pressedKey
-                                    Menu.KeybindName = Input.GetKeyName(pressedKey)
-                                    Notify.Simple("Keybind Success", "Bound Key: " .. Menu.KeybindName, 2)
-                                    Menu.Is_Listening_For_Key = false
-                                end
-                            end
-                        end
-                    end
+                    Menu.Keybind, Menu.KeybindName = handleKeybind("Always On", Menu.Keybind,  Menu.KeybindName)
                 ImMenu.EndFrame()
             end
 
@@ -1270,12 +1287,11 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
     end
 end
 
-doDraw()
-
 --[[ Remove the menu when unloaded ]]--
 local function OnUnload()                                -- Called when the script is unloaded
-    CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
+    Menu.Is_Listening_For_Key = false
     UnloadLib() --unloading lualib
+    CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
     client.Command('play "ui/buttonclickrelease"', true) -- Play the "buttonclickrelease" sound
 end
 
