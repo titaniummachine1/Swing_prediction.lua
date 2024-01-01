@@ -16,6 +16,9 @@ local Fonts = lnxLib.UI.Fonts
 local Input = lnxLib.Utils.Input
 local Notify = lnxLib.UI.Notify
 
+local menuLoaded, ImMenu = pcall(require, "ImMenu")
+assert(menuLoaded, "ImMenu not found, please install it!")
+
 local function GetPressedkey()
     local pressedKey = Input.GetPressedKey()
         if not pressedKey then
@@ -31,9 +34,6 @@ local function GetPressedkey()
         end
         return pressedKey
     end
-
-local menuLoaded, ImMenu = pcall(require, "ImMenu")
-assert(menuLoaded, "ImMenu not found, please install it!")
 
 --[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
@@ -421,9 +421,9 @@ local function GetBestTarget(me)
 
 
     for _, player in ipairs(players) do
-        if player:GetIndex() ~= pLocal:GetIndex() and player:IsAlive() and not player:IsDormant() then
+        if player ~= nil and player:GetIndex() ~= pLocal:GetIndex() and player:IsAlive() and not player:IsDormant() then
             if player:GetTeamNumber() ~= localPlayer:GetTeamNumber() then
-                if Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin()) then
+                
         
                     --local minTick = math.floor((defFakeLatency / 900) / 0.015)
                     local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
@@ -453,7 +453,14 @@ local function GetBestTarget(me)
                         if fov <= settings.MaxFOV and distance < settings.MaxDistance then
                             local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.07)
                             local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.9)
-                            local factor = distanceFactor * fovFactor
+                            
+                            -- Check if the player is visible
+                            local isVisible = Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin())
+                            
+                            -- Add a visibility factor to the calculation
+                            local visibilityFactor = isVisible and 1.0 or 0.5
+
+                            local factor = distanceFactor * fovFactor * visibilityFactor
 
                             if factor > bestFactor then
                                 bestTarget = player
@@ -464,7 +471,6 @@ local function GetBestTarget(me)
                 end
             end
         end
-    end
 
     return bestTarget
 end
@@ -1175,7 +1181,6 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                     Menu.tabs.Visuals = true
                 end
             ImMenu.EndFrame()
-        
 
             if Menu.tabs.Aimbot then
                 ImMenu.BeginFrame(1)
