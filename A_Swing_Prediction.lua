@@ -77,7 +77,6 @@ local Menu = {
     },
     Keybind = KEY_NONE,
     KeybindName = "Always On",
-    Is_Listening_For_Key = false,
 }
 
 local Lua__fullPath = GetScriptName()
@@ -181,6 +180,7 @@ local pLocalPath = {}
 local vPlayerPath = {}
 local PredPath = {}
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
 local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
 local backtrackTicks =  {}
@@ -212,33 +212,29 @@ local settings = {
 
 local latency = 0
 local lerp = 0
-local lastAngles = {} ---@type table<number, EulerAngles>
+local lastAngles = {} ---@type table<number, Vector3>
+local lastDeltas = {} ---@type table<number, number>
+local avgDeltas = {} ---@type table<number, number>
 local strafeAngles = {} ---@type table<number, number>
-local strafeAngleHistories = {} ---@type table<number, table<number, number>>
-local MAX_ANGLE_HISTORY = 3  -- Number of past angles to consider for averaging
+local inaccuracy = {} ---@type table<number, number>
 
----@param me WPlayer
-local function CalcStrafe(me)
+local function CalcStrafe()
     local players = entities.FindByClass("CTFPlayer")
     for idx, entity in ipairs(players) do
         local entityIndex = entity:GetIndex()
 
         if entity:IsDormant() or not entity:IsAlive() then
             lastAngles[entityIndex] = nil
+            lastDeltas[entityIndex] = nil
+            avgDeltas[entityIndex] = nil
             strafeAngles[entityIndex] = nil
-            strafeAngleHistories[entityIndex] = nil
-            goto continue
-        end
-
-        if entity:GetTeamNumber() == me:GetTeamNumber() then
+            inaccuracy[entityIndex] = nil
             goto continue
         end
 
         local v = entity:EstimateAbsVelocity()
         local angle = v:Angles()
 
-        strafeAngleHistories[entityIndex] = strafeAngleHistories[entityIndex] or {}
-        
         if lastAngles[entityIndex] == nil then
             lastAngles[entityIndex] = angle
             goto continue
@@ -246,32 +242,38 @@ local function CalcStrafe(me)
 
         local delta = angle.y - lastAngles[entityIndex].y
 
-        -- Filtering out excessive changes
-        if #strafeAngleHistories[entityIndex] > 0 then
-            local lastDelta = strafeAngleHistories[entityIndex][#strafeAngleHistories[entityIndex]]
-            if math.abs(delta - lastDelta) <= 90 then
-                table.insert(strafeAngleHistories[entityIndex], delta)
-            end
-        else
-            table.insert(strafeAngleHistories[entityIndex], delta)
-        end
+        -- Calculate the average delta using exponential smoothing
+        local smoothingFactor = 0.2
+        local avgDelta = (lastDeltas[entityIndex] or delta) * (1 - smoothingFactor) + delta * smoothingFactor
 
-        if #strafeAngleHistories[entityIndex] > MAX_ANGLE_HISTORY then
-            table.remove(strafeAngleHistories[entityIndex], 1)
-        end
+        -- Save the average delta
+        avgDeltas[entityIndex] = avgDelta
 
-        -- Smoothing
-        local weightedSum = 0
-        local weight = 0.5
-        local totalWeight = 0
-        for i, delta1 in ipairs(strafeAngleHistories[entityIndex]) do
-            weightedSum = weightedSum + delta1 * weight
-            totalWeight = totalWeight + weight
-            weight = weight * 0.9
-        end
-        local avgDelta = weightedSum / totalWeight
+        -- Create two vectors adjusted by their past and current average delta in the yaw direction at a distance of 12 units
+        local vector1 = Vector3(math.cos(math.rad(lastDeltas[entityIndex] or delta)) * 12, math.sin(math.rad(lastDeltas[entityIndex] or delta)) * 12, 0)
+        local vector2 = Vector3(math.cos(math.rad(avgDelta)) * 12, math.sin(math.rad(avgDelta)) * 12, 0)
 
+        -- Apply deviation
+        local ang1 = vector1:Angles()
+        ang1.y = ang1.y + (lastDeltas[entityIndex] or delta)
+        vector1 = ang1:Forward() * vector1:Length()
+
+        local ang2 = vector2:Angles()
+        ang2.y = ang2.y + avgDelta
+        vector2 = ang2:Forward() * vector2:Length()
+
+        -- Calculate the distance between the two vectors
+        local distance = (vector1 - vector2):Length()
+
+        -- Save the strafe angle
         strafeAngles[entityIndex] = avgDelta
+
+        -- Calculate the inaccuracy as the distance between the two vectors
+        inaccuracy[entityIndex] = distance
+
+        -- Save the last delta
+        lastDeltas[entityIndex] = delta
+
         lastAngles[entityIndex] = angle
 
         ::continue::
@@ -302,7 +304,7 @@ end
     ---@param d number?
     ---@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
     ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
-    local function PredictPlayer(player, t, d, shouldHitEntity)
+    local function PredictPlayer(player, t, d, Hitbox, shouldHitEntity)
         if not gravity or not stepSize then return nil end
         local vUp = Vector3(0, 0, 1)
         local vStep = Vector3(0, 0, stepSize)
@@ -332,7 +334,7 @@ end
 
             --[[ Forward collision ]]
 
-            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
+            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, Hitbox[1], Hitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
             --DrawLine(last.p + vStep, pos + vStep)
             if wallTrace.fraction < 1 then
                 -- We'll collide
@@ -357,7 +359,7 @@ end
             if not onGround1 then downStep = Vector3() end
 
             -- Ground collision
-            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
+            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, Hitbox[1], Hitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
             if groundTrace.fraction < 1 then
                 -- We'll hit the ground
                 local normal = groundTrace.plane
@@ -365,7 +367,7 @@ end
 
                 -- Check the ground angle
                 if angle < 45 then
-                    if onGround1 and player:GetName() == pLocal:GetName() and gui.GetValue("Bunny Hop") and input.IsButtonDown(KEY_SPACE) then
+                    if onGround1 and player:GetName() == pLocal:GetName() and gui.GetValue("Bunny Hop") == 1 and input.IsButtonDown(KEY_SPACE) then
                         -- Jump
                         vel.z = 271
                         onGround1 = false
@@ -478,10 +480,15 @@ local function GetBestTarget(me)
 end
 
 -- Define function to check InRange between the hitbox and the sphere
-    local function checkInRange(targetPos, spherePos, sphereRadius, isAdvanced)
+    local function checkInRange(targetPos, spherePos, sphereRadius)
 
-        local hitbox_min_trigger = (targetPos + vHitbox[1])
-        local hitbox_max_trigger = (targetPos + vHitbox[2])
+        local inaccuracyValue = inaccuracy[vPlayer:GetIndex()]
+        if not inaccuracyValue then return nil end
+
+        print(inaccuracyValue)
+
+        local hitbox_min_trigger = Vector3(drawVhitbox[1].x + inaccuracyValue, drawVhitbox[1].y + inaccuracyValue, drawVhitbox[1].z)
+        local hitbox_max_trigger = Vector3(drawVhitbox[2].x - inaccuracyValue, drawVhitbox[2].y - inaccuracyValue, drawVhitbox[2].z)
 
         -- Calculate the closest point on the hitbox to the sphere
         local closestPoint = Vector3(
@@ -497,13 +504,7 @@ end
 
             -- Compare the distance along the vector to the sum of the radius
             if sphereRadius > distanceAlongVector then
-                local swingtrace = engine.TraceHull(spherePos, atackPos, Vector3(-18,-18,-18),Vector3(18,18,18), MASK_SHOT_HULL)
-                -- InRange detected (including intersecting)
-                if swingtrace.entity == vPlayer then
-                    return true, closestPoint
-                else
-                    return false, nil
-                end
+                return true, closestPoint
             else
                 -- Not InRange
                 return false, nil
@@ -563,7 +564,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
 
         if Backtrack == 0 and fakelatencyON == 0 then
             -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
-            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18, true)
+            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18)
             
             if inRange then
                 return inRange, point
@@ -758,40 +759,44 @@ end
     gravity = client.GetConVar("sv_gravity")
     stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize")
 
+    CalcStrafe()
+
     -- Local player prediction
     if pLocal:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position
         pLocalFuture = pLocalOrigin
     else
         local player = WPlayer.FromEntity(pLocal)
-        CalcStrafe(player)
 
         strafeAngle = strafeAngles[pLocal:GetIndex()] or 0
 
-        local predData = PredictPlayer(player, time, strafeAngle)
+        local predData = PredictPlayer(player, time, strafeAngle, vHitbox)
 
         pLocalPath = predData.pos
         pLocalFuture = predData.pos[time] + viewOffset
     end
 
 -- stop if no target
-if CurrentTarget == nil then 
+if CurrentTarget == nil then
     vPlayerFuture = nil
-    return 
+    return
 end
-
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
+
+    drawVhitbox = {}
+    drawVhitbox[1] = vPlayerOrigin + vHitbox[1]
+    drawVhitbox[2] = vPlayerOrigin + vHitbox[2]
+
     -- Target player prediction
     if CurrentTarget:EstimateAbsVelocity() == 0 then
         -- If the target player is not accelerating, set the predicted position to their current position
         vPlayerFuture = CurrentTarget:GetAbsOrigin()
     else
         local player = WPlayer.FromEntity(CurrentTarget)
-        CalcStrafe(player)
 
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
 
-        local predData = PredictPlayer(player, time, strafeAngle)
+        local predData = PredictPlayer(player, time, strafeAngle, drawVhitbox)
 
         vPlayerPath = predData.pos
         vPlayerFuture = predData.pos[time]
@@ -989,7 +994,7 @@ Menu.KeybindName = "Always On"
 
 local function handleKeybind(noKeyText, keybind, keybindName)
     if KeybindName ~= "Press The Key" and ImMenu.Button(KeybindName or noKeyText) then
-        bindTimer = os.clock() + 0.1
+        bindTimer = os.clock() + 0.4
         KeybindName = "Press The Key"
     elseif KeybindName == "Press The Key" then
         ImMenu.Text("Press the key")
@@ -1168,39 +1173,49 @@ end
                             end
                         end
                 
-                                -- Calculate trigger box vertices
-                                local vertices = {
-                                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, 0)),
-                                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, 0)),
-                                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, 0)),
-                                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, 0)),
-                                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, hitbox_Width, hitbox_Height)),
-                                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, hitbox_Width, hitbox_Height)),
-                                    client.WorldToScreen(vPlayerFuture + Vector3(-hitbox_Width, -hitbox_Width, hitbox_Height)),
-                                    client.WorldToScreen(vPlayerFuture + Vector3(hitbox_Width, -hitbox_Width, hitbox_Height))
-                                }
-                
-                                -- Check if vertices are not nil
-                                if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
-                                    -- Draw front face
-                                    draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
-                                    draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
-                                    draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
-                                    draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
-                
-                                    -- Draw back face
-                                    draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
-                                    draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
-                                    draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
-                                    draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
-                
-                                    -- Draw connecting lines
-                                    if vertices[1] and vertices[5] then draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2]) end
-                                    if vertices[2] and vertices[6] then draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2]) end
-                                    if vertices[3] and vertices[7] then draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2]) end
-                                    if vertices[4] and vertices[8] then draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2]) end
-                                end
+                        -- Calculate min and max points
+                        local minPoint = drawVhitbox[1]
+                        local maxPoint = drawVhitbox[2]
+
+                        -- Calculate vertices of the AABB
+                        -- Assuming minPoint and maxPoint are the minimum and maximum points of the AABB:
+                        local vertices = {
+                            Vector3(minPoint.x, minPoint.y, minPoint.z),  -- Bottom-back-left
+                            Vector3(minPoint.x, maxPoint.y, minPoint.z),  -- Bottom-front-left
+                            Vector3(maxPoint.x, maxPoint.y, minPoint.z),  -- Bottom-front-right
+                            Vector3(maxPoint.x, minPoint.y, minPoint.z),  -- Bottom-back-right
+                            Vector3(minPoint.x, minPoint.y, maxPoint.z),  -- Top-back-left
+                            Vector3(minPoint.x, maxPoint.y, maxPoint.z),  -- Top-front-left
+                            Vector3(maxPoint.x, maxPoint.y, maxPoint.z),  -- Top-front-right
+                            Vector3(maxPoint.x, minPoint.y, maxPoint.z)   -- Top-back-right
+                        }
+
+                        -- Convert 3D coordinates to 2D screen coordinates
+                        for i, vertex in ipairs(vertices) do
+                            vertices[i] = client.WorldToScreen(vertex)
+                        end
+
+                            -- Draw lines between vertices to visualize the box
+                            if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
+                                -- Draw front face
+                                draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
+                                draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
+                                draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
+                                draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
+
+                                -- Draw back face
+                                draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
+                                draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
+                                draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
+                                draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
+
+                                -- Draw connecting lines
+                                draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2])
+                                draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2])
+                                draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2])
+                                draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2])
                             end
+                        end
             end
         end
     end
