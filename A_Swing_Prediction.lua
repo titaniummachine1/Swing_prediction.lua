@@ -63,9 +63,26 @@ local Menu = {
     },
     Visuals = {
         EnableVisuals = false,
-        RangeCircle = true,
-        Visualization = true,
         Sphere = false,
+        Section = 1,
+        Sections = {"Local", "Target", "Experimental"},
+        Local = {
+            RangeCircle = true,
+            path = {
+                enable = true,
+                Color = { 255, 255, 255, 255 },
+                Styles = {"Pavement", "ArrowPath", "Arrows", "L Line" , "dashed", "line"},
+                Style = 1,
+            },
+        },
+        Target = {
+            path = {
+                enable = true,
+                Color = { 255, 255, 255, 255 },
+                Styles = {"Pavement", "ArrowPath", "Arrows", "L Line" , "dashed", "line"},
+                Style = 1,
+            },
+        },
     },
     Misc = {
         ChargeControl = true,
@@ -484,8 +501,6 @@ end
 
         local inaccuracyValue = inaccuracy[vPlayer:GetIndex()]
         if not inaccuracyValue then return nil end
-
-        print(inaccuracyValue)
 
         local hitbox_min_trigger = Vector3(drawVhitbox[1].x + inaccuracyValue, drawVhitbox[1].y + inaccuracyValue, drawVhitbox[1].z)
         local hitbox_max_trigger = Vector3(drawVhitbox[2].x - inaccuracyValue, drawVhitbox[2].y - inaccuracyValue, drawVhitbox[2].z)
@@ -1029,25 +1044,10 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
         --local pLocal = entities.GetLocalPlayer()
         pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
     if Menu.Visuals.EnableVisuals or pWeapon:IsMeleeWeapon() and pLocal and pLocal:IsAlive() then
-            draw.Color( 255, 255, 255, 255 )
-            local w, h = draw.GetScreenSize()
-            -- Strafe prediction visualization
-            if Menu.Visuals.Visualization then
-                if Menu.Visuals.RangeCircle and pLocalFuture then
+        draw.Color( 255, 255, 255, 255 )
+        local w, h = draw.GetScreenSize()
+        if Menu.Visuals.Local.RangeCircle and pLocalFuture then
                     draw.Color(255, 255, 255, 255)
-
-                    -- Draw lines between the predicted positions
-                    for i = 1, #pLocalPath - 1 do
-                        local pos1 = pLocalPath[i]
-                        local pos2 = pLocalPath[i + 1]
-    
-                        local screenPos1 = client.WorldToScreen(pos1)
-                        local screenPos2 = client.WorldToScreen(pos2)
-    
-                        if screenPos1 ~= nil and screenPos2 ~= nil then
-                            draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
-                        end
-                    end
 
                     local center = pLocalFuture - Vheight -- Center of the circle at the player's feet
                     local viewPos = pLocalOrigin -- View position to shoot traces from
@@ -1081,86 +1081,126 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                             draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
                         end
                     end
-                end
----------------------------------------------------------sphere
-if Menu.Visuals.Sphere then
-    -- Function to draw the sphere
-    local function draw_sphere()
-        local playerYaw = engine.GetViewAngles().yaw
-        local cos_yaw = math.cos(math.rad(playerYaw))
-        local sin_yaw = math.sin(math.rad(playerYaw))
-
-        local playerForward = Vector3(-cos_yaw, -sin_yaw, 0)  -- Forward vector based on player's yaw
-
-        for _, vertex in ipairs(sphere_cache.vertices) do
-            local rotated_vertex1 = Vector3(-vertex[1].x * cos_yaw + vertex[1].y * sin_yaw, -vertex[1].x * sin_yaw - vertex[1].y * cos_yaw, vertex[1].z)
-            local rotated_vertex2 = Vector3(-vertex[2].x * cos_yaw + vertex[2].y * sin_yaw, -vertex[2].x * sin_yaw - vertex[2].y * cos_yaw, vertex[2].z)
-            local rotated_vertex3 = Vector3(-vertex[3].x * cos_yaw + vertex[3].y * sin_yaw, -vertex[3].x * sin_yaw - vertex[3].y * cos_yaw, vertex[3].z)
-            local rotated_vertex4 = Vector3(-vertex[4].x * cos_yaw + vertex[4].y * sin_yaw, -vertex[4].x * sin_yaw - vertex[4].y * cos_yaw, vertex[4].z)
-
-            local worldPos1 = sphere_cache.center + rotated_vertex1 * sphere_cache.radius
-            local worldPos2 = sphere_cache.center + rotated_vertex2 * sphere_cache.radius
-            local worldPos3 = sphere_cache.center + rotated_vertex3 * sphere_cache.radius
-            local worldPos4 = sphere_cache.center + rotated_vertex4 * sphere_cache.radius
-
-            -- Trace from the center to the vertices with a hull size of 18x18
-            local hullSize = Vector3(18, 18, 18)
-            local trace1 = engine.TraceHull(sphere_cache.center, worldPos1, -hullSize, hullSize, MASK_SHOT_HULL)
-            local trace2 = engine.TraceHull(sphere_cache.center, worldPos2, -hullSize, hullSize, MASK_SHOT_HULL)
-            local trace3 = engine.TraceHull(sphere_cache.center, worldPos3, -hullSize, hullSize, MASK_SHOT_HULL)
-            local trace4 = engine.TraceHull(sphere_cache.center, worldPos4, -hullSize, hullSize, MASK_SHOT_HULL)
-
-            local endPos1 = trace1.fraction < 1.0 and trace1.endpos or worldPos1
-            local endPos2 = trace2.fraction < 1.0 and trace2.endpos or worldPos2
-            local endPos3 = trace3.fraction < 1.0 and trace3.endpos or worldPos3
-            local endPos4 = trace4.fraction < 1.0 and trace4.endpos or worldPos4
-
-            local screenPos1 = client.WorldToScreen(endPos1)
-            local screenPos2 = client.WorldToScreen(endPos2)
-            local screenPos3 = client.WorldToScreen(endPos3)
-            local screenPos4 = client.WorldToScreen(endPos4)
-
-            -- Calculate normal vector of the square
-            local normal = Normalize(rotated_vertex2 - rotated_vertex1):Cross(rotated_vertex3 - rotated_vertex1)
-
-            -- Draw square only if its normal faces towards the player
-            if normal:Dot(playerForward) > 0.1 then
-                if screenPos1 and screenPos2 and screenPos3 and screenPos4 then
-                    -- Draw the square
-                    drawPolygon({screenPos1, screenPos2, screenPos3, screenPos4})
-
-                    -- Optionally, draw lines between the vertices of the square for wireframe visualization
-                    draw.Color(255, 255, 255, 25) -- Set color and alpha for lines
-                    draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
-                    draw.Line(screenPos2[1], screenPos2[2], screenPos3[1], screenPos3[2])
-                    draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
-                    draw.Line(screenPos4[1], screenPos4[2], screenPos1[1], screenPos1[2])
-                end
-            end
         end
-    end
+            if Menu.Visuals.Local.path.enable and pLocalFuture then
+                    -- Draw lines between the predicted positions
+                    for i = 1, #pLocalPath - 1 do
+                        local pos1 = pLocalPath[i]
+                        local pos2 = pLocalPath[i + 1]
+    
+                        local screenPos1 = client.WorldToScreen(pos1)
+                        local screenPos2 = client.WorldToScreen(pos2)
+    
+                        if screenPos1 ~= nil and screenPos2 ~= nil then
+                            draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                        end
+                    end
+            end
+---------------------------------------------------------sphere
+                if Menu.Visuals.Sphere then
+                    -- Function to draw the sphere
+                    local function draw_sphere()
+                        local playerYaw = engine.GetViewAngles().yaw
+                        local cos_yaw = math.cos(math.rad(playerYaw))
+                        local sin_yaw = math.sin(math.rad(playerYaw))
 
-    -- Example draw call
-    sphere_cache.center = pLocalOrigin  -- Replace with actual player origin
-    sphere_cache.radius = swingrange    -- Replace with actual swing range value
-    draw_sphere()
-end
+                        local playerForward = Vector3(-cos_yaw, -sin_yaw, 0)  -- Forward vector based on player's yaw
 
+                        for _, vertex in ipairs(sphere_cache.vertices) do
+                            local rotated_vertex1 = Vector3(-vertex[1].x * cos_yaw + vertex[1].y * sin_yaw, -vertex[1].x * sin_yaw - vertex[1].y * cos_yaw, vertex[1].z)
+                            local rotated_vertex2 = Vector3(-vertex[2].x * cos_yaw + vertex[2].y * sin_yaw, -vertex[2].x * sin_yaw - vertex[2].y * cos_yaw, vertex[2].z)
+                            local rotated_vertex3 = Vector3(-vertex[3].x * cos_yaw + vertex[3].y * sin_yaw, -vertex[3].x * sin_yaw - vertex[3].y * cos_yaw, vertex[3].z)
+                            local rotated_vertex4 = Vector3(-vertex[4].x * cos_yaw + vertex[4].y * sin_yaw, -vertex[4].x * sin_yaw - vertex[4].y * cos_yaw, vertex[4].z)
 
+                            local worldPos1 = sphere_cache.center + rotated_vertex1 * sphere_cache.radius
+                            local worldPos2 = sphere_cache.center + rotated_vertex2 * sphere_cache.radius
+                            local worldPos3 = sphere_cache.center + rotated_vertex3 * sphere_cache.radius
+                            local worldPos4 = sphere_cache.center + rotated_vertex4 * sphere_cache.radius
+
+                            -- Trace from the center to the vertices with a hull size of 18x18
+                            local hullSize = Vector3(18, 18, 18)
+                            local trace1 = engine.TraceHull(sphere_cache.center, worldPos1, -hullSize, hullSize, MASK_SHOT_HULL)
+                            local trace2 = engine.TraceHull(sphere_cache.center, worldPos2, -hullSize, hullSize, MASK_SHOT_HULL)
+                            local trace3 = engine.TraceHull(sphere_cache.center, worldPos3, -hullSize, hullSize, MASK_SHOT_HULL)
+                            local trace4 = engine.TraceHull(sphere_cache.center, worldPos4, -hullSize, hullSize, MASK_SHOT_HULL)
+
+                            local endPos1 = trace1.fraction < 1.0 and trace1.endpos or worldPos1
+                            local endPos2 = trace2.fraction < 1.0 and trace2.endpos or worldPos2
+                            local endPos3 = trace3.fraction < 1.0 and trace3.endpos or worldPos3
+                            local endPos4 = trace4.fraction < 1.0 and trace4.endpos or worldPos4
+
+                            local screenPos1 = client.WorldToScreen(endPos1)
+                            local screenPos2 = client.WorldToScreen(endPos2)
+                            local screenPos3 = client.WorldToScreen(endPos3)
+                            local screenPos4 = client.WorldToScreen(endPos4)
+
+                            -- Calculate normal vector of the square
+                            local normal = Normalize(rotated_vertex2 - rotated_vertex1):Cross(rotated_vertex3 - rotated_vertex1)
+
+                            -- Draw square only if its normal faces towards the player
+                            if normal:Dot(playerForward) > 0.1 then
+                                if screenPos1 and screenPos2 and screenPos3 and screenPos4 then
+                                    -- Draw the square
+                                    drawPolygon({screenPos1, screenPos2, screenPos3, screenPos4})
+
+                                    -- Optionally, draw lines between the vertices of the square for wireframe visualization
+                                    draw.Color(255, 255, 255, 25) -- Set color and alpha for lines
+                                    draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                                    draw.Line(screenPos2[1], screenPos2[2], screenPos3[1], screenPos3[2])
+                                    draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                                    draw.Line(screenPos4[1], screenPos4[2], screenPos1[1], screenPos1[2])
+                                end
+                            end
+                        end
+                    end
+
+                    -- Example draw call
+                    sphere_cache.center = pLocalOrigin  -- Replace with actual player origin
+                    sphere_cache.radius = swingrange    -- Replace with actual swing range value
+                    draw_sphere()
+                end
 
                     -- enemy
                     if vPlayerFuture then
 
                         -- Draw lines between the predicted positions
-                        for i = 1, #vPlayerPath - 1 do
-                            local pos1 = vPlayerPath[i]
-                            local pos2 = vPlayerPath[i + 1]
-
-                            local screenPos3 = client.WorldToScreen(pos1)
-                            local screenPos4 = client.WorldToScreen(pos2)
-
-                            if screenPos3 ~= nil and screenPos4 ~= nil then
-                                draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                        if Menu.Visuals.Target.path.enable then
+                            if style == 1 then
+                                -- Draw a double L line in both directions
+                                for i = 1, #vPlayerPath - 1 do
+                                    local pos1 = vPlayerPath[i]
+                                    local pos2 = vPlayerPath[i + 1]
+                        
+                                    -- Draw the left side of the L line
+                                    draw.Line(pos1[1], pos1[2], pos2[1], pos2[2])
+                                    -- Draw the right side of the L line
+                                    draw.Line(pos1[1] + 1, pos1[2] + 1, pos2[1] + 1, pos2[2] + 1)
+                                end
+                            elseif style == 2 then
+                                -- Draw the path with arrows
+                                -- ...
+                            elseif style == 3 then
+                                -- Draw arrows
+                                -- ...
+                            elseif style == 4 then
+                                -- Draw an L line
+                                -- ...
+                            elseif style == 5 then
+                                -- Draw a dashed line
+                                -- ...
+                            elseif style == 6 then
+                                -- Draw a line
+                                for i = 1, #vPlayerPath - 1 do
+                                    local pos1 = vPlayerPath[i]
+                                    local pos2 = vPlayerPath[i + 1]
+                        
+                                    local screenPos3 = client.WorldToScreen(pos1)
+                                    local screenPos4 = client.WorldToScreen(pos2)
+                        
+                                    if screenPos3 ~= nil and screenPos4 ~= nil then
+                                        draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                                    end
+                                end
                             end
                         end
 
@@ -1216,9 +1256,9 @@ end
                                 draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2])
                             end
                         end
-            end
         end
     end
+
         -- Inside your OnCreateMove or similar function where you check for input
     if input.IsButtonDown(KEY_INSERT) then  -- Replace 72 with the actual key code for the button you want to use
         toggleMenu()
@@ -1289,14 +1329,33 @@ end
                 ImMenu.EndFrame()
         
                 ImMenu.BeginFrame(1)
-                Menu.Visuals.Visualization = ImMenu.Checkbox("Visualization", Menu.Visuals.Visualization)
-                Menu.Visuals.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.RangeCircle)
+                    Menu.Visuals.Section = ImMenu.Option(Menu.Visuals.Section, Menu.Visuals.Sections)
                 ImMenu.EndFrame()
 
-                ImMenu.BeginFrame(1)
-                ImMenu.Text("Experimental")
-                Menu.Visuals.Sphere = ImMenu.Checkbox("Range Sphere", Menu.Visuals.Sphere)
-                ImMenu.EndFrame()
+                if Menu.Visuals.Section == 1 then
+                    Menu.Visuals.Local.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.Local.RangeCircle)
+                    Menu.Visuals.Local.path.enable = ImMenu.Checkbox("Local Path", Menu.Visuals.Local.path.enable)
+                    --Menu.Visuals.Local.path.style = ImMenu.Option(Menu.Visuals.Local.path.style, Menu.Visuals.Local.path.Styles)
+                end
+
+                if Menu.Visuals.Section == 2 then
+                    Menu.Visuals.Target.path.enable = ImMenu.Checkbox("Target Path", Menu.Visuals.Target.path.enable)
+                    --Menu.Visuals.Target.path.style = ImMenu.Option(Menu.Visuals.Target.path.style, Menu.Visuals.Target.path.Styles)
+                end
+
+                if Menu.Visuals.Section == 3 then
+                    ImMenu.BeginFrame(1)
+                    ImMenu.Text("Experimental")
+                    Menu.Visuals.Sphere = ImMenu.Checkbox("Range Shield", Menu.Visuals.Sphere)
+                    ImMenu.EndFrame()
+                end
+
+                --[[ImMenu.BeginFrame(1)
+                Menu.Visuals.Visualization = ImMenu.Checkbox("Visualization", Menu.Visuals.Visualization)
+                Menu.Visuals.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.RangeCircle)
+                ImMenu.EndFrame()]]
+
+
             end
         ImMenu.End()
     end
