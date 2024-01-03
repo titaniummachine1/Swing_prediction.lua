@@ -266,10 +266,9 @@ local function CalcStrafe()
         -- Save the average delta
         avgDeltas[entityIndex] = avgDelta
 
-        -- Create two vectors adjusted by their past and current average delta in the yaw direction at a distance of 12 units
-        local vector1 = Vector3(math.cos(math.rad(lastDeltas[entityIndex] or delta)) * 12, math.sin(math.rad(lastDeltas[entityIndex] or delta)) * 12, 0)
-        local vector2 = Vector3(math.cos(math.rad(avgDelta)) * 12, math.sin(math.rad(avgDelta)) * 12, 0)
-
+        local vector1 = Vector3(1, 0, 0)
+        local vector2 = Vector3(1, 0, 0)
+        
         -- Apply deviation
         local ang1 = vector1:Angles()
         ang1.y = ang1.y + (lastDeltas[entityIndex] or delta)
@@ -502,8 +501,8 @@ end
         local inaccuracyValue = inaccuracy[vPlayer:GetIndex()]
         if not inaccuracyValue then return nil end
 
-        local hitbox_min_trigger = Vector3(drawVhitbox[1].x + inaccuracyValue, drawVhitbox[1].y + inaccuracyValue, drawVhitbox[1].z)
-        local hitbox_max_trigger = Vector3(drawVhitbox[2].x - inaccuracyValue, drawVhitbox[2].y - inaccuracyValue, drawVhitbox[2].z)
+        local hitbox_min_trigger = drawVhitbox[1]
+        local hitbox_max_trigger = drawVhitbox[2]
 
         -- Calculate the closest point on the hitbox to the sphere
         local closestPoint = Vector3(
@@ -514,9 +513,6 @@ end
 
         -- Calculate the vector from the closest point to the sphere center
         local distanceAlongVector = (spherePos - closestPoint):Length()
-        if isAdvanced then
-            local atackPos = Normalize(spherePos - closestPoint) * sphereRadius
-
             -- Compare the distance along the vector to the sum of the radius
             if sphereRadius > distanceAlongVector then
                 return true, closestPoint
@@ -524,15 +520,6 @@ end
                 -- Not InRange
                 return false, nil
             end
-        else
-            -- Compare the distance along the vector to the sum of the radius
-            if sphereRadius > distanceAlongVector then
-                return true, closestPoint
-            else
-                -- Not InRange
-                return false, nil
-            end
-        end
     end
     
     
@@ -775,6 +762,9 @@ end
     stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize")
 
     CalcStrafe()
+    if inaccuracyValue then
+        swingrange = swingrange - inaccuracyValue
+    end
 
     -- Local player prediction
     if pLocal:EstimateAbsVelocity() == 0 then
