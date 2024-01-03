@@ -385,8 +385,13 @@ end
                 if angle < 45 then
                     if onGround1 and player:GetName() == pLocal:GetName() and gui.GetValue("Bunny Hop") == 1 and input.IsButtonDown(KEY_SPACE) then
                         -- Jump
-                        vel.z = 271
-                        onGround1 = false
+                        if gui.GetValue("Duck Jump") == 1 then
+                            vel.z = 277
+                            onGround1 = false
+                        else
+                            vel.z = 271
+                            onGround1 = false
+                        end
                     else
                         pos = groundTrace.endpos
                         onGround1 = true
