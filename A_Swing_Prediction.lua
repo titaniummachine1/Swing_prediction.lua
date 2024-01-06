@@ -4,6 +4,12 @@
 --[[           Terminator           ]]--
 --[[  (github.com/titaniummachine1  ]]--
 
+-- Unload the module if it's already loaded
+if package.loaded["ImMenu"] then
+    package.loaded["ImMenu"] = nil
+end
+
+-- Load the module
 local menuLoaded, ImMenu = pcall(require, "ImMenu")
 assert(menuLoaded, "ImMenu not found, please install it!")
 assert(ImMenu.GetVersion() >= 0.66, "ImMenu version is too old, please update it!")
@@ -87,7 +93,9 @@ local Menu = {
     Misc = {
         ChargeControl = true,
         ChargeSensitivity = 50,
-        CritRefill = true,
+        CritRefill = {Active = true, NumCrits = 1},
+        CritMode = 1,
+        CritModes = {"Rage", "On Button"},
         InstantAttack = true,
         ChargeReach = false,
         TroldierAssist = false,
@@ -153,25 +161,34 @@ local function LoadCFG(folder_name)
     end
 end
 
-local status, loadedMenu = pcall(function() return assert(LoadCFG(string.format([[Lua %s]], Lua__fileName))) end) --auto load config
+local status, loadedMenu = pcall(function() 
+    return assert(LoadCFG(string.format([[Lua %s]], Lua__fileName))) 
+end) -- Auto-load config
 
-if status then --ensure config is not causing errors
-    local allFunctionsExist = true
-    for k, v in pairs(Menu) do
-        if type(v) == 'function' then
-            if not loadedMenu[k] or type(loadedMenu[k]) ~= 'function' then
-                allFunctionsExist = false
-                break
+-- Function to check if all expected functions exist in the loaded config
+local function checkAllFunctionsExist(expectedMenu, loadedMenu)
+    for key, value in pairs(expectedMenu) do
+        if type(value) == 'function' then
+            -- Check if the function exists in the loaded menu and has the correct type
+            if not loadedMenu[key] or type(loadedMenu[key]) ~= 'function' then
+                return false
             end
         end
     end
+    return true
+end
 
-    if allFunctionsExist then
+-- Execute this block only if loading the config was successful
+if status then
+    if checkAllFunctionsExist(Menu, loadedMenu) and not input.IsButtonDown(KEY_LSHIFT) then
         Menu = loadedMenu
     else
-        print("config is outdated")
-        CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
+        print("Config is outdated or invalid. Creating a new config.")
+        CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) -- Save the config
     end
+else
+    print("Failed to load config. Creating a new config.")
+    CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) -- Save the config
 end
 
 local closestDistance = 2000
@@ -627,6 +644,9 @@ end
 
 -- Initialize a counter outside of your game loop
 local attackCounter = 0
+-- Store the original Crit Hack Key value outside the main loop or function
+local originalCritHackKey = gui.GetValue("Crit Hack Key")
+local critkeyRestored = false
 
 --[[ Code needed to run 66 times a second ]]--
 -- Predicts player position after set amount of ticks
@@ -710,14 +730,7 @@ local function OnCreateMove(pCmd)
         pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
 
 --[-------- Get SwingRange --------]
-    swingrange = pWeapon:GetSwingRange()
-   -- local hitboxData = pLocal:EntitySpaceHitboxSurroundingBox()
-    --local hitboxSize = hitboxData[1]
---local hitboxHeight = hitboxSize.z
-
---hitboxSize.z = 0 -- Set z component to 0 to get the horizontal size
---print(-hitboxSize.y)
--- Now you can use hitboxSize and hitboxHeight as variables representing the size and height of the hitbox respectively
+swingrange = pWeapon:GetSwingRange()
 
 local SwingHullSize = 36
 
@@ -749,11 +762,47 @@ end
             vPlayer = nil
         end
 
-    -- Refill and return when noone to target
+---------------critHack------------------
+    -- Main logic
     if CurrentTarget == nil then
-        if Menu.Misc.CritRefill and pWeapon:GetCritTokenBucket() <= 27 then
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+        local CritValue = 39  -- Base value for crit token bucket calculation
+        local CritBucket = pWeapon:GetCritTokenBucket()
+        local NumCrits = CritValue * Menu.Misc.CritRefill.NumCrits
+
+        -- Cap NumCrits to ensure CritBucket does not exceed 1000
+        NumCrits = math.clamp(NumCrits, 27, 1000)
+
+        if Menu.Misc.CritRefill.Active then
+            if CritBucket < NumCrits then
+                -- Temporarily disable Crit Hack Key while refilling
+                if critkeyRestored then
+                    gui.SetValue("Crit Hack Key", 0)  -- Set to 0 to disable
+                    critkeyRestored = false
+                end
+                gui.SetValue("Melee Crit Hack", 2) -- Stop using crit bucket to stock up crits
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            else
+                -- Restore original Crit Hack Key value and enable crit hack
+                if not critkeyRestored then
+                    gui.SetValue("Crit Hack Key", originalCritHackKey)
+                    critkeyRestored = true
+                end
+                gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
+            end
+        else
+            if not critkeyRestored then
+                gui.SetValue("Crit Hack Key", originalCritHackKey)
+                critkeyRestored = true
+            end
+            gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
         end
+    else
+        -- Restore original Crit Hack Key value and enable crit hack
+        if not critkeyRestored then
+            gui.SetValue("Crit Hack Key", originalCritHackKey)
+            critkeyRestored = true
+        end
+        gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
     end
 
     local ONGround
@@ -1301,13 +1350,23 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
             if Menu.tabs.Misc then
                 ImMenu.BeginFrame(1)
                     Menu.Misc.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Misc.ChargeReach)
-                    Menu.Misc.CritRefill = ImMenu.Checkbox("Auto Crit refill", Menu.Misc.CritRefill)
                 ImMenu.EndFrame()
 
                 ImMenu.BeginFrame(1)
                     Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
                     Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
                 ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
+                    Menu.Misc.CritRefill.Active = ImMenu.Checkbox("Auto Crit refill", Menu.Misc.CritRefill.Active)
+                    Menu.Misc.CritRefill.NumCrits = ImMenu.Slider("Crit Number", Menu.Misc.CritRefill.NumCrits, 1, 25)
+                ImMenu.EndFrame()
+                ImMenu.BeginFrame(1)
+                    if Menu.Misc.CritRefill.Active then
+                        Menu.Misc.CritMode = ImMenu.Option(Menu.Misc.CritMode, Menu.Misc.CritModes)
+                    end
+                ImMenu.EndFrame()
+
 
                 ImMenu.BeginFrame(1)
                     Menu.Misc.ChargeControl = ImMenu.Checkbox("Charge Control", Menu.Misc.ChargeControl)
@@ -1358,7 +1417,6 @@ end
 
 --[[ Remove the menu when unloaded ]]--
 local function OnUnload()                                -- Called when the script is unloaded
-    Menu.Is_Listening_For_Key = false
     UnloadLib() --unloading lualib
     CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
     client.Command('play "ui/buttonclickrelease"', true) -- Play the "buttonclickrelease" sound
