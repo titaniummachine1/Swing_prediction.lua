@@ -175,6 +175,11 @@ local function checkAllFunctionsExist(expectedMenu, loadedMenu)
             end
         end
     end
+    for key, value in pairs(expectedMenu) do
+        if not loadedMenu[key] or type(loadedMenu[key]) ~= type(value) then
+            return false
+        end
+    end
     return true
 end
 
@@ -1389,12 +1394,12 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                 if Menu.Visuals.Section == 1 then
                     Menu.Visuals.Local.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.Local.RangeCircle)
                     Menu.Visuals.Local.path.enable = ImMenu.Checkbox("Local Path", Menu.Visuals.Local.path.enable)
-                    --Menu.Visuals.Local.path.style = ImMenu.Option(Menu.Visuals.Local.path.style, Menu.Visuals.Local.path.Styles)
+                    Menu.Visuals.Local.path.Style = ImMenu.Option(Menu.Visuals.Local.path.Style, Menu.Visuals.Local.path.Styles)
                 end
 
                 if Menu.Visuals.Section == 2 then
                     Menu.Visuals.Target.path.enable = ImMenu.Checkbox("Target Path", Menu.Visuals.Target.path.enable)
-                    --Menu.Visuals.Target.path.style = ImMenu.Option(Menu.Visuals.Target.path.style, Menu.Visuals.Target.path.Styles)
+                    Menu.Visuals.Target.path.Style = ImMenu.Option(Menu.Visuals.Target.path.Style, Menu.Visuals.Target.path.Styles)
                 end
 
                 if Menu.Visuals.Section == 3 then
