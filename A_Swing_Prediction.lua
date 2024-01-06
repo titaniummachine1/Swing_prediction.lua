@@ -300,6 +300,7 @@ function Normalize(vec)
     local length = math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
     return Vector3(vec.x / length, vec.y / length, vec.z / length)
 end
+
 local function checkPlayerState(player)
     local flags = player:GetPropInt("m_fFlags")
     local waterLevel = player:GetPropInt("m_nWaterLevel")
@@ -998,13 +999,12 @@ local function toggleMenu()
     end
 end
 
-Menu.Keybind = 0
-Menu.Is_Listening_For_Key = true
-Menu.KeybindName = "Always On"
+local bindTimer = 0
+local bindDelay = 0.25  -- Delay of 0.25 seconds
 
 local function handleKeybind(noKeyText, keybind, keybindName)
     if KeybindName ~= "Press The Key" and ImMenu.Button(KeybindName or noKeyText) then
-        bindTimer = os.clock() + 0.4
+        bindTimer = os.clock() + bindDelay
         KeybindName = "Press The Key"
     elseif KeybindName == "Press The Key" then
         ImMenu.Text("Press the key")
@@ -1016,6 +1016,7 @@ local function handleKeybind(noKeyText, keybind, keybindName)
             if pressedKey then
                 if pressedKey == KEY_ESCAPE then
                     -- Reset keybind if the Escape key is pressed
+                    keybind = 0
                     KeybindName = "Always On"
                 else
                     -- Update keybind with the pressed key
@@ -1026,7 +1027,6 @@ local function handleKeybind(noKeyText, keybind, keybindName)
             end
         end
     end
-
     return keybind, keybindName
 end
 
