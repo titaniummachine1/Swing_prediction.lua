@@ -1364,7 +1364,9 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
 
                 ImMenu.BeginFrame(1)
                     Menu.Misc.CritRefill.Active = ImMenu.Checkbox("Auto Crit refill", Menu.Misc.CritRefill.Active)
-                    Menu.Misc.CritRefill.NumCrits = ImMenu.Slider("Crit Number", Menu.Misc.CritRefill.NumCrits, 1, 25)
+                    if Menu.Misc.CritRefill.Active then
+                        Menu.Misc.CritRefill.NumCrits = ImMenu.Slider("Crit Number", Menu.Misc.CritRefill.NumCrits, 1, 25)
+                    end
                 ImMenu.EndFrame()
                 ImMenu.BeginFrame(1)
                     if Menu.Misc.CritRefill.Active then
