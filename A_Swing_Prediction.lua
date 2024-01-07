@@ -79,6 +79,7 @@ local Menu = {
                 Color = { 255, 255, 255, 255 },
                 Styles = {"Pavement", "ArrowPath", "Arrows", "L Line" , "dashed", "line"},
                 Style = 1,
+                width = 5,
             },
         },
         Target = {
@@ -87,6 +88,7 @@ local Menu = {
                 Color = { 255, 255, 255, 255 },
                 Styles = {"Pavement", "ArrowPath", "Arrows", "L Line" , "dashed", "line"},
                 Style = 1,
+                width = 5,
             },
         },
     },
@@ -207,7 +209,7 @@ local ping = 0
 local swingrange = 48
 local tickRate = 66
 local tick_count = 0
-local time = 15
+local time = 13
 local Gcan_attack = false
 local Safe_Strafe = false
 local can_charge = false
@@ -218,7 +220,7 @@ local Backtrackpositions = {}
 local pLocalPath = {}
 local vPlayerPath = {}
 local PredPath = {}
-local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+local vHitbox = { Vector3(-20, -20, 0), Vector3(20, 20, 80) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
 local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
@@ -463,6 +465,7 @@ local function GetBestTarget(me)
 
     local bestTarget = nil
     local bestFactor = 0
+    --settings.MaxDistance = swingrange * 1.2
 
     local localPlayerOrigin = localPlayer:GetAbsOrigin()
     local localPlayerViewAngles = engine.GetViewAngles()
@@ -524,13 +527,13 @@ local function GetBestTarget(me)
 end
 
 -- Define function to check InRange between the hitbox and the sphere
-    local function checkInRange(targetPos, spherePos, sphereRadius)
+    local function checkInRange(targetPos, spherePos, sphereRadius, hitbox)
 
         local inaccuracyValue = inaccuracy[vPlayer:GetIndex()]
         if not inaccuracyValue then return nil end
 
-        local hitbox_min_trigger = drawVhitbox[1]
-        local hitbox_max_trigger = drawVhitbox[2]
+        local hitbox_min_trigger = hitbox[1]
+        local hitbox_max_trigger = hitbox[2]
 
         -- Calculate the closest point on the hitbox to the sphere
         local closestPoint = Vector3(
@@ -582,70 +585,101 @@ local function ChargeControl(pCmd)
     pCmd:SetViewAngles(currentAngles.pitch, interpolatedYaw, 0)
 end
 
+
+local function CalculateUniformHitbox(me)
+    local absOrigin = me:GetAbsOrigin()
+    local box = me:HitboxSurroundingBox()
+    local min, max = box[1], box[2]
+
+    -- Calculate the dimensions of the original hitbox
+    local width = max.x - min.x
+    local length = max.y - min.y
+    local height = max.z - min.z  -- Original height is preserved
+
+    -- Determine the smallest dimension between width and length
+    local smallestDimension = math.min(width, length)
+
+    -- Create a new uniform hitbox based on the smallest dimension for width and length
+    local uniformMin = Vector3(min.x, min.y, min.z)
+    local uniformMax = Vector3(min.x + smallestDimension, min.y + smallestDimension, min.z + height)
+
+    -- Calculate the offsets for the uniform hitbox
+    local minOffset = uniformMin - absOrigin
+    local maxOffset = uniformMax - absOrigin
+
+    return {minOffset, maxOffset}
+end
+
 local hasNotified = false
+
 local function checkInRangeWithLatency(playerIndex, swingRange)
-        -- If latency is enabled, check if pLocalFuture or pLocalOrigin are in range to attack the ticks
-        local closestPoint = nil
-        local inRange = false
-        local point = nil
+    local inRange = false
+    local point = nil
+    local Backtrack = gui.GetValue("Backtrack")
+    local fakelatencyON = gui.GetValue("Fake Latency")
+    local hitbox2 = CalculateUniformHitbox(vPlayer)
+    local hitbox = {}
+    hitbox[1] = vPlayerOrigin + hitbox2[1]
+    hitbox[2] = vPlayerOrigin + hitbox2[2]
 
-        local Backtrack = gui.GetValue("Backtrack")
-        local fakelatencyON = gui.GetValue("Fake Latency")
-
-        if Backtrack == 0 and fakelatencyON == 0 then
-            -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
-            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18)
-            
-            if inRange then
-                return inRange, point
-            else
-                local inRange2, point2 = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
-                if inRange2 then
-                    return inRange2, point2
-                end
-            end
-        elseif fakelatencyON == 1 then
-            -- Inside your function
-            if not hasNotified then
-                Notify.Simple("Fake Latency is enabled", " this may cause issues with the script", 7)
-                hasNotified = true
-            end
-
-            -- Calculate the range of ticks to check based on the current latency
-            local minTick = 1
-            local maxTick = #playerTicks[playerIndex]
-
-            -- Check from the newest to the oldest tick within the range
-            for tick = minTick, maxTick do
-                if playerTicks[playerIndex] then
-                    local pastOrigin = playerTicks[playerIndex][tick]
-
-                    inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
-                    if inRange then
-                        return inRange, point
-                    else
-                        local inRange2, point2 = checkInRange(pastOrigin, pLocalFuture, swingRange)
-                        if inRange2 then
-                            return inRange2, point2
-                        end
-                    end
-                end
-            end
-        elseif Backtrack == 1 then
-             -- If latency is disabled, check if vPlayerOrigin is in range from pLocalOrigin
-             inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
-            
-             if inRange then
-                 return inRange, point
-             else
-                 local inRange2, point2 = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
-                 if inRange2 then
-                     return inRange2, point2
-                 end
-             end
+    if Backtrack == 0 and fakelatencyON == 0 then
+        -- Adjust hitbox for current position
+        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18, hitbox)
+        if inRange then
+            return inRange, point
         end
+
+        -- Adjust hitbox for future position
+        hitbox[1] = vPlayerFuture + hitbox2[1]
+        hitbox[2] = vPlayerFuture + hitbox2[2]
+        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange, hitbox)
+        if inRange then
+            return inRange, point
+        end
+    end
+
+    if fakelatencyON == 1 then
+        if not hasNotified then
+            Notify.Simple("Fake Latency is enabled", " this may cause issues with the script", 7)
+            hasNotified = true
+        end
+
+        local minTick = 1
+        local maxTick = #playerTicks[playerIndex]
+
+        for tick = minTick, maxTick do
+            if playerTicks[playerIndex] then
+                local pastOrigin = playerTicks[playerIndex][tick]
+                hitbox[1] = pastOrigin + hitbox2[1]
+                hitbox[2] = pastOrigin + hitbox2[2]
+
+                inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange, hitbox)
+                if inRange then
+                    return inRange, point
+                end
+            end
+        end
+    end
+
+    if Backtrack == 1 then
+        -- Adjust hitbox for current position
+        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange, hitbox)
+        if inRange then
+            return inRange, point
+        end
+
+        -- Adjust hitbox for future position
+        hitbox[1] = vPlayerFuture + hitbox2[1]
+        hitbox[2] = vPlayerFuture + hitbox2[2]
+        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange, hitbox)
+        if inRange then
+            return inRange, point
+        end
+    end
+
     return false, nil
 end
+
 
 -- Initialize a counter outside of your game loop
 local attackCounter = 0
@@ -849,8 +883,8 @@ end
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
 
     drawVhitbox = {}
-    drawVhitbox[1] = vPlayerOrigin + vHitbox[1]
-    drawVhitbox[2] = vPlayerOrigin + vHitbox[2]
+    drawVhitbox[1] = (vPlayerFuture or vPlayerOrigin) + vHitbox[1]
+    drawVhitbox[2] = (vPlayerFuture or vPlayerOrigin) + vHitbox[2]
 
     -- Target player prediction
     if CurrentTarget:EstimateAbsVelocity() == 0 then
@@ -1007,6 +1041,130 @@ local function setup_sphere(center, radius, segments)
     end
 end
 
+-- Normalize a vector
+local function NormalizeVector(v)
+    local length = math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+    return Vector3(v.x / length, v.y / length, v.z / length)
+end
+
+
+-- Modified dirArrow function
+local function dirArrow(startPos, endPos, arrowLength)
+    local direction =  endPos - startPos
+    if direction:Length() == 0 then return end -- Avoid division by zero
+    direction = NormalizeVector(direction)
+
+    local screenStart = client.WorldToScreen(startPos)
+    local screenEnd = client.WorldToScreen(endPos)
+
+    if screenStart and screenEnd then
+        -- Draw main line of the arrow
+        draw.Line(screenStart[1], screenStart[2], screenEnd[1], screenEnd[2])
+
+        -- Calculate and draw the arrowhead
+        local perpendicularDirection = Vector3(-direction.y, direction.x, 0)
+        local arrowBase = endPos - direction * arrowLength * 0.2
+        local leftHead = arrowBase + perpendicularDirection * arrowLength * 0.1
+        local rightHead = arrowBase - perpendicularDirection * arrowLength * 0.1
+        local screenLeftHead = client.WorldToScreen(leftHead)
+        local screenRightHead = client.WorldToScreen(rightHead)
+
+        if screenLeftHead and screenRightHead then
+            draw.Line(screenEnd[1], screenEnd[2], screenLeftHead[1], screenLeftHead[2])
+            draw.Line(screenEnd[1], screenEnd[2], screenRightHead[1], screenRightHead[2])
+        end
+    end
+end
+
+local function arrowPathArrow2(startPos, endPos, width)
+    if not (startPos and endPos) then return nil, nil end
+
+    local direction = endPos - startPos
+    local length = direction:Length()
+    if length == 0 then return nil, nil end
+    direction = NormalizeVector(direction)
+
+    local perpDir = Vector3(-direction.y, direction.x, 0)
+    local leftBase = startPos + perpDir * width
+    local rightBase = startPos - perpDir * width
+
+    local screenStartPos = client.WorldToScreen(startPos)
+    local screenEndPos = client.WorldToScreen(endPos)
+    local screenLeftBase = client.WorldToScreen(leftBase)
+    local screenRightBase = client.WorldToScreen(rightBase)
+
+    if screenStartPos and screenEndPos and screenLeftBase and screenRightBase then
+        draw.Line(screenStartPos[1], screenStartPos[2], screenEndPos[1], screenEndPos[2])
+        draw.Line(screenLeftBase[1], screenLeftBase[2], screenEndPos[1], screenEndPos[2])
+        draw.Line(screenRightBase[1], screenRightBase[2], screenEndPos[1], screenEndPos[2])
+    end
+
+    return leftBase, rightBase
+end
+
+
+
+
+local function arrowPathArrow(startPos, endPos, arrowWidth)
+    if not startPos or not endPos then return end
+
+    local direction = endPos - startPos
+    if direction:Length() == 0 then return end
+
+    -- Normalize the direction vector and calculate perpendicular direction
+    direction = NormalizeVector(direction)
+    local perpendicular = Vector3(-direction.y, direction.x, 0) * arrowWidth
+
+    -- Calculate points for arrow fins
+    local finPoint1 = startPos + perpendicular
+    local finPoint2 = startPos - perpendicular
+
+    -- Convert world positions to screen positions
+    local screenStartPos = client.WorldToScreen(startPos)
+    local screenEndPos = client.WorldToScreen(endPos)
+    local screenFinPoint1 = client.WorldToScreen(finPoint1)
+    local screenFinPoint2 = client.WorldToScreen(finPoint2)
+
+    -- Draw the arrow
+    if screenStartPos and screenEndPos then
+        draw.Line(screenEndPos[1], screenEndPos[2], screenFinPoint1[1], screenFinPoint1[2])
+        draw.Line(screenEndPos[1], screenEndPos[2], screenFinPoint2[1], screenFinPoint2[2])
+        draw.Line(screenFinPoint1[1], screenFinPoint1[2], screenFinPoint2[1], screenFinPoint2[2])
+    end
+end
+
+local function drawPavement(startPos, endPos, width)
+    if not (startPos and endPos) then return nil end
+
+    local direction = endPos - startPos
+    local length = direction:Length()
+    if length == 0 then return nil end
+    direction = NormalizeVector(direction)
+
+    -- Calculate perpendicular direction for the width
+    local perpDir = Vector3(-direction.y, direction.x, 0)
+
+    -- Calculate left and right base points of the pavement
+    local leftBase = startPos + perpDir * width
+    local rightBase = startPos - perpDir * width
+
+    -- Convert positions to screen coordinates
+    local screenStartPos = client.WorldToScreen(startPos)
+    local screenEndPos = client.WorldToScreen(endPos)
+    local screenLeftBase = client.WorldToScreen(leftBase)
+    local screenRightBase = client.WorldToScreen(rightBase)
+
+    -- Draw the pavement
+    if screenStartPos and screenEndPos and screenLeftBase and screenRightBase then
+        draw.Line(screenStartPos[1], screenStartPos[2], screenEndPos[1], screenEndPos[2])
+        draw.Line(screenStartPos[1], screenStartPos[2], screenLeftBase[1], screenLeftBase[2])
+        draw.Line(screenStartPos[1], screenStartPos[2], screenRightBase[1], screenRightBase[2])
+    end
+
+    return leftBase, rightBase
+end
+
+
 -- Call setup_sphere once at the start of your program
 setup_sphere(Vector3(0, 0, 0), 90, 7)
 
@@ -1084,6 +1242,30 @@ local function handleKeybind(noKeyText, keybind, keybindName)
     return keybind, keybindName
 end
 
+local function L_line(start_pos, end_pos, secondary_line_size)
+    if not (start_pos and end_pos) then
+        return
+    end
+    local direction = end_pos - start_pos
+    local direction_length = direction:Length()
+    if direction_length == 0 then
+        return
+    end
+    local normalized_direction = Normalize(direction)
+    local perpendicular = Vector3(normalized_direction.y, -normalized_direction.x, 0) * secondary_line_size
+    local w2s_start_pos = client.WorldToScreen(start_pos)
+    local w2s_end_pos = client.WorldToScreen(end_pos)
+    if not (w2s_start_pos and w2s_end_pos) then
+        return
+    end
+    local secondary_line_end_pos = start_pos + perpendicular
+    local w2s_secondary_line_end_pos = client.WorldToScreen(secondary_line_end_pos)
+    if w2s_secondary_line_end_pos then
+        draw.Line(w2s_start_pos[1], w2s_start_pos[2], w2s_end_pos[1], w2s_end_pos[2])
+        draw.Line(w2s_start_pos[1], w2s_start_pos[2], w2s_secondary_line_end_pos[1], w2s_secondary_line_end_pos[2])
+    end
+end
+
 -- debug command: ent_fire !picker Addoutput "health 99999" --superbot
 local Verdana = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
@@ -1132,7 +1314,108 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                     end
         end
             if Menu.Visuals.Local.path.enable and pLocalFuture then
-                    -- Draw lines between the predicted positions
+                local style = Menu.Visuals.Local.path.Style
+                local width1 = Menu.Visuals.Local.path.width
+                if style == 1 then
+                    local lastLeftBaseScreen, lastRightBaseScreen = nil, nil
+                    -- Pavement Style
+                    for i = 1, #pLocalPath - 1 do
+                        local startPos = pLocalPath[i]
+                        local endPos = pLocalPath[i + 1]
+
+                        if startPos and endPos then
+                            local leftBase, rightBase = drawPavement(startPos, endPos, width1)
+                            
+                            if leftBase and rightBase then
+                                local screenLeftBase = client.WorldToScreen(leftBase)
+                                local screenRightBase = client.WorldToScreen(rightBase)
+
+                                if screenLeftBase and screenRightBase then
+                                    if lastLeftBaseScreen and lastRightBaseScreen then
+                                        draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1], screenLeftBase[2])
+                                        draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1], screenRightBase[2])
+                                    end
+
+                                    lastLeftBaseScreen = screenLeftBase
+                                    lastRightBaseScreen = screenRightBase
+                                end
+                            end
+                        end
+                    end
+
+                    -- Draw the final line segment
+                    if lastLeftBaseScreen and lastRightBaseScreen and #pLocalPath > 0 then
+                        local finalPos = pLocalPath[#pLocalPath]
+                        local screenFinalPos = client.WorldToScreen(finalPos)
+
+                        if screenFinalPos then
+                            draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
+                            draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
+                        end
+                    end
+                elseif style == 2 then
+                    local lastLeftBaseScreen, lastRightBaseScreen = nil, nil
+
+                    -- Start from the second element (i = 2)
+                    for i = 2, #pLocalPath - 1 do
+                        local startPos = pLocalPath[i]
+                        local endPos = pLocalPath[i + 1]
+
+                        if startPos and endPos then
+                            local leftBase, rightBase = arrowPathArrow2(startPos, endPos, width1)
+                            
+                            if leftBase and rightBase then
+                                local screenLeftBase = client.WorldToScreen(leftBase)
+                                local screenRightBase = client.WorldToScreen(rightBase)
+
+                                if screenLeftBase and screenRightBase then
+                                    if lastLeftBaseScreen and lastRightBaseScreen then
+                                        draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1], screenLeftBase[2])
+                                        draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1], screenRightBase[2])
+                                    end
+
+                                    lastLeftBaseScreen = screenLeftBase
+                                    lastRightBaseScreen = screenRightBase
+                                end
+                            end
+                        end
+                    end
+
+                elseif style == 3 then
+                    -- Arrows Style
+                     for i = 1, #pLocalPath - 1 do
+                        local startPos = pLocalPath[i]
+                        local endPos = pLocalPath[i + 1]
+
+                        if startPos and endPos then
+                            arrowPathArrow(startPos, endPos, width1)
+                        end
+                    end
+                elseif style == 4 then
+                    -- L Line Style
+                    for i = 1, #pLocalPath - 1 do
+                        local pos1 = pLocalPath[i]
+                        local pos2 = pLocalPath[i + 1]
+            
+                        if pos1 and pos2 then
+                            L_line(pos1, pos2, width1)  -- Adjust the size for the perpendicular segment as needed
+                        end
+                    end
+                elseif style == 5 then
+                    -- Draw a dashed line for pLocalPath
+                    for i = 1, #pLocalPath - 1 do
+                        local pos1 = pLocalPath[i]
+                        local pos2 = pLocalPath[i + 1]
+
+                        local screenPos1 = client.WorldToScreen(pos1)
+                        local screenPos2 = client.WorldToScreen(pos2)
+
+                        if screenPos1 ~= nil and screenPos2 ~= nil and i % 2 == 1 then
+                            draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                        end
+                    end
+                elseif style == 6 then
+                    -- Draw a dashed line for pLocalPath
                     for i = 1, #pLocalPath - 1 do
                         local pos1 = pLocalPath[i]
                         local pos2 = pLocalPath[i + 1]
@@ -1144,6 +1427,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                             draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
                         end
                     end
+                end
             end
 ---------------------------------------------------------sphere
                 if Menu.Visuals.Sphere then
@@ -1211,43 +1495,120 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
 
                     -- enemy
                     if vPlayerFuture then
-
                         -- Draw lines between the predicted positions
                         if Menu.Visuals.Target.path.enable then
+                            local style = Menu.Visuals.Target.path.Style
+                            local width = Menu.Visuals.Target.path.width
+
                             if style == 1 then
-                                -- Draw a double L line in both directions
+                                local lastLeftBaseScreen, lastRightBaseScreen = nil, nil
+                                -- Pavement Style
                                 for i = 1, #vPlayerPath - 1 do
-                                    local pos1 = vPlayerPath[i]
-                                    local pos2 = vPlayerPath[i + 1]
-                        
-                                    -- Draw the left side of the L line
-                                    draw.Line(pos1[1], pos1[2], pos2[1], pos2[2])
-                                    -- Draw the right side of the L line
-                                    draw.Line(pos1[1] + 1, pos1[2] + 1, pos2[1] + 1, pos2[2] + 1)
+                                    local startPos = vPlayerPath[i]
+                                    local endPos = vPlayerPath[i + 1]
+
+                                    if startPos and endPos then
+                                        local leftBase, rightBase = drawPavement(startPos, endPos, width)
+                                        
+                                        if leftBase and rightBase then
+                                            local screenLeftBase = client.WorldToScreen(leftBase)
+                                            local screenRightBase = client.WorldToScreen(rightBase)
+
+                                            if screenLeftBase and screenRightBase then
+                                                if lastLeftBaseScreen and lastRightBaseScreen then
+                                                    draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1], screenLeftBase[2])
+                                                    draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1], screenRightBase[2])
+                                                end
+
+                                                lastLeftBaseScreen = screenLeftBase
+                                                lastRightBaseScreen = screenRightBase
+                                            end
+                                        end
+                                    end
+                                end
+
+                                -- Draw the final line segment
+                                if lastLeftBaseScreen and lastRightBaseScreen and #vPlayerPath > 0 then
+                                    local finalPos = vPlayerPath[#vPlayerPath]
+                                    local screenFinalPos = client.WorldToScreen(finalPos)
+
+                                    if screenFinalPos then
+                                        draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
+                                        draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
+                                    end
                                 end
                             elseif style == 2 then
-                                -- Draw the path with arrows
-                                -- ...
+                                local lastLeftBaseScreen, lastRightBaseScreen = nil, nil
+
+                                -- Start from the second element (i = 2)
+                                for i = 2, #vPlayerPath - 1 do
+                                    local startPos = vPlayerPath[i]
+                                    local endPos = vPlayerPath[i + 1]
+
+                                    if startPos and endPos then
+                                        local leftBase, rightBase = arrowPathArrow2(startPos, endPos, width)
+                                        
+                                        if leftBase and rightBase then
+                                            local screenLeftBase = client.WorldToScreen(leftBase)
+                                            local screenRightBase = client.WorldToScreen(rightBase)
+
+                                            if screenLeftBase and screenRightBase then
+                                                if lastLeftBaseScreen and lastRightBaseScreen then
+                                                    draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1], screenLeftBase[2])
+                                                    draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1], screenRightBase[2])
+                                                end
+
+                                                lastLeftBaseScreen = screenLeftBase
+                                                lastRightBaseScreen = screenRightBase
+                                            end
+                                        end
+                                    end
+                                end
+
                             elseif style == 3 then
-                                -- Draw arrows
-                                -- ...
+                                -- Arrows Style
+                                 for i = 1, #vPlayerPath - 1 do
+                                    local startPos = vPlayerPath[i]
+                                    local endPos = vPlayerPath[i + 1]
+
+                                    if startPos and endPos then
+                                        arrowPathArrow(startPos, endPos, width)
+                                    end
+                                end
                             elseif style == 4 then
-                                -- Draw an L line
-                                -- ...
-                            elseif style == 5 then
-                                -- Draw a dashed line
-                                -- ...
-                            elseif style == 6 then
-                                -- Draw a line
+                                -- L Line Style
                                 for i = 1, #vPlayerPath - 1 do
                                     local pos1 = vPlayerPath[i]
                                     local pos2 = vPlayerPath[i + 1]
-                        
-                                    local screenPos3 = client.WorldToScreen(pos1)
-                                    local screenPos4 = client.WorldToScreen(pos2)
-                        
-                                    if screenPos3 ~= nil and screenPos4 ~= nil then
-                                        draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+
+                                    if pos1 and pos2 then
+                                        L_line(pos1, pos2, width)  -- Adjust the size for the perpendicular segment as needed
+                                    end
+                                end
+                            elseif style == 5 then
+                                -- Draw a dashed line for vPlayerPath
+                                for i = 1, #vPlayerPath - 1 do
+                                    local pos1 = vPlayerPath[i]
+                                    local pos2 = vPlayerPath[i + 1]
+
+                                    local screenPos1 = client.WorldToScreen(pos1)
+                                    local screenPos2 = client.WorldToScreen(pos2)
+
+                                    if screenPos1 ~= nil and screenPos2 ~= nil and i % 2 == 1 then
+                                        draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                                    end
+                                end
+                            elseif style == 6 then
+                                -- Draw a dashed line for vPlayerPath
+                                for i = 1, #vPlayerPath - 1 do
+                                    local pos1 = vPlayerPath[i]
+                                    local pos2 = vPlayerPath[i + 1]
+
+                                    local screenPos1 = client.WorldToScreen(pos1)
+                                    local screenPos2 = client.WorldToScreen(pos2)
+
+                                    if screenPos1 ~= nil and screenPos2 ~= nil then
+                                        draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
                                     end
                                 end
                             end
@@ -1397,11 +1758,13 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
                     Menu.Visuals.Local.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.Local.RangeCircle)
                     Menu.Visuals.Local.path.enable = ImMenu.Checkbox("Local Path", Menu.Visuals.Local.path.enable)
                     Menu.Visuals.Local.path.Style = ImMenu.Option(Menu.Visuals.Local.path.Style, Menu.Visuals.Local.path.Styles)
+                    Menu.Visuals.Local.path.width = ImMenu.Slider("Width", Menu.Visuals.Local.path.width, 1, 20, 0.1)
                 end
 
                 if Menu.Visuals.Section == 2 then
                     Menu.Visuals.Target.path.enable = ImMenu.Checkbox("Target Path", Menu.Visuals.Target.path.enable)
                     Menu.Visuals.Target.path.Style = ImMenu.Option(Menu.Visuals.Target.path.Style, Menu.Visuals.Target.path.Styles)
+                    Menu.Visuals.Target.path.width = ImMenu.Slider("Width", Menu.Visuals.Target.path.width, 1, 20, 0.1)
                 end
 
                 if Menu.Visuals.Section == 3 then
