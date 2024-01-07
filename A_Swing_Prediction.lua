@@ -917,7 +917,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     if pLocalClass == 4 -- player is Demoman
         and Menu.Misc.ChargeReach -- menu option for such option is true
         and chargeLeft == 100 then -- charge metter is full
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range, drawVhitbox) then
                 can_attack = true
                 tick_count = tick_count + 1
                 if tick_count % (time - 2) == 0 then
