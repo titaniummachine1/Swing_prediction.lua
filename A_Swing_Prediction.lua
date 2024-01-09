@@ -985,7 +985,6 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
             elseif Menu.Misc.CritRefill then
                 if pWeapon:GetCritTokenBucket() <= 18 and fDistance > 350 then
-                    print(pWeapon:GetCritTokenBucket())
                     pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
                 end
                 Gcan_attack = true
@@ -1270,7 +1269,7 @@ end
 local Verdana = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
 --[[ Code called every frame ]]--
 local function doDraw()
-if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) then
+if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.EnableVisuals then
 
         --local pLocal = entities.GetLocalPlayer()
         pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
