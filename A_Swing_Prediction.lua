@@ -588,10 +588,56 @@ local function ChargeControl(pCmd)
     engine.SetViewAngles(EulerAngles(engine:GetViewAngles().pitch, interpolatedYaw, 0))
 end
 
+local acceleration = 750
 
+local function UpdateHomingMissile()
+    local pLocalPos = pLocal:GetAbsOrigin()
+    local vPlayerPos = vPlayerOrigin
+    local pLocalVel = pLocal:EstimateAbsVelocity()
+    local vPlayerVel = vPlayer:EstimateAbsVelocity()
+    
+    local timeStep = 0.015 -- Time step for simulation
+    local interceptPoint = nil
+    local interceptTime = 0
+
+    while interceptTime <= 3 do
+        -- Simulate the target's next position
+        vPlayerPos = vPlayerPos + (vPlayerVel * timeStep)
+
+        -- Calculate the distance to the target's new position
+        local distanceToTarget = (vPlayerPos - pLocalPos):Length()
+
+        -- Calculate the time it would take for Demoman to reach this distance
+        -- with the given acceleration (using the formula: d = 0.5 * a * t^2)
+        local timeToReach = math.sqrt(2 * distanceToTarget / acceleration)
+
+        if timeToReach <= interceptTime then
+            interceptPoint = vPlayerPos
+            break
+        end
+
+        interceptTime = interceptTime + timeStep
+    end
+
+    if interceptPoint then
+        return interceptPoint
+    end
+end
+
+local canatack = false
+
+-- Returns if the weapon can shoot
+---@param weapon Entity
+---@return boolean
+local function CanShoot(weapon)
+    local nextPrimaryAttack = weapon:GetPropFloat("LocalActiveWeaponData", "m_flNextPrimaryAttack")
+    local nextAttack = pLocal:GetPropFloat("bcc_localdata", "m_flNextAttack")
+    if (not nextPrimaryAttack) or (not nextAttack) then return false end
+
+    return (nextPrimaryAttack <= globals.CurTime()) and (nextAttack <= globals.CurTime())
+end
 
 local hasNotified = false
-
 local function checkInRangeWithLatency(playerIndex, swingRange)
     local inRange = false
     local point = nil
@@ -899,7 +945,15 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
             if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range, drawVhitbox) then
                 can_attack = true
                 tick_count = tick_count + 1
-                if tick_count % (time - 2) == 0 then
+                if tick_count >= 12 then
+                    tick_count = 0
+                    can_charge = true
+                end
+            elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range, drawVhitbox) then
+                can_attack = true
+                tick_count = tick_count + 1
+                if tick_count >= 12 then
+                    tick_count = 0
                     can_charge = true
                 end
             end
@@ -923,10 +977,13 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
     -- Inside your game loop
     if Menu.Aimbot.Aimbot then
-        if pLocal:InCond(17) then
-            if Menu.Aimbot.ChargeBot and Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not can_attack then
+        if pLocal:InCond(17) and Menu.Aimbot.ChargeBot and not can_attack then
+            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
+            if trace.fraction == 1 or trace.entity == CurrentTarget then
+                -- If the trace hit something, set the view angles to the position of the hit
+                local aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
                 -- Set view angles based on the future position of the local player
-                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0))
+                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
             end
         elseif can_attack then
             -- Set view angles based on whether silent aim is enabled
@@ -1231,7 +1288,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                     local center = pLocalFuture - Vheight -- Center of the circle at the player's feet
                     local viewPos = pLocalOrigin -- View position to shoot traces from
-                    local radius = Menu.Misc.ChargeReach and Charge_Range or swingrange  -- Radius of the circle
+                    local radius = Menu.Misc.ChargeReach and chargeLeft == 100 and Charge_Range or swingrange  -- Radius of the circle
                     local segments = 32 -- Number of segments to draw the circle
                     local angleStep = (2 * math.pi) / segments
 
