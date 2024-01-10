@@ -210,7 +210,7 @@ local ping = 0
 local swingrange = 48
 local tickRate = 66
 local tick_count = 0
-local time = 15
+local time = 14
 local Gcan_attack = false
 local Safe_Strafe = false
 local can_charge = false
@@ -221,7 +221,7 @@ local Backtrackpositions = {}
 local pLocalPath = {}
 local vPlayerPath = {}
 local PredPath = {}
-local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 80) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
 local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
@@ -260,9 +260,16 @@ local lastDeltas = {} ---@type table<number, number>
 local avgDeltas = {} ---@type table<number, number>
 local strafeAngles = {} ---@type table<number, number>
 local inaccuracy = {} ---@type table<number, number>
+local pastPositions = {} -- Stores past positions of the local player
+local maxPositions = 4 -- Number of past positions to consider
+
 
 local function CalcStrafe()
     local players = entities.FindByClass("CTFPlayer")
+    local autostrafe = gui.GetValue("Auto Strafe")
+    local flags = pLocal:GetPropInt("m_fFlags")
+    local OnGround = flags & FL_ONGROUND == 1
+
     for idx, entity in ipairs(players) do
         local entityIndex = entity:GetIndex()
 
@@ -276,6 +283,24 @@ local function CalcStrafe()
         end
 
         local v = entity:EstimateAbsVelocity()
+        if entity == pLocal then
+            table.insert(pastPositions, 1, entity:GetAbsOrigin())
+            if #pastPositions > maxPositions then
+                table.remove(pastPositions)
+            end
+        
+            
+            if not onGround and autostrafe == 2 and #pastPositions >= maxPositions then
+                v = Vector3(0, 0, 0)
+                for i = 1, #pastPositions - 1 do
+                    v = v + (pastPositions[i] - pastPositions[i + 1])
+                end
+                v = v / (maxPositions - 1)
+            else
+                v = entity:EstimateAbsVelocity()
+            end
+        end
+
         local angle = v:Angles()
 
         if lastAngles[entityIndex] == nil then
@@ -683,7 +708,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
             return inRange, point
         end
 
-        inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
             return inRange, point, can_charge
         end
@@ -762,7 +787,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
             return inRange, point
         end
 
-        inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
             return inRange, point
         end
@@ -787,7 +812,6 @@ local function OnCreateMove(pCmd)
     if not pLocal or not pLocal:IsAlive() then
         goto continue -- Return if the local player entity doesn't exist or is dead
     end
-
     -- Check if the local player is a spy
     pLocalClass = pLocal:GetPropInt("m_iClass")
     if pLocalClass == nil or pLocalClass == 8 then
@@ -805,7 +829,7 @@ local function OnCreateMove(pCmd)
     local latIn = clientstate.GetLatencyIn()
         lerp = client.GetConVar("cl_interp") or 0
         Latency = (latOut + lerp) -- Calculate the reaction time in seconds
-        Latency = math.floor(Latency * tickRate + 1) -- Convert the delay to ticks
+        Latency = math.floor(Latency * (globals.TickInterval() * 66) + 1) -- Convert the delay to ticks
         defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
 
     -- Get the local player's flags and charge meter
@@ -862,7 +886,7 @@ local function OnCreateMove(pCmd)
 --[-------- Get SwingRange --------]
 swingrange = pWeapon:GetSwingRange()
 
-local SwingHullSize = 36
+local SwingHullSize = 35.6
 
 if pWeaponDef:GetName() == "The Disciplinary Action" then
     SwingHullSize = 55.8
@@ -935,11 +959,11 @@ end
         gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
     end
 
-    local ONGround
     local Target_ONGround
     local strafeAngle = 0
     local can_attack = false
     local stop = false
+    local OnGround = flags & FL_ONGROUND == 1
 
 --[--------------Prediction-------------------]
 -- Predict both players' positions after swing
@@ -948,9 +972,8 @@ end
 
     CalcStrafe()
 
-
     if inaccuracyValue then
-        swingrange = swingrange - inaccuracyValue
+        swingrange = swingrange - math.abs(inaccuracyValue)
     end
 
     -- Local player prediction
@@ -975,8 +998,8 @@ if CurrentTarget == nil then
 end
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
 
-    local pFlags = CurrentTarget:GetPropInt("m_fFlags")
-    local DUCKING = flags & FL_DUCKING == 2
+    local VpFlags = CurrentTarget:GetPropInt("m_fFlags")
+    local DUCKING = VpFlags & FL_DUCKING == 2
     if DUCKING then
         vHitbox[2].z = 62
     else
@@ -1058,16 +1081,6 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         -- Control charge if charge bot is enabled and the local player is in condition 17
         ChargeControl(pCmd)
     end
-    
-    --Shield bashing strat
-        if pLocalClass == 4 and pLocal:InCond(17) then -- If we are charging (17 is TF_COND_SHIELD_CHARGE)
-            local Bashed = (pLocalOrigin - vPlayerOrigin):Length() < swingrange - 18 -- If we bashed on enemy
-
-            if not Bashed then -- If Demoknight bashed on enemy
-                can_attack = false
-                goto continue
-            end
-        end
 
         --Check if attack simulation was succesfull
             if can_attack == true then
