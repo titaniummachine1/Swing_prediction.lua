@@ -225,6 +225,7 @@ local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
 local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
 local backtrackTicks =  {}
+local vPlayerViewHeight = 75
 
 local vdistance = nil
 local pLocalClass = nil
@@ -445,7 +446,6 @@ local function GetBestTarget(me)
     local bestFactor = 0
     --settings.MaxDistance = swingrange * 1.2
 
-    local localPlayerOrigin = localPlayer:GetAbsOrigin()
     local localPlayerViewAngles = engine.GetViewAngles()
 
 
@@ -471,20 +471,23 @@ local function GetBestTarget(me)
                     end
 
                     local playerOrigin = player:GetAbsOrigin()
-                    local distance = math.abs(playerOrigin.x - localPlayerOrigin.x) +
-                                     math.abs(playerOrigin.y - localPlayerOrigin.y) +
-                                     math.abs(playerOrigin.z - localPlayerOrigin.z)
+                    local distance = math.abs(playerOrigin.x - pLocalOrigin.x) +
+                                     math.abs(playerOrigin.y - pLocalOrigin.y) +
+                                     math.abs(playerOrigin.z - pLocalOrigin.z)
 
-                    if distance <= settings.MaxDistance then
-                        local angles = Math.PositionAngles(localPlayerOrigin, playerOrigin + Vector3(0, 0, viewheight))
+                    if distance <= settings.MaxDistance then 
+                        local Pviewoffset = player:GetPropVector("localdata", "m_vecViewOffset[0]")
+                        local Pviewpos = playerOrigin + Pviewoffset
+
+                        local angles = Math.PositionAngles(pLocalOrigin, playerOrigin + Vector3(0, 0, viewhight))
                         local fov = Math.AngleFov(localPlayerViewAngles, angles)
 
-                        if fov <= settings.MaxFOV and distance < settings.MaxDistance then
+                        if fov <= settings.MaxFOV then
                             local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.07)
                             local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.9)
                             
                             -- Check if the player is visible
-                            local isVisible = Helpers.VisPos(player, pLocalOrigin, player:GetAbsOrigin())
+                            local isVisible = Helpers.VisPos(player, pLocalOrigin, Pviewpos)
                             
                             -- Add a visibility factor to the calculation
                             local visibilityFactor = isVisible and 1.0 or 0.5
@@ -505,13 +508,13 @@ local function GetBestTarget(me)
 end
 
 -- Define function to check InRange between the hitbox and the sphere
-    local function checkInRange(targetPos, spherePos, sphereRadius, hitbox)
+    local function checkInRange(targetPos, spherePos, sphereRadius)
 
         local inaccuracyValue = inaccuracy[vPlayer:GetIndex()]
         if not inaccuracyValue then return nil end
-
-        local hitbox_min_trigger = hitbox[1]
-        local hitbox_max_trigger = hitbox[2]
+    
+        local hitbox_min_trigger = targetPos + vHitbox[1]
+        local hitbox_max_trigger = targetPos + vHitbox[2]
 
         -- Calculate the closest point on the hitbox to the sphere
         local closestPoint = Vector3(
@@ -643,21 +646,15 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
     local point = nil
     local Backtrack = gui.GetValue("Backtrack")
     local fakelatencyON = gui.GetValue("Fake Latency")
-    local hitbox = {}
-    hitbox[1] = vPlayerOrigin + vHitbox[1]
-    hitbox[2] = vPlayerOrigin + vHitbox[2]
 
     if Backtrack == 0 and fakelatencyON == 0 then
         -- Adjust hitbox for current position
-        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18, hitbox)
+        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18)
         if inRange then
             return inRange, point
         end
 
-        -- Adjust hitbox for future position
-        hitbox[1] = vPlayerFuture + vHitbox[1]
-        hitbox[2] = vPlayerFuture + vHitbox[2]
-        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange, hitbox)
+        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
             return inRange, point
         end
@@ -675,10 +672,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
         for tick = minTick, maxTick do
             if playerTicks[playerIndex] then
                 local pastOrigin = playerTicks[playerIndex][tick]
-                hitbox[1] = pastOrigin + vHitbox[1]
-                hitbox[2] = pastOrigin + vHitbox[2]
 
-                inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange, hitbox)
+                inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
                 if inRange then
                     return inRange, point
                 end
@@ -688,15 +683,12 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
 
     if Backtrack == 1 then
         -- Adjust hitbox for current position
-        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange, hitbox)
+        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
         if inRange then
             return inRange, point
         end
 
-        -- Adjust hitbox for future position
-        hitbox[1] = vPlayerFuture + hitbox2[1]
-        hitbox[2] = vPlayerFuture + hitbox2[2]
-        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange, hitbox)
+        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
             return inRange, point
         end
@@ -907,10 +899,6 @@ if CurrentTarget == nil then
 end
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
 
-    drawVhitbox = {}
-    drawVhitbox[1] = (vPlayerFuture or vPlayerOrigin) + vHitbox[1]
-    drawVhitbox[2] = (vPlayerFuture or vPlayerOrigin) + vHitbox[2]
-
     -- Target player prediction
     if CurrentTarget:EstimateAbsVelocity() == 0 then
         -- If the target player is not accelerating, set the predicted position to their current position
@@ -924,6 +912,10 @@ end
 
         vPlayerPath = predData.pos
         vPlayerFuture = predData.pos[time]
+
+        drawVhitbox[1] = vPlayerFuture + vHitbox[1]
+        drawVhitbox[2] = vPlayerFuture + vHitbox[2]
+    
     end
 
             
@@ -942,14 +934,14 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     if pLocalClass == 4 -- player is Demoman
         and Menu.Misc.ChargeReach -- menu option for such option is true
         and chargeLeft == 100 then -- charge metter is full
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range, drawVhitbox) then
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
                 can_attack = true
                 tick_count = tick_count + 1
                 if tick_count >= 12 then
                     tick_count = 0
                     can_charge = true
                 end
-            elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range, drawVhitbox) then
+            elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
                 can_attack = true
                 tick_count = tick_count + 1
                 if tick_count >= 12 then
@@ -1040,6 +1032,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
             Safe_Strafe = false -- reset safe strafe
             can_charge = false
+            vHitbox[2].z = 82
     ::continue::
 end
 
@@ -1291,7 +1284,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                     local center = pLocalFuture - Vheight -- Center of the circle at the player's feet
                     local viewPos = pLocalOrigin -- View position to shoot traces from
-                    local radius = Menu.Misc.ChargeReach and chargeLeft == 100 and Charge_Range or swingrange  -- Radius of the circle
+                    local radius = Menu.Misc.ChargeReach and pLocalClass == 4 and chargeLeft == 100 and Charge_Range or swingrange  -- Radius of the circle
                     local segments = 32 -- Number of segments to draw the circle
                     local angleStep = (2 * math.pi) / segments
 
