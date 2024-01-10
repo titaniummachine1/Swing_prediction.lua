@@ -444,6 +444,7 @@ local function GetBestTarget(me)
 
     local bestTarget = nil
     local bestFactor = 0
+    local target_viewoffset = nil
     --settings.MaxDistance = swingrange * 1.2
 
     local localPlayerViewAngles = engine.GetViewAngles()
@@ -478,8 +479,9 @@ local function GetBestTarget(me)
                     if distance <= settings.MaxDistance then 
                         local Pviewoffset = player:GetPropVector("localdata", "m_vecViewOffset[0]")
                         local Pviewpos = playerOrigin + Pviewoffset
+                        local Pviewoffset2 = (Pviewpos - playerOrigin):Length()
 
-                        local angles = Math.PositionAngles(pLocalOrigin, playerOrigin + Vector3(0, 0, viewhight))
+                        local angles = Math.PositionAngles(pLocalOrigin, Pviewpos)
                         local fov = Math.AngleFov(localPlayerViewAngles, angles)
 
                         if fov <= settings.MaxFOV then
@@ -504,7 +506,7 @@ local function GetBestTarget(me)
             end
         end
 
-    return bestTarget
+    return bestTarget, target_viewoffset
 end
 
 -- Define function to check InRange between the hitbox and the sphere
@@ -654,7 +656,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
             return inRange, point
         end
 
-        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+        inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
             return inRange, point
         end
@@ -688,7 +690,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
             return inRange, point
         end
 
-        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+        inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
             return inRange, point
         end
@@ -899,6 +901,16 @@ if CurrentTarget == nil then
 end
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
 
+    local pFlags = CurrentTarget:GetPropInt("m_fFlags")
+    local DUCKING = flags & FL_DUCKING == 2
+    if DUCKING then
+        vHitbox[2].z = 62
+    else
+        vHitbox[2].z = 82
+    end
+
+    --vHitbox[2].z = pViewheight + 7
+
     -- Target player prediction
     if CurrentTarget:EstimateAbsVelocity() == 0 then
         -- If the target player is not accelerating, set the predicted position to their current position
@@ -915,10 +927,8 @@ end
 
         drawVhitbox[1] = vPlayerFuture + vHitbox[1]
         drawVhitbox[2] = vPlayerFuture + vHitbox[2]
-    
     end
 
-            
 --[--------------Distance check-------------------]
 -- Get current distance between local player and closest player
 vdistance = (vPlayerOrigin - pLocalOrigin):Length()
@@ -955,39 +965,40 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     local hitboxes = CurrentTarget:GetHitboxes()
     local hitbox = hitboxes[6]
     local aimpos = nil
-
-
-    if InRangePoint then
-        aimpos = InRangePoint
-    else
-        aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
-    end
-    aimposVis = aimpos -- transfer aim point to visuals
-
-    -- Calculate aim position only once
-    aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+    --else
+        --aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
+    --end
 
     -- Inside your game loop
     if Menu.Aimbot.Aimbot then
-        if pLocal:InCond(17) and Menu.Aimbot.ChargeBot and not can_attack then
-            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
-            if trace.fraction == 1 or trace.entity == CurrentTarget then
-                -- If the trace hit something, set the view angles to the position of the hit
-                local aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
-                -- Set view angles based on the future position of the local player
-                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
+            if InRangePoint then
+                aimpos = InRangePoint
+                aimposVis = aimpos -- transfer aim point to visuals
+
+                    -- Calculate aim position only once
+                aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
             end
-        elseif can_attack then
-            -- Set view angles based on whether silent aim is enabled
-            if Menu.Aimbot.Silent then
-                pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0)
+
+            if pLocal:InCond(17) and Menu.Aimbot.ChargeBot and not can_attack then
+                local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
+                if trace.fraction == 1 or trace.entity == CurrentTarget then
+                    -- If the trace hit something, set the view angles to the position of the hit
+                    local aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
+                    -- Set view angles based on the future position of the local player
+                    engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
+                end
+            elseif can_attack and aimpos then
+                -- Set view angles based on whether silent aim is enabled
+                if Menu.Aimbot.Silent then
+                    pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0)
+                else
+                    engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
+                end
             else
-                engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
+                -- Control charge if charge bot is enabled and the local player is in condition 17
+                ChargeControl(pCmd)
             end
-        else
-            -- Control charge if charge bot is enabled and the local player is in condition 17
-            ChargeControl(pCmd)
-        end
+        
     elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
         -- Control charge if charge bot is enabled and the local player is in condition 17
         ChargeControl(pCmd)
