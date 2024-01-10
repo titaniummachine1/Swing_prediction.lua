@@ -93,6 +93,7 @@ local Menu = {
         },
     },
     Misc = {
+        strafePred = true,
         ChargeControl = true,
         ChargeSensitivity = 50,
         CritRefill = {Active = true, NumCrits = 1},
@@ -209,7 +210,7 @@ local ping = 0
 local swingrange = 48
 local tickRate = 66
 local tick_count = 0
-local time = 13
+local time = 15
 local Gcan_attack = false
 local Safe_Strafe = false
 local can_charge = false
@@ -650,6 +651,32 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
     local fakelatencyON = gui.GetValue("Fake Latency")
 
     if Backtrack == 0 and fakelatencyON == 0 then
+        -- Check for charge range bug
+        if pLocalClass == 4 -- player is Demoman
+        and Menu.Misc.ChargeReach -- menu option for such option is true
+        and chargeLeft == 100 then -- charge metter is full
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
+                inRange = true
+                point = vPlayerOrigin
+                tick_count = tick_count + 1
+                if tick_count >= (time - 1) then
+                    tick_count = 0
+                    can_charge = true
+                end
+            elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
+                inRange = true
+                point = vPlayerFuture
+                tick_count = tick_count + 1
+                if tick_count >= (time - 1) then
+                    tick_count = 0
+                    can_charge = true
+                end
+            end
+            if inRange then
+                return inRange, point, can_charge
+            end
+        end
+    
         -- Adjust hitbox for current position
         inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18)
         if inRange then
@@ -658,7 +685,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
 
         inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
-            return inRange, point
+            return inRange, point, can_charge
         end
     end
 
@@ -675,6 +702,24 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
             if playerTicks[playerIndex] then
                 local pastOrigin = playerTicks[playerIndex][tick]
 
+                -- Check for charge range bug
+                if pLocalClass == 4 -- player is Demoman
+                and Menu.Misc.ChargeReach -- menu option for such option is true
+                and chargeLeft == 100 then -- charge metter is full
+                    if checkInRange(pastOrigin, pLocalOrigin, Charge_Range) then
+                        inRange = true
+                        point = vPlayerOrigin
+                        tick_count = tick_count + 1
+                        if tick_count >= (time - 1) then
+                            tick_count = 0
+                            can_charge = true
+                        end
+                    end
+                    if inRange then
+                        return inRange, point, can_charge
+                    end
+                end
+
                 inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
                 if inRange then
                     return inRange, point
@@ -684,6 +729,33 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
     end
 
     if Backtrack == 1 then
+
+        -- Check for charge range bug
+        if pLocalClass == 4 -- player is Demoman
+        and Menu.Misc.ChargeReach -- menu option for such option is true
+        and chargeLeft == 100 then -- charge metter is full
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
+                inRange = true
+                point = vPlayerOrigin
+                tick_count = tick_count + 1
+                if tick_count >= (time - 1) then
+                tick_count = 0
+                can_charge = true
+            end
+        elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
+            inRange = true
+            point = vPlayerFuture
+            tick_count = tick_count + 1
+            if tick_count >= (time - 1) then
+                tick_count = 0
+                can_charge = true
+                end
+             end
+            if inRange then
+                return inRange, point, can_charge
+            end
+        end
+                    
         -- Adjust hitbox for current position
         inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
         if inRange then
@@ -875,6 +947,8 @@ end
     stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize")
 
     CalcStrafe()
+
+
     if inaccuracyValue then
         swingrange = swingrange - inaccuracyValue
     end
@@ -886,7 +960,7 @@ end
     else
         local player = WPlayer.FromEntity(pLocal)
 
-        strafeAngle = strafeAngles[pLocal:GetIndex()] or 0
+        strafeAngle = Menu.Misc.strafePred and strafeAngles[pLocal:GetIndex()] or 0
 
         local predData = PredictPlayer(player, time, strafeAngle)
 
@@ -935,31 +1009,12 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
     -- Get distance between local player and closest player after swing
     fDistance = (vPlayerFuture - pLocalFuture):Length()
+    local inRange = false
+    local inRangePoint = nil
 
-    local inRange, InRangePoint = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange)
+    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange)
     -- Use inRange to decide if can attack
     can_attack = inRange
-
-    -- Check for charge range bug
-    if pLocalClass == 4 -- player is Demoman
-        and Menu.Misc.ChargeReach -- menu option for such option is true
-        and chargeLeft == 100 then -- charge metter is full
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
-                can_attack = true
-                tick_count = tick_count + 1
-                if tick_count >= 12 then
-                    tick_count = 0
-                    can_charge = true
-                end
-            elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
-                can_attack = true
-                tick_count = tick_count + 1
-                if tick_count >= 12 then
-                    tick_count = 0
-                    can_charge = true
-                end
-            end
-    end
 
 --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local hitboxes = CurrentTarget:GetHitboxes()
@@ -1728,6 +1783,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
             if Menu.tabs.Misc then
                 ImMenu.BeginFrame(1)
+                    Menu.Misc.strafePred = ImMenu.Checkbox("Local Strafe Pred", Menu.Misc.strafePred)
                     Menu.Misc.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Misc.ChargeReach)
                 ImMenu.EndFrame()
 
