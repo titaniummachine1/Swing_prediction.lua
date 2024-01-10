@@ -220,7 +220,7 @@ local Backtrackpositions = {}
 local pLocalPath = {}
 local vPlayerPath = {}
 local PredPath = {}
-local vHitbox = { Vector3(-20, -20, 0), Vector3(20, 20, 80) }
+local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
 local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
@@ -325,31 +325,17 @@ function Normalize(vec)
     return Vector3(vec.x / length, vec.y / length, vec.z / length)
 end
 
-local function checkPlayerState(player)
-    local flags = player:GetPropInt("m_fFlags")
-    local waterLevel = player:GetPropInt("m_nWaterLevel")
-
-    -- Constants for flag bits
-    local FL_ONGROUND = 1 << 0  -- Bit for being on the ground
-    local FL_INWATER = 1 << 9   -- Bit for being in water
-
-    local isSwimming = (flags & FL_INWATER) ~= 0 and waterLevel > 1
-    local isWalking = (flags & FL_ONGROUND) ~= 0 and waterLevel <= 1
-
-    return isSwimming, isWalking
-end
-
     -- [WIP] Predict the position of a player
     ---@param player WPlayer
     ---@param t integer
     ---@param d number?
     ---@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
     ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
-    local function PredictPlayer(player, t, d, Hitbox, shouldHitEntity)
+    local function PredictPlayer(player, t, d)
         if not gravity or not stepSize then return nil end
         local vUp = Vector3(0, 0, 1)
         local vStep = Vector3(0, 0, stepSize)
-        shouldHitEntity = shouldHitEntity or function(entity) return entity:GetIndex() ~= player:GetIndex() end --trace ignore simulated player 
+        local shouldHitEntity = function(entity) return entity:GetName() ~= player:GetName() end --trace ignore simulated player 
         local pFlags = player:GetPropInt("m_fFlags")
         -- Add the current record
         local _out = {
@@ -375,7 +361,7 @@ end
 
             --[[ Forward collision ]]
 
-            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, Hitbox[1], Hitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
+            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
             --DrawLine(last.p + vStep, pos + vStep)
             if wallTrace.fraction < 1 then
                 -- We'll collide
@@ -400,7 +386,7 @@ end
             if not onGround1 then downStep = Vector3() end
 
             -- Ground collision
-            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, Hitbox[1], Hitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
+            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
             if groundTrace.fraction < 1 then
                 -- We'll hit the ground
                 local normal = groundTrace.plane
@@ -408,7 +394,7 @@ end
 
                 -- Check the ground angle
                 if angle < 45 then
-                    if onGround1 and player:GetName() == pLocal:GetName() and gui.GetValue("Bunny Hop") == 1 and input.IsButtonDown(KEY_SPACE) then
+                    if onGround1 and player:GetIndex() == pLocal:GetIndex() and gui.GetValue("Bunny Hop") == 1 and input.IsButtonDown(KEY_SPACE) then
                         -- Jump
                         if gui.GetValue("Duck Jump") == 1 then
                             vel.z = 277
@@ -436,7 +422,7 @@ end
 
             -- Gravity
             --local isSwimming, isWalking = checkPlayerState(player) -- todo: fix this
-            if not onGround1 and isSwimming then
+            if not onGround1 then
                 vel.z = vel.z - gravity * globals.TickInterval()
             end
 
@@ -445,14 +431,6 @@ end
         end
 
         return _out
-    end
-
-    local function getBacktrackTicks(fakeLatency)
-        local tickInterval = 0.015  -- Typical value is 0.015 for 66-tick servers
-        local totalLatencyMs = fakeLatency + 200  -- Total latency in milliseconds
-        local totalLatencySeconds = totalLatencyMs / 1000  -- Convert milliseconds to seconds
-        local backtrackTicks = math.floor(totalLatencySeconds / tickInterval)  -- Calculate the number of ticks
-        return backtrackTicks
     end
 
 local playerTicks = {}
@@ -563,52 +541,35 @@ local Hitbox = {
     Chest = 7
 }
 
--- Control the player's charge by adjusting the view angles based on mouse input
--- Parameters:
 --   pCmd (CUserCmd): The user command
 local function ChargeControl(pCmd)
-    -- Get the current view angles
-    local sensitivity = Menu.Misc.ChargeSensitivity / 2
+    -- Get the current view angles and sensitivity
+    local sensitivity = Menu.Misc.ChargeSensitivity
     local currentAngles = engine.GetViewAngles()
 
     -- Get the mouse motion
-    local mouseDeltaX = -(pCmd.mousedx * sensitivity / 10)
+    local mouseDeltaX = -(pCmd.mousedx * sensitivity)
 
     -- Calculate the new yaw angle
     local newYaw = currentAngles.yaw + mouseDeltaX
 
+    -- Calculate the maximum allowed angle change to maintain a minimum velocity of 350
+    local maxAngleChange = 55
+
+    -- Clamp the angle change to the maximum allowed
+    local angleChange = newYaw - currentAngles.yaw
+    angleChange = math.max(math.min(angleChange, maxAngleChange), -maxAngleChange)
+
     -- Interpolate between the current yaw and the new yaw
-    local interpolationFraction = 1 / 66  -- Assuming the function is called 66 times per second
-    local interpolatedYaw = currentAngles.yaw + (newYaw - currentAngles.yaw) * interpolationFraction
+    local interpolationTime = 0.15 -- Time in seconds for a full transition
+    local interpolationFraction = 1 / (66 * interpolationTime) -- Adjusted for smoother transition
+    local interpolatedYaw = currentAngles.yaw + angleChange * interpolationFraction
 
     -- Set the new view angles
-    pCmd:SetViewAngles(currentAngles.pitch, interpolatedYaw, 0)
+    engine.SetViewAngles(EulerAngles(engine:GetViewAngles().pitch, interpolatedYaw, 0))
 end
 
 
-local function CalculateUniformHitbox(me)
-    local absOrigin = me:GetAbsOrigin()
-    local box = me:HitboxSurroundingBox()
-    local min, max = box[1], box[2]
-
-    -- Calculate the dimensions of the original hitbox
-    local width = max.x - min.x
-    local length = max.y - min.y
-    local height = max.z - min.z  -- Original height is preserved
-
-    -- Determine the smallest dimension between width and length
-    local smallestDimension = math.min(width, length)
-
-    -- Create a new uniform hitbox based on the smallest dimension for width and length
-    local uniformMin = Vector3(min.x, min.y, min.z)
-    local uniformMax = Vector3(min.x + smallestDimension, min.y + smallestDimension, min.z + height)
-
-    -- Calculate the offsets for the uniform hitbox
-    local minOffset = uniformMin - absOrigin
-    local maxOffset = uniformMax - absOrigin
-
-    return {minOffset, maxOffset}
-end
 
 local hasNotified = false
 
@@ -617,10 +578,9 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
     local point = nil
     local Backtrack = gui.GetValue("Backtrack")
     local fakelatencyON = gui.GetValue("Fake Latency")
-    local hitbox2 = CalculateUniformHitbox(vPlayer)
     local hitbox = {}
-    hitbox[1] = vPlayerOrigin + hitbox2[1]
-    hitbox[2] = vPlayerOrigin + hitbox2[2]
+    hitbox[1] = vPlayerOrigin + vHitbox[1]
+    hitbox[2] = vPlayerOrigin + vHitbox[2]
 
     if Backtrack == 0 and fakelatencyON == 0 then
         -- Adjust hitbox for current position
@@ -630,8 +590,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
         end
 
         -- Adjust hitbox for future position
-        hitbox[1] = vPlayerFuture + hitbox2[1]
-        hitbox[2] = vPlayerFuture + hitbox2[2]
+        hitbox[1] = vPlayerFuture + vHitbox[1]
+        hitbox[2] = vPlayerFuture + vHitbox[2]
         inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange, hitbox)
         if inRange then
             return inRange, point
@@ -869,7 +829,7 @@ end
 
         strafeAngle = strafeAngles[pLocal:GetIndex()] or 0
 
-        local predData = PredictPlayer(player, time, strafeAngle, vHitbox)
+        local predData = PredictPlayer(player, time, strafeAngle)
 
         pLocalPath = predData.pos
         pLocalFuture = predData.pos[time] + viewOffset
@@ -895,7 +855,7 @@ end
 
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
 
-        local predData = PredictPlayer(player, time, strafeAngle, drawVhitbox)
+        local predData = PredictPlayer(player, time, strafeAngle)
 
         vPlayerPath = predData.pos
         vPlayerFuture = predData.pos[time]
@@ -947,7 +907,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         if pLocal:InCond(17) then
             if Menu.Aimbot.ChargeBot and Helpers.VisPos(CurrentTarget, vPlayerFuture, pLocalFuture) and not can_attack then
                 -- Set view angles based on the future position of the local player
-                pCmd:SetViewAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0)
+                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aimpos.yaw, 0))
             end
         elseif can_attack then
             -- Set view angles based on whether silent aim is enabled
@@ -1044,35 +1004,6 @@ end
 local function NormalizeVector(v)
     local length = math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
     return Vector3(v.x / length, v.y / length, v.z / length)
-end
-
-
--- Modified dirArrow function
-local function dirArrow(startPos, endPos, arrowLength)
-    local direction =  endPos - startPos
-    if direction:Length() == 0 then return end -- Avoid division by zero
-    direction = NormalizeVector(direction)
-
-    local screenStart = client.WorldToScreen(startPos)
-    local screenEnd = client.WorldToScreen(endPos)
-
-    if screenStart and screenEnd then
-        -- Draw main line of the arrow
-        draw.Line(screenStart[1], screenStart[2], screenEnd[1], screenEnd[2])
-
-        -- Calculate and draw the arrowhead
-        local perpendicularDirection = Vector3(-direction.y, direction.x, 0)
-        local arrowBase = endPos - direction * arrowLength * 0.2
-        local leftHead = arrowBase + perpendicularDirection * arrowLength * 0.1
-        local rightHead = arrowBase - perpendicularDirection * arrowLength * 0.1
-        local screenLeftHead = client.WorldToScreen(leftHead)
-        local screenRightHead = client.WorldToScreen(rightHead)
-
-        if screenLeftHead and screenRightHead then
-            draw.Line(screenEnd[1], screenEnd[2], screenLeftHead[1], screenLeftHead[2])
-            draw.Line(screenEnd[1], screenEnd[2], screenRightHead[1], screenRightHead[2])
-        end
-    end
 end
 
 local function arrowPathArrow2(startPos, endPos, width)
