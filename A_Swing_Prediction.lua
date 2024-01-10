@@ -541,6 +541,25 @@ local Hitbox = {
     Chest = 7
 }
 
+local function calculateMaxAngleChange(currentVelocity, minVelocity, maxTurnRate)
+    -- Assuming a linear relationship between turn rate and velocity drop
+    -- More complex relationships will require a more sophisticated model
+
+    -- If current velocity is already below the threshold, no turning is allowed
+    if currentVelocity < minVelocity then
+        return 0
+    end
+
+    -- Calculate the proportion of velocity we can afford to lose
+    local velocityBuffer = currentVelocity - minVelocity
+
+    -- Assuming maxTurnRate is the turn rate at which the velocity would drop to zero
+    -- Calculate the maximum turn rate that would reduce the velocity to the threshold
+    local maxSafeTurnRate = (velocityBuffer / currentVelocity) * maxTurnRate
+
+    return maxSafeTurnRate
+end
+
 --   pCmd (CUserCmd): The user command
 local function ChargeControl(pCmd)
     -- Get the current view angles and sensitivity
@@ -554,7 +573,7 @@ local function ChargeControl(pCmd)
     local newYaw = currentAngles.yaw + mouseDeltaX
 
     -- Calculate the maximum allowed angle change to maintain a minimum velocity of 350
-    local maxAngleChange = 55
+    local maxAngleChange = calculateMaxAngleChange(pLocal:EstimateAbsVelocity():Length(), 350, 55) -- Define this function based on your game mechanics
 
     -- Clamp the angle change to the maximum allowed
     local angleChange = newYaw - currentAngles.yaw
