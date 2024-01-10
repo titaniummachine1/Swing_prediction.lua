@@ -675,8 +675,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
         for tick = minTick, maxTick do
             if playerTicks[playerIndex] then
                 local pastOrigin = playerTicks[playerIndex][tick]
-                hitbox[1] = pastOrigin + hitbox2[1]
-                hitbox[2] = pastOrigin + hitbox2[2]
+                hitbox[1] = pastOrigin + vHitbox[1]
+                hitbox[2] = pastOrigin + vHitbox[2]
 
                 inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange, hitbox)
                 if inRange then
@@ -992,6 +992,9 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
             else
                 engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
             end
+        else
+            -- Control charge if charge bot is enabled and the local player is in condition 17
+            ChargeControl(pCmd)
         end
     elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
         -- Control charge if charge bot is enabled and the local player is in condition 17
