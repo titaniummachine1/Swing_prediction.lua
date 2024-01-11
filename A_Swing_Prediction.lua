@@ -676,7 +676,6 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
         
         -- Adjust hitbox for current position
         inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18)
-        print(inRange)
         if inRange then
             return inRange, point
         end
