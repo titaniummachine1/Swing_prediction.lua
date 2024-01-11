@@ -206,11 +206,12 @@ local hitbox_Width = 24
 local isMelee = false
 local mresolution = 64
 local pLocal = entities.GetLocalPlayer()
+local players = entities.FindByClass("CTFPlayer")
 local ping = 0
 local swingrange = 48
 local tickRate = 66
 local tick_count = 0
-local time = 14
+local time = 13
 local Gcan_attack = false
 local Safe_Strafe = false
 local can_charge = false
@@ -224,7 +225,12 @@ local PredPath = {}
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 80) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
-local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
+if pLocal then
+    local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
+else
+    local stepSize = 18
+end
+
 local backtrackTicks =  {}
 local vPlayerViewHeight = 75
 
@@ -265,9 +271,8 @@ local maxPositions = 4 -- Number of past positions to consider
 
 
 local function CalcStrafe()
-    local players = entities.FindByClass("CTFPlayer")
     local autostrafe = gui.GetValue("Auto Strafe")
-    local flags = pLocal:GetPropInt("m_fFlags")
+    local flags = entities.GetLocalPlayer():GetPropInt("m_fFlags")
     local OnGround = flags & FL_ONGROUND == 1
 
     for idx, entity in ipairs(players) do
@@ -462,84 +467,66 @@ end
 
 local playerTicks = {}
 
-local function GetBestTarget(me)
+local playerTicks = {}
+local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
 
-    local players = entities.FindByClass("CTFPlayer")
+local function GetBestTarget(me)
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
 
     local bestTarget = nil
     local bestFactor = 0
-    local target_viewoffset = nil
-    --settings.MaxDistance = swingrange * 1.2
-
     local localPlayerViewAngles = engine.GetViewAngles()
 
+    for _, player in pairs(players) do
+        if player == nil or not player:IsAlive()
+        or player:IsDormant()
+        or player == me or player:GetTeamNumber() == me:GetTeamNumber()
+        or gui.GetValue("ignore cloaked") == 1 and player:InCond(4) then
+            goto continue
+        end
+    
+        local numBacktrackTicks = gui.GetValue("Fake Latency") == 1 and maxTick or gui.GetValue("Fake Latency") == 0 and gui.GetValue("Backtrack") == 1 and 4 or 0
 
-    for _, player in ipairs(players) do
-        if player ~= nil and player:GetIndex() ~= pLocal:GetIndex() and player:IsAlive() and not player:IsDormant() then
-            if player:GetTeamNumber() ~= localPlayer:GetTeamNumber() then
-                
-        
-                    --local minTick = math.floor((defFakeLatency / 900) / 0.015)
-                    local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
+        if numBacktrackTicks ~= 0 then
+            local playerIndex = player:GetIndex()
+            playerTicks[playerIndex] = playerTicks[playerIndex] or {}
+            table.insert(playerTicks[playerIndex], player:GetAbsOrigin())
 
-                    local numBacktrackTicks = gui.GetValue("Fake Latency") == 1 and maxTick or gui.GetValue("Fake Latency") == 0 and gui.GetValue("Backtrack") == 1 and 4 or 0
-
-                    if numBacktrackTicks ~= 0 then
-                        local playerIndex = player:GetIndex()
-                        playerTicks[playerIndex] = playerTicks[playerIndex] or {}
-                        table.insert(playerTicks[playerIndex], player:GetAbsOrigin())
-
-                        -- If the player's tick count exceeds maxinteger, remove the oldest tick
-                        if #playerTicks[playerIndex] > numBacktrackTicks then
-                            table.remove(playerTicks[playerIndex], 1)
-                        end
-                    end
-
-                    local playerOrigin = player:GetAbsOrigin()
-                    local distance = math.abs(playerOrigin.x - pLocalOrigin.x) +
-                                     math.abs(playerOrigin.y - pLocalOrigin.y) +
-                                     math.abs(playerOrigin.z - pLocalOrigin.z)
-
-                    if distance <= settings.MaxDistance then 
-                        local Pviewoffset = player:GetPropVector("localdata", "m_vecViewOffset[0]")
-                        local Pviewpos = playerOrigin + Pviewoffset
-                        local Pviewoffset2 = (Pviewpos - playerOrigin):Length()
-
-                        local angles = Math.PositionAngles(pLocalOrigin, Pviewpos)
-                        local fov = Math.AngleFov(localPlayerViewAngles, angles)
-
-                        if fov <= settings.MaxFOV then
-                            local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.07)
-                            local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, settings.MaxFOV, 1, 0.9)
-                            
-                            -- Check if the player is visible
-                            local isVisible = Helpers.VisPos(player, pLocalOrigin, Pviewpos)
-                            
-                            -- Add a visibility factor to the calculation
-                            local visibilityFactor = isVisible and 1.0 or 0.5
-
-                            local factor = distanceFactor * fovFactor * visibilityFactor
-
-                            if factor > bestFactor then
-                                bestTarget = player
-                                bestFactor = factor
-                            end
-                        end
-                    end
-                end
+            if #playerTicks[playerIndex] > numBacktrackTicks then
+                table.remove(playerTicks[playerIndex], 1)
             end
         end
 
-    return bestTarget, target_viewoffset
+        local playerOrigin = player:GetAbsOrigin()
+        local distance = (playerOrigin - localPlayer:GetAbsOrigin()):Length()
+
+        if distance <= 770 then
+            local Pviewoffset = player:GetPropVector("localdata", "m_vecViewOffset[0]")
+            local Pviewpos = playerOrigin + Pviewoffset
+
+            local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), Pviewpos)
+            local fov = Math.AngleFov(localPlayerViewAngles, angles)
+
+            if fov <= Menu.Aimbot.AimbotFOV then
+                local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.9)
+                local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, Menu.Aimbot.AimbotFOV, 1, 1)
+
+                local factor = distanceFactor * fovFactor
+                if factor > bestFactor then
+                    bestTarget = player
+                    bestFactor = factor
+                end
+            end
+        end
+        ::continue::
+    end
+
+    return bestTarget
 end
 
 -- Define function to check InRange between the hitbox and the sphere
     local function checkInRange(targetPos, spherePos, sphereRadius)
-
-        local inaccuracyValue = inaccuracy[vPlayer:GetIndex()]
-        if not inaccuracyValue then return nil end
     
         local hitbox_min_trigger = targetPos + vHitbox[1]
         local hitbox_max_trigger = targetPos + vHitbox[2]
@@ -655,19 +642,6 @@ local function UpdateHomingMissile()
     end
 end
 
-local canatack = false
-
--- Returns if the weapon can shoot
----@param weapon Entity
----@return boolean
-local function CanShoot(weapon)
-    local nextPrimaryAttack = weapon:GetPropFloat("LocalActiveWeaponData", "m_flNextPrimaryAttack")
-    local nextAttack = pLocal:GetPropFloat("bcc_localdata", "m_flNextAttack")
-    if (not nextPrimaryAttack) or (not nextAttack) then return false end
-
-    return (nextPrimaryAttack <= globals.CurTime()) and (nextAttack <= globals.CurTime())
-end
-
 local hasNotified = false
 local function checkInRangeWithLatency(playerIndex, swingRange)
     local inRange = false
@@ -677,9 +651,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
 
     if Backtrack == 0 and fakelatencyON == 0 then
         -- Check for charge range bug
-        if pLocalClass == 4 -- player is Demoman
-        and Menu.Misc.ChargeReach -- menu option for such option is true
-        and chargeLeft == 100 then -- charge metter is full
+        if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 then -- charge metter is full
             if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
                 inRange = true
                 point = vPlayerOrigin
@@ -701,49 +673,46 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
                 return inRange, point, can_charge
             end
         end
-    
+        
         -- Adjust hitbox for current position
         inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18)
+        print(inRange)
         if inRange then
             return inRange, point
         end
+
 
         inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
             return inRange, point, can_charge
         end
-    end
-
-    if fakelatencyON == 1 then
+    elseif fakelatencyON == 1 then
         if not hasNotified then
             Notify.Simple("Fake Latency is enabled", " this may cause issues with the script", 7)
             hasNotified = true
         end
 
         local minTick = 1
-        local maxTick = #playerTicks[playerIndex]
+        maxTick = #playerTicks[playerIndex]
 
         for tick = minTick, maxTick do
             if playerTicks[playerIndex] then
                 local pastOrigin = playerTicks[playerIndex][tick]
 
-                -- Check for charge range bug
-                if pLocalClass == 4 -- player is Demoman
-                and Menu.Misc.ChargeReach -- menu option for such option is true
-                and chargeLeft == 100 then -- charge metter is full
-                    if checkInRange(pastOrigin, pLocalOrigin, Charge_Range) then
-                        inRange = true
-                        point = vPlayerOrigin
-                        tick_count = tick_count + 1
-                        if tick_count >= (time - 1) then
-                            tick_count = 0
-                            can_charge = true
+                        -- Check for charge range bug
+                        if pLocalClass == 4 -- player is Demoman
+                            and Menu.Misc.ChargeReach -- menu option for such option is true
+                            and chargeLeft == 100 then -- charge metter is full
+                            if checkInRange(pastOrigin, pLocalOrigin, Charge_Range) then
+                                inRange = true
+                                point = vPlayerOrigin
+                                tick_count = tick_count + 1
+                                if tick_count >= (time - 1) then
+                                tick_count = 0
+                                can_charge = true
+                            end
+                            end
                         end
-                    end
-                    if inRange then
-                        return inRange, point, can_charge
-                    end
-                end
 
                 inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
                 if inRange then
@@ -751,43 +720,41 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
                 end
             end
         end
-    end
-
-    if Backtrack == 1 then
+    elseif Backtrack == 1 then
 
         -- Check for charge range bug
         if pLocalClass == 4 -- player is Demoman
-        and Menu.Misc.ChargeReach -- menu option for such option is true
-        and chargeLeft == 100 then -- charge metter is full
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
-                inRange = true
-                point = vPlayerOrigin
-                tick_count = tick_count + 1
-                if tick_count >= (time - 1) then
-                tick_count = 0
-                can_charge = true
-            end
-        elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
-            inRange = true
-            point = vPlayerFuture
-            tick_count = tick_count + 1
-            if tick_count >= (time - 1) then
-                tick_count = 0
-                can_charge = true
+                and Menu.Misc.ChargeReach -- menu option for such option is true
+                and chargeLeft == 100 then -- charge metter is full
+                if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
+                    inRange = true
+                    point = vPlayerOrigin
+                    tick_count = tick_count + 1
+                    if tick_count >= (time - 1) then
+                    tick_count = 0
+                    can_charge = true
+                elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
+                    inRange = true
+                    point = vPlayerFuture
+                    tick_count = tick_count + 1
+                    if tick_count >= (time - 1) then
+                        tick_count = 0
+                        can_charge = true
+                        end
+                    end
+                    if inRange then
+                        return inRange, point, can_charge
+                    end
                 end
-             end
-            if inRange then
-                return inRange, point, can_charge
-            end
         end
-                    
+
         -- Adjust hitbox for current position
         inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
         if inRange then
             return inRange, point
         end
 
-        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+        inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
         if inRange then
             return inRange, point
         end
@@ -903,6 +870,7 @@ end
 
 --[-----Get best target------------------]
     local keybind = Menu.Keybind
+    players = entities.FindByClass("CTFPlayer")
         if keybind == 0 then
             -- Check if player has no key bound
             CurrentTarget = GetBestTarget(pLocal)
@@ -1072,7 +1040,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 else
                     engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
                 end
-            else
+            elseif pLocalClass == 4 then
                 -- Control charge if charge bot is enabled and the local player is in condition 17
                 ChargeControl(pCmd)
             end
@@ -1311,6 +1279,7 @@ local function handleKeybind(noKeyText, keybind, keybindName)
                     -- Reset keybind if the Escape key is pressed
                     keybind = 0
                     KeybindName = "Always On"
+                    Notify.Simple("Keybind Success", "Bound Key: " .. KeybindName, 2)
                 else
                     -- Update keybind with the pressed key
                     keybind = pressedKey
