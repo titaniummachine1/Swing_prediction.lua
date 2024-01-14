@@ -525,31 +525,72 @@ local function GetBestTarget(me)
     return bestTarget
 end
 
--- Define function to check InRange between the hitbox and the sphere
-    local function checkInRange(targetPos, spherePos, sphereRadius)
-    
-        local hitbox_min_trigger = targetPos + vHitbox[1]
-        local hitbox_max_trigger = targetPos + vHitbox[2]
+local can_attack = false
+local OriginalAngles = Vector3()
+local OriginalPosition = Vector3()
+local lastswingtracedata = {}
+local swingresult
 
-        -- Calculate the closest point on the hitbox to the sphere
-        local closestPoint = Vector3(
-            math.max(hitbox_min_trigger.x, math.min(spherePos.x, hitbox_max_trigger.x)),
-            math.max(hitbox_min_trigger.y, math.min(spherePos.y, hitbox_max_trigger.y)),
-            math.max(hitbox_min_trigger.z, math.min(spherePos.z, hitbox_max_trigger.z))
-        )
+-- Function to check if target is in range
+local function checkInRange(targetPos, spherePos, sphereRadius, pWeapon)
+    local hitbox_min_trigger = targetPos + vHitbox[1]
+    local hitbox_max_trigger = targetPos + vHitbox[2]
 
-        -- Calculate the vector from the closest point to the sphere center
-        local distanceAlongVector = (spherePos - closestPoint):Length()
-            -- Compare the distance along the vector to the sum of the radius
-            if sphereRadius > distanceAlongVector then
-                return true, closestPoint
-            else
-                -- Not InRange
-                return false, nil
-            end
+    -- Calculate the closest point on the hitbox to the sphere
+    local closestPoint = Vector3(
+        math.max(hitbox_min_trigger.x, math.min(spherePos.x, hitbox_max_trigger.x)),
+        math.max(hitbox_min_trigger.y, math.min(spherePos.y, hitbox_max_trigger.y)),
+        math.max(hitbox_min_trigger.z, math.min(spherePos.z, hitbox_max_trigger.z))
+    )
+
+    -- Calculate the distance from the closest point to the sphere center
+    local distanceAlongVector = (spherePos - closestPoint):Length()
+
+    -- Check if the target is within the sphere radius
+    if sphereRadius > distanceAlongVector then
+        -- Target is in range, store data for PropUpdate
+        OriginalPosition = pLocal:GetPropVector("tfnonlocaldata", "m_vecOrigin")
+        OriginalAngles = pLocal:GetPropVector("tfnonlocaldata", "m_angEyeAngles[0]")
+        lastswingtracedata = {pWeapon, spherePos, closestPoint}
+        return true, closestPoint
+    else
+        lastswingtracedata = nil
+        -- Target is not in range
+        return false, nil
     end
-    
-    
+end
+
+
+-- PostPropUpdate function to adjust player position and angle
+local function PropUpdate()
+        if lastswingtracedata and not can_attack then
+            local pWeapon = lastswingtracedata[1]
+            local spherePos = lastswingtracedata[2]
+            local closestPoint = lastswingtracedata[3]
+            local Angle = Math.PositionAngles(spherePos, closestPoint)
+
+            -- Adjust player position and view angles for swing trace
+            pLocal:SetPropVector(spherePos, "tfnonlocaldata", "m_vecOrigin")
+            pLocal:SetPropVector(Vector3(Angle.x, Angle.y, Angle.z), "tfnonlocaldata", "m_angEyeAngles[0]")
+
+            -- Perform the swing trace
+            local SwingTrace = pLocal.DoSwingTrace(pWeapon)
+            swingresult = SwingTrace
+
+        -- Reset the player's original position and view angles
+        pLocal:SetPropVector(OriginalPosition, "tfnonlocaldata", "m_vecOrigin")
+        pLocal:SetPropVector(OriginalAngles, "tfnonlocaldata", "m_angEyeAngles[0]")
+
+        -- Clear last swing trace data
+        lastswingtracedata = nil
+    end
+end
+
+callbacks.Unregister("PostPropUpdate", "swingcheck")            -- Unregister the "CreateMove" callback
+callbacks.Register("PostPropUpdate","swingcheck", PropUpdate)
+
+
+
 
 local Hitbox = {
     Head = 1,
@@ -643,7 +684,7 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeWithLatency(playerIndex, swingRange)
+local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
     local inRange = false
     local point = nil
     local Backtrack = gui.GetValue("Backtrack")
@@ -675,13 +716,13 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
         end
         
         -- Adjust hitbox for current position
-        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18)
+        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18, pWeapon, cmd)
         if inRange then
             return inRange, point
         end
 
 
-        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange, pWeapon, cmd)
         if inRange then
             return inRange, point, can_charge
         end
@@ -713,7 +754,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
                             end
                         end
 
-                inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange)
+                inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange, pWeapon, cmd)
                 if inRange then
                     return inRange, point
                 end
@@ -748,12 +789,12 @@ local function checkInRangeWithLatency(playerIndex, swingRange)
         end
 
         -- Adjust hitbox for current position
-        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
+        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange, pWeapon, cmd)
         if inRange then
             return inRange, point
         end
 
-        inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+        inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange, pWeapon, cmd)
         if inRange then
             return inRange, point
         end
@@ -928,7 +969,7 @@ end
 
     local Target_ONGround
     local strafeAngle = 0
-    local can_attack = false
+    can_attack = false
     local stop = false
     local OnGround = flags & FL_ONGROUND == 1
 
@@ -1002,7 +1043,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     local inRange = false
     local inRangePoint = nil
 
-    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange)
+    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd)
     -- Use inRange to decide if can attack
     can_attack = inRange
 
