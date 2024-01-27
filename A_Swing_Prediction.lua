@@ -102,6 +102,7 @@ local Menu = {
         InstantAttack = true,
         ChargeReach = false,
         TroldierAssist = false,
+        advancedHitreg = false,
     },
     Keybind = KEY_NONE,
     KeybindName = "Always On",
@@ -212,7 +213,7 @@ local swingrange = 48
 local tickRate = 66
 local tick_count = 0
 local time = 13
-local Gcan_attack = false
+local can_attack = false
 local Safe_Strafe = false
 local can_charge = false
 local Charge_Range = 128
@@ -525,11 +526,10 @@ local function GetBestTarget(me)
     return bestTarget
 end
 
-local can_attack = false
-local OriginalAngles = Vector3()
-local OriginalPosition = Vector3()
-local lastswingtracedata = {}
-local swingresult
+-- Global flags and data storage
+local attackReady = false
+local attackData = {}
+local isAttackSuccessful = false
 
 -- Function to check if target is in range
 local function checkInRange(targetPos, spherePos, sphereRadius, pWeapon)
@@ -548,50 +548,60 @@ local function checkInRange(targetPos, spherePos, sphereRadius, pWeapon)
 
     -- Check if the target is within the sphere radius
     if sphereRadius > distanceAlongVector then
-        -- Target is in range, store data for PropUpdate
-        OriginalPosition = pLocal:GetPropVector("tfnonlocaldata", "m_vecOrigin")
-        OriginalAngles = pLocal:GetPropVector("tfnonlocaldata", "m_angEyeAngles[0]")
-        lastswingtracedata = {pWeapon, spherePos, closestPoint}
-        return true, closestPoint
+        if not Menu.Misc.advancedHitreg then return true, closestPoint end
+        if Menu.Misc.ChargeReach and pLocalClass == 4 and chargeLeft == 100 then return true, closestPoint end
+
+        -- Prepare data for PropUpdate
+        attackReady = true
+        attackData = {
+            pWeapon = pWeapon,
+            spherePos = spherePos,
+            closestPoint = closestPoint,
+            originalPosition = pLocal:GetPropVector("tfnonlocaldata", "m_vecOrigin"),
+            originalAngles = pLocal:GetPropVector("tfnonlocaldata", "m_angEyeAngles[0]")
+        }
+        return isAttackSuccessful, closestPoint
     else
-        lastswingtracedata = nil
         -- Target is not in range
         return false, nil
     end
 end
 
+local counter = 0
 
 -- PostPropUpdate function to adjust player position and angle
 local function PropUpdate()
-        if lastswingtracedata and not can_attack then
-            local pWeapon = lastswingtracedata[1]
-            local spherePos = lastswingtracedata[2]
-            local closestPoint = lastswingtracedata[3]
-            if spherePos and closestPoint then
-                local Angle = Math.PositionAngles(spherePos, closestPoint)
+    counter = counter + 1
+    if counter % 2 == 0 and attackReady and Menu.Misc.advancedHitreg then
+        local angle = Math.PositionAngles(attackData.spherePos, attackData.closestPoint)
 
-                -- Adjust player position and view angles for swing trace
-                pLocal:SetPropVector(spherePos, "tfnonlocaldata", "m_vecOrigin")
-                pLocal:SetPropVector(Vector3(Angle.x, Angle.y, Angle.z), "tfnonlocaldata", "m_angEyeAngles[0]")
+        -- Adjust player position and view angles for swing trace
+        pLocal:SetPropVector(attackData.spherePos, "tfnonlocaldata", "m_vecOrigin")
+        pLocal:SetPropVector(Vector3(angle.x, angle.y, angle.z), "tfnonlocaldata", "m_angEyeAngles[0]")
 
-                -- Perform the swing trace
-                local SwingTrace = pLocal.DoSwingTrace(pWeapon)
-                swingresult = SwingTrace
+        -- Perform the swing trace
+        local swingTraceResult = pLocal.DoSwingTrace(attackData.pWeapon)
 
-            -- Reset the player's original position and view angles
-            pLocal:SetPropVector(OriginalPosition, "tfnonlocaldata", "m_vecOrigin")
-            pLocal:SetPropVector(OriginalAngles, "tfnonlocaldata", "m_angEyeAngles[0]")
-
-            -- Clear last swing trace data
-            lastswingtracedata = nil
+        -- Check if the swing trace hit something
+        if swingTraceResult and swingTraceResult.fraction < 1 then
+            -- Attack hit
+            isAttackSuccessful = true
+        else
+            isAttackSuccessful = false  -- Reset attack success flag
         end
+
+        -- Reset the player's original position and view angles
+        pLocal:SetPropVector(attackData.originalPosition, "tfnonlocaldata", "m_vecOrigin")
+        pLocal:SetPropVector(attackData.originalAngles, "tfnonlocaldata", "m_angEyeAngles[0]")
+
+        -- Reset the flags and clear data
+        attackReady = false
+        attackData = {}
     end
 end
 
-callbacks.Unregister("PostPropUpdate", "swingcheck")            -- Unregister the "CreateMove" callback
-callbacks.Register("PostPropUpdate","swingcheck", PropUpdate)
-
-
+callbacks.Unregister("PostPropUpdate", "MyPostPropUpdate")
+callbacks.Register("PostPropUpdate", "MyPostPropUpdate", PropUpdate)
 
 
 local Hitbox = {
@@ -716,7 +726,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
                 return inRange, point, can_charge
             end
         end
-        
+
         -- Adjust hitbox for current position
         inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18, pWeapon, cmd)
         if inRange then
@@ -860,7 +870,7 @@ local function OnCreateMove(pCmd)
             pUsingMargetGarden = true
             -- Set "pUsingProjectileWeapon" to true
         end                                        -- Set "pUsingProjectileWeapon" to false
-    
+
 --[--Troldier assist--]
     if Menu.Misc.TroldierAssist then
         local state = ""
@@ -994,6 +1004,9 @@ end
         local player = WPlayer.FromEntity(pLocal)
 
         strafeAngle = Menu.Misc.strafePred and strafeAngles[pLocal:GetIndex()] or 0
+        if not Menu.Misc.advancedHitreg then
+            swingrange = swingrange - math.abs(strafeAngle)
+        end
 
         local predData = PredictPlayer(player, time, strafeAngle)
 
@@ -1006,6 +1019,7 @@ if CurrentTarget == nil then
     vPlayerFuture = nil
     return
 end
+
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
 
     local VpFlags = CurrentTarget:GetPropInt("m_fFlags")
@@ -1043,7 +1057,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     -- Get distance between local player and closest player after swing
     fDistance = (vPlayerFuture - pLocalFuture):Length()
     local inRange = false
-    local inRangePoint = nil
+    local inRangePoint = Vector3(0, 0, 0)
 
     inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd)
     -- Use inRange to decide if can attack
@@ -1054,7 +1068,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     local hitbox = hitboxes[6]
     local aimpos = nil
     --else
-        --aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
+        aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
     --end
 
     -- Inside your game loop
@@ -1086,7 +1100,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 -- Control charge if charge bot is enabled and the local player is in condition 17
                 ChargeControl(pCmd)
             end
-        
+
     elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
         -- Control charge if charge bot is enabled and the local player is in condition 17
         ChargeControl(pCmd)
@@ -1095,32 +1109,21 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         --Check if attack simulation was succesfull
             if can_attack == true then
                 --remove tick
-                
-                Gcan_attack = false
-                if Menu.Misc.InstantAttack == true and warp.GetChargedTicks() > 15 then
-                    warp.TriggerDoubleTap()
-                    warp.TriggerWarp()
-                end
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
-
-            elseif Menu.Misc.CritRefill then
-                if pWeapon:GetCritTokenBucket() <= 18 and fDistance > 350 then
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)--refill
-                end
-                Gcan_attack = true
-            else
-                
-                Gcan_attack = true
+                    if Menu.Misc.InstantAttack == true and warp.GetChargedTicks() > 15 then
+                        warp.TriggerDoubleTap()
+                        warp.TriggerWarp()
+                    end
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
+                can_attack = false
             end
 
             if can_charge then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
+                can_charge = false
             end
 
         -- Update last variables
-
             Safe_Strafe = false -- reset safe strafe
-            can_charge = false
             vHitbox[2].z = 82
     ::continue::
 end
@@ -1812,6 +1815,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                 ImMenu.BeginFrame(1)
                     Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
+                    Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
                     Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
                 ImMenu.EndFrame()
 
