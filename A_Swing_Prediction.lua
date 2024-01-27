@@ -567,22 +567,24 @@ local function PropUpdate()
             local pWeapon = lastswingtracedata[1]
             local spherePos = lastswingtracedata[2]
             local closestPoint = lastswingtracedata[3]
-            local Angle = Math.PositionAngles(spherePos, closestPoint)
+            if spherePos and closestPoint then
+                local Angle = Math.PositionAngles(spherePos, closestPoint)
 
-            -- Adjust player position and view angles for swing trace
-            pLocal:SetPropVector(spherePos, "tfnonlocaldata", "m_vecOrigin")
-            pLocal:SetPropVector(Vector3(Angle.x, Angle.y, Angle.z), "tfnonlocaldata", "m_angEyeAngles[0]")
+                -- Adjust player position and view angles for swing trace
+                pLocal:SetPropVector(spherePos, "tfnonlocaldata", "m_vecOrigin")
+                pLocal:SetPropVector(Vector3(Angle.x, Angle.y, Angle.z), "tfnonlocaldata", "m_angEyeAngles[0]")
 
-            -- Perform the swing trace
-            local SwingTrace = pLocal.DoSwingTrace(pWeapon)
-            swingresult = SwingTrace
+                -- Perform the swing trace
+                local SwingTrace = pLocal.DoSwingTrace(pWeapon)
+                swingresult = SwingTrace
 
-        -- Reset the player's original position and view angles
-        pLocal:SetPropVector(OriginalPosition, "tfnonlocaldata", "m_vecOrigin")
-        pLocal:SetPropVector(OriginalAngles, "tfnonlocaldata", "m_angEyeAngles[0]")
+            -- Reset the player's original position and view angles
+            pLocal:SetPropVector(OriginalPosition, "tfnonlocaldata", "m_vecOrigin")
+            pLocal:SetPropVector(OriginalAngles, "tfnonlocaldata", "m_angEyeAngles[0]")
 
-        -- Clear last swing trace data
-        lastswingtracedata = nil
+            -- Clear last swing trace data
+            lastswingtracedata = nil
+        end
     end
 end
 
@@ -726,7 +728,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
         if inRange then
             return inRange, point, can_charge
         end
-    elseif fakelatencyON == 1 then
+    elseif fakelatencyON == 1 and playerTicks and playerTicks[playerIndex] then
         if not hasNotified then
             Notify.Simple("Fake Latency is enabled", " this may cause issues with the script", 7)
             hasNotified = true
@@ -1123,10 +1125,6 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     ::continue::
 end
 
-local lastToggleTime = 0
-local Lbox_Menu_Open = true
-local toggleCooldown = 0.2  -- 200 milliseconds
-
 -- Sphere cache and drawn edges cache
 local sphere_cache = { vertices = {}, radius = 90, center = Vector3(0, 0, 0) }
 local drawnEdges = {}
@@ -1291,6 +1289,9 @@ local drawPolygon = (function()
 	end
 end)();
 
+local lastToggleTime = 0
+local Lbox_Menu_Open = true
+local toggleCooldown = 0.2  -- 200 milliseconds
 
 local function toggleMenu()
     local currentTime = globals.RealTime()
