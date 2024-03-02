@@ -735,6 +735,21 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
             if inRange then
                 return inRange, point, can_charge
             end
+        elseif chargeLeft < 100 then
+            can_charge = false
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
+                inRange = true
+                point = vPlayerOrigin
+                tick_count = tick_count + 1
+                if tick_count >= (time - 1) then
+                    tick_count = 0
+                    can_charge = true
+                end
+            else
+                inRange = false
+                can_charge = false
+                tick_count = 0
+            end
         end
 
         -- Adjust hitbox for current position
