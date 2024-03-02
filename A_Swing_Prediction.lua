@@ -41,7 +41,7 @@ local function GetPressedkey()
             end
         end
         return pressedKey
-    end
+end
 
 --[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
     client.SetConVar("cl_vWeapon_sway_interp",              0)             -- Set cl_vWeapon_sway_interp to 0
@@ -200,21 +200,13 @@ else
     CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) -- Save the config
 end
 
-local closestDistance = 2000
-local fDistance = 1
-local hitbox_Height = 82
-local hitbox_Width = 24
 local isMelee = false
-local mresolution = 64
 local pLocal = entities.GetLocalPlayer()
 local players = entities.FindByClass("CTFPlayer")
-local ping = 0
 local swingrange = 48
-local tickRate = 66
 local tick_count = 0
-local time = 13
+local time = 13 -- ~0.2s
 local can_attack = false
-local Safe_Strafe = false
 local can_charge = false
 local Charge_Range = 128
 local swingRangeMultiplier = 1
@@ -270,7 +262,6 @@ local inaccuracy = {} ---@type table<number, number>
 local pastPositions = {} -- Stores past positions of the local player
 local maxPositions = 4 -- Number of past positions to consider
 
-
 local function CalcStrafe()
     local autostrafe = gui.GetValue("Auto Strafe")
     local flags = entities.GetLocalPlayer():GetPropInt("m_fFlags")
@@ -294,8 +285,7 @@ local function CalcStrafe()
             if #pastPositions > maxPositions then
                 table.remove(pastPositions)
             end
-        
-            
+
             if not onGround and autostrafe == 2 and #pastPositions >= maxPositions then
                 v = Vector3(0, 0, 0)
                 for i = 1, #pastPositions - 1 do
@@ -555,30 +545,54 @@ local function checkInRange(targetPos, spherePos, sphereRadius, pWeapon)
         attackReady = true
         attackData = {
             pWeapon = pWeapon,
-            spherePos = spherePos,
+            spherePos = spherePos - Vector3(0, 0, 75),
             closestPoint = closestPoint,
             originalPosition = pLocal:GetPropVector("tfnonlocaldata", "m_vecOrigin"),
             originalAngles = pLocal:GetPropVector("tfnonlocaldata", "m_angEyeAngles[0]")
         }
         return isAttackSuccessful, closestPoint
     else
+        -- Reset the flags and clear data
+        attackData = {}
+        attackReady = false
         -- Target is not in range
         return false, nil
     end
 end
 
-local counter = 0
+local function normalizeAngle(offsetNumber)
+    offsetNumber = offsetNumber % 360
+    if offsetNumber > 180 then
+        offsetNumber = offsetNumber - 360
+    elseif offsetNumber < -180 then
+        offsetNumber = offsetNumber + 360
+    end
+    return offsetNumber
+end
 
 -- PostPropUpdate function to adjust player position and angle
 local function PropUpdate()
-    counter = counter + 1
-    if counter % 2 == 0 and attackReady and Menu.Misc.advancedHitreg then
-        local angle = Math.PositionAngles(attackData.spherePos, attackData.closestPoint)
+    if attackReady and Menu.Misc.advancedHitreg then
+        if not attackData or not attackData.spherePos or not attackData.closestPoint or not attackData.pWeapon then return end
 
+        local angle = Math.PositionAngles(attackData.spherePos, attackData.closestPoint)
+        attackData.originalPosition = pLocal:GetPropVector("tfnonlocaldata", "m_vecOrigin")
+        attackData.originalAngles = pLocal:GetPropVector("tfnonlocaldata", "m_angEyeAngles[0]")
+
+
+        gui.SetValue("Anti Aim", 1)
+        gui.SetValue("Anti Aim - Pitch", 7)
+        gui.SetValue("Anti Aim - Custom Pitch (Real)", math.floor(angle.pitch))
+
+        local localview = engine.GetViewAngles()
+         -- Calculate the real yaw based on target angle and local yaw
+        local realYaw = math.floor(normalizeAngle((angle.yaw - localview.yaw)))
+        gui.SetValue("Anti Aim - Yaw", 8)
+        gui.SetValue("Anti Aim - Yaw (Fake)", 7)
+        gui.SetValue("Anti Aim - Custom Yaw (Real)", realYaw)
         -- Adjust player position and view angles for swing trace
         pLocal:SetPropVector(attackData.spherePos, "tfnonlocaldata", "m_vecOrigin")
         pLocal:SetPropVector(Vector3(angle.x, angle.y, angle.z), "tfnonlocaldata", "m_angEyeAngles[0]")
-
         -- Perform the swing trace
         local swingTraceResult = pLocal.DoSwingTrace(attackData.pWeapon)
 
@@ -593,10 +607,6 @@ local function PropUpdate()
         -- Reset the player's original position and view angles
         pLocal:SetPropVector(attackData.originalPosition, "tfnonlocaldata", "m_vecOrigin")
         pLocal:SetPropVector(attackData.originalAngles, "tfnonlocaldata", "m_angEyeAngles[0]")
-
-        -- Reset the flags and clear data
-        attackReady = false
-        attackData = {}
     end
 end
 
@@ -1042,6 +1052,7 @@ end
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
 
         local predData = PredictPlayer(player, time, strafeAngle)
+        if not predData then return end
 
         vPlayerPath = predData.pos
         vPlayerFuture = predData.pos[time]
@@ -1073,33 +1084,35 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
     -- Inside your game loop
     if Menu.Aimbot.Aimbot then
-            if InRangePoint then
-                aimpos = InRangePoint
-                aimposVis = aimpos -- transfer aim point to visuals
+        local aim_angles
+        if InRangePoint then
+            aimpos = InRangePoint
+            aimposVis = aimpos -- transfer aim point to visuals
 
-                    -- Calculate aim position only once
-                aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-            end
+            -- Calculate aim position only once
+            aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+            aim_angles = aimpos
+        end
 
-            if pLocal:InCond(17) and Menu.Aimbot.ChargeBot and not can_attack then
-                local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
-                if trace.fraction == 1 or trace.entity == CurrentTarget then
-                    -- If the trace hit something, set the view angles to the position of the hit
-                    local aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
-                    -- Set view angles based on the future position of the local player
-                    engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
-                end
-            elseif can_attack and aimpos then
-                -- Set view angles based on whether silent aim is enabled
-                if Menu.Aimbot.Silent then
-                    pCmd:SetViewAngles(aimpos.pitch, aimpos.yaw, 0)
-                else
-                    engine.SetViewAngles(EulerAngles(aimpos.pitch, aimpos.yaw, 0))
-                end
-            elseif pLocalClass == 4 then
-                -- Control charge if charge bot is enabled and the local player is in condition 17
-                ChargeControl(pCmd)
+        if pLocal:InCond(17) and Menu.Aimbot.ChargeBot and not can_attack then
+            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
+            if trace.fraction == 1 or trace.entity == CurrentTarget then
+                -- If the trace hit something, set the view angles to the position of the hit
+                aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
+                -- Set view angles based on the future position of the local player
+                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
             end
+        elseif can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
+            -- Set view angles based on whether silent aim is enabled
+            if Menu.Aimbot.Silent then
+                pCmd:SetViewAngles(aim_angles.pitch, aim_angles.yaw, 0)
+            else
+                engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
+            end
+        elseif pLocalClass == 4 then
+            -- Control charge if charge bot is enabled and the local player is in condition 17
+            ChargeControl(pCmd)
+        end
 
     elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
         -- Control charge if charge bot is enabled and the local player is in condition 17
@@ -1123,7 +1136,6 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
             end
 
         -- Update last variables
-            Safe_Strafe = false -- reset safe strafe
             vHitbox[2].z = 82
     ::continue::
 end
