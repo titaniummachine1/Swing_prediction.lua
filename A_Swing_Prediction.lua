@@ -750,6 +750,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
                 can_charge = false
                 tick_count = 0
             end
+            return inRange, point, can_charge
         end
 
         -- Adjust hitbox for current position
