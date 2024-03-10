@@ -209,12 +209,9 @@ local time = 13 -- ~0.2s
 local can_attack = false
 local can_charge = false
 local Charge_Range = 128
-local swingRangeMultiplier = 1
 local defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
-local Backtrackpositions = {}
 local pLocalPath = {}
 local vPlayerPath = {}
-local PredPath = {}
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 80) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
@@ -224,10 +221,6 @@ else
     local stepSize = 18
 end
 
-local backtrackTicks =  {}
-local vPlayerViewHeight = 75
-
-local vdistance = nil
 local pLocalClass = nil
 local pLocalFuture = nil
 local pLocalOrigin = nil
@@ -239,11 +232,9 @@ local vPlayerFuture = nil
 local vPlayer = nil
 local vPlayerOrigin = nil
 local chargeLeft = nil
-local target_strafeAngle = nil
 local onGround = nil
 local CurrentTarget = nil
 local aimposVis = nil
-local in_attack = nil
 
 local settings = {
     MinDistance = 0,
@@ -252,8 +243,6 @@ local settings = {
     MaxFOV = Menu.Aimbot.AimbotFOV,
 }
 
-local latency = 0
-local lerp = 0
 local lastAngles = {} ---@type table<number, Vector3>
 local lastDeltas = {} ---@type table<number, number>
 local avgDeltas = {} ---@type table<number, number>
@@ -455,8 +444,6 @@ end
 
         return _out
     end
-
-local playerTicks = {}
 
 local playerTicks = {}
 local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
@@ -868,6 +855,8 @@ local function OnCreateMove(pCmd)
     if not pWeapon then
         goto continue -- Return if the local player doesn't have an active weapon
     end
+    local nextPrimaryAttack = pWeapon:GetPropFloat("LocalActiveWeaponData", "m_flNextPrimaryAttack")
+    --print(Conversion.Time_to_Ticks(nextPrimaryAttack) .. "LastShoot", globals.TickCount())
 
     -- Get the current latency and lerp
     local latOut = clientstate.GetLatencyOut()
@@ -900,7 +889,6 @@ local function OnCreateMove(pCmd)
 --[--Troldier assist--]
     if Menu.Misc.TroldierAssist then
         local state = ""
-        local downheight = Vector3(0, 0, -250)
         if airbone then
             pCmd:SetButtons(pCmd.buttons | IN_DUCK)
             state = "slot3"
@@ -915,7 +903,6 @@ local function OnCreateMove(pCmd)
 
     isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
     if not isMelee then goto continue end -- if not melee then skip code
-
 
 --[-------Get pLocalOrigin--------]
 
