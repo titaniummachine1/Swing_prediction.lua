@@ -103,6 +103,7 @@ local Menu = {
         ChargeReach = false,
         TroldierAssist = false,
         advancedHitreg = false,
+        ChargeJump = true,
     },
     Keybind = KEY_NONE,
     KeybindName = "Always On",
@@ -204,6 +205,9 @@ local isMelee = false
 local pLocal = entities.GetLocalPlayer()
 local players = entities.FindByClass("CTFPlayer")
 local swingrange = 48
+local TotalSwingRange = 48
+local SwingHullSize = 38
+local SwingHalfhullSize = SwingHullSize / 2
 local tick_count = 0
 local time = 13 -- ~0.2s
 local can_attack = false
@@ -212,7 +216,7 @@ local Charge_Range = 128
 local defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
 local pLocalPath = {}
 local vPlayerPath = {}
-local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 80) }
+local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
 if pLocal then
@@ -360,6 +364,9 @@ end
         for i = 1, t do
             local lastP, lastV, lastG = _out.pos[i - 1], _out.vel[i - 1], _out.onGround[i - 1]
 
+            --[[if chargeLeft < 100 and player:InCond(17) then
+                
+            end]]
             local pos = lastP + lastV * globals.TickInterval()
             local vel = lastV
             local onGround1 = lastG
@@ -503,11 +510,6 @@ local function GetBestTarget(me)
     return bestTarget
 end
 
--- Global flags and data storage
-local attackReady = false
-local attackData = {}
-local isAttackSuccessful = false
-
 -- Function to check if target is in range
 local function checkInRange(targetPos, spherePos, sphereRadius, pWeapon)
     local hitbox_min_trigger = targetPos + vHitbox[1]
@@ -525,81 +527,31 @@ local function checkInRange(targetPos, spherePos, sphereRadius, pWeapon)
 
     -- Check if the target is within the sphere radius
     if sphereRadius > distanceAlongVector then
-        if not Menu.Misc.advancedHitreg then return true, closestPoint end
-        if Menu.Misc.ChargeReach and pLocalClass == 4 and chargeLeft == 100 then return true, closestPoint end
+        -- Calculate the direction from spherePos to closestPoint
+        local direction = Normalize(closestPoint - spherePos)
+        local SwingtraceEnd = spherePos + direction * sphereRadius
 
-        -- Prepare data for PropUpdate
-        attackReady = true
-        attackData = {
-            pWeapon = pWeapon,
-            spherePos = spherePos - Vector3(0, 0, 75),
-            closestPoint = closestPoint,
-            originalPosition = pLocal:GetPropVector("tfnonlocaldata", "m_vecOrigin"),
-            originalAngles = pLocal:GetPropVector("tfnonlocaldata", "m_angEyeAngles[0]")
-        }
-        return isAttackSuccessful, closestPoint
+        if Menu.Misc.AdvancedHitreg then
+            local trace = engine.TraceLine(spherePos, SwingtraceEnd, MASK_SHOT_HULL)
+            if trace.fraction < 1 and trace.entity == TargetEntity then
+                return true, closestPoint
+            else
+                local SwingHull = {Min = Vector3(-SwingHalfhullSize,-SwingHalfhullSize,-SwingHalfhullSize), Max = Vector3(SwingHalfhullSize,SwingHalfhullSize,SwingHalfhullSize)}
+                trace = engine.TraceHull(spherePos, SwingtraceEnd, SwingHull.Min, SwingHull.Max, MASK_SHOT_HULL)
+                if trace.fraction < 1 and trace.entity == TargetEntity then
+                    return true, closestPoint
+                else
+                    return false, nil
+                end
+            end
+        end
+
+        return true, closestPoint
     else
-        -- Reset the flags and clear data
-        attackData = {}
-        attackReady = false
         -- Target is not in range
         return false, nil
     end
 end
-
-local function normalizeAngle(offsetNumber)
-    offsetNumber = offsetNumber % 360
-    if offsetNumber > 180 then
-        offsetNumber = offsetNumber - 360
-    elseif offsetNumber < -180 then
-        offsetNumber = offsetNumber + 360
-    end
-    return offsetNumber
-end
-
--- PostPropUpdate function to adjust player position and angle
-local function PropUpdate()
-    if attackReady and Menu.Misc.advancedHitreg then
-        if not attackData or not attackData.spherePos or not attackData.closestPoint or not attackData.pWeapon then return end
-
-        local angle = Math.PositionAngles(attackData.spherePos, attackData.closestPoint)
-        attackData.originalPosition = pLocal:GetPropVector("tfnonlocaldata", "m_vecOrigin")
-        attackData.originalAngles = pLocal:GetPropVector("tfnonlocaldata", "m_angEyeAngles[0]")
-
-
-        gui.SetValue("Anti Aim", 1)
-        gui.SetValue("Anti Aim - Pitch", 7)
-        gui.SetValue("Anti Aim - Custom Pitch (Real)", math.floor(angle.pitch))
-
-        local localview = engine.GetViewAngles()
-         -- Calculate the real yaw based on target angle and local yaw
-        local realYaw = math.floor(normalizeAngle((angle.yaw - localview.yaw)))
-        gui.SetValue("Anti Aim - Yaw", 8)
-        gui.SetValue("Anti Aim - Yaw (Fake)", 7)
-        gui.SetValue("Anti Aim - Custom Yaw (Real)", realYaw)
-        -- Adjust player position and view angles for swing trace
-        pLocal:SetPropVector(attackData.spherePos, "tfnonlocaldata", "m_vecOrigin")
-        pLocal:SetPropVector(Vector3(angle.x, angle.y, angle.z), "tfnonlocaldata", "m_angEyeAngles[0]")
-        -- Perform the swing trace
-        local swingTraceResult = pLocal.DoSwingTrace(attackData.pWeapon)
-
-        -- Check if the swing trace hit something
-        if swingTraceResult and swingTraceResult.fraction < 1 then
-            -- Attack hit
-            isAttackSuccessful = true
-        else
-            isAttackSuccessful = false  -- Reset attack success flag
-        end
-
-        -- Reset the player's original position and view angles
-        pLocal:SetPropVector(attackData.originalPosition, "tfnonlocaldata", "m_vecOrigin")
-        pLocal:SetPropVector(attackData.originalAngles, "tfnonlocaldata", "m_angEyeAngles[0]")
-    end
-end
-
-callbacks.Unregister("PostPropUpdate", "MyPostPropUpdate")
-callbacks.Register("PostPropUpdate", "MyPostPropUpdate", PropUpdate)
-
 
 local Hitbox = {
     Head = 1,
@@ -693,7 +645,7 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
+local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, onGround)
     local inRange = false
     local point = nil
     local Backtrack = gui.GetValue("Backtrack")
@@ -709,6 +661,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
                 if tick_count >= (time - 1) then
                     tick_count = 0
                     can_charge = true
+                elseif Menu.Misc.ChargeJump and tick_count >= (time - 2) then
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
                 end
             elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
                 inRange = true
@@ -717,6 +671,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
                 if tick_count >= (time - 1) then
                     tick_count = 0
                     can_charge = true
+                elseif Menu.Misc.ChargeJump and tick_count >= (time - 2) then
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
                 end
             end
             if inRange then
@@ -724,7 +680,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
             end
         elseif chargeLeft < 100 then
             can_charge = false
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then --or checkInRange(vPlayerFuture, pLocalFuture, swingRange) and not onGround then
                 inRange = true
                 point = vPlayerOrigin
                 tick_count = tick_count + 1
@@ -918,15 +874,14 @@ local function OnCreateMove(pCmd)
 --[-------- Get SwingRange --------]
 swingrange = pWeapon:GetSwingRange()
 
-local SwingHullSize = 35.6
+SwingHullSize = 35.6
+SwingHalfhullSize = SwingHullSize / 2
 
 if pWeaponDef:GetName() == "The Disciplinary Action" then
     SwingHullSize = 55.8
     swingrange = 81.6
 end
-
-    swingrange = swingrange + (SwingHullSize / 2)
-
+    TotalSwingRange = swingrange + (SwingHullSize / 2)
 --[--Manual charge control--]
 
     if Menu.Misc.ChargeControl and pLocal:InCond(17) then
@@ -998,15 +953,22 @@ end
     local stop = false
     local OnGround = flags & FL_ONGROUND == 1
 
+--[[--------------Charge Jump-------------------]]
+if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and chargeLeft == 100 and OnGround then
+    pCmd:SetButtons(pCmd:GetButtons() & ~IN_JUMP)-- stop jump for moment
+    pCmd:SetButtons(pCmd:GetButtons() & ~IN_ATTACK2) -- stop charge for moment
+    pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
+end
+
 --[--------------Prediction-------------------]
 -- Predict both players' positions after swing
-    gravity = client.GetConVar("sv_gravity")
-    stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize")
+    local gravity = client.GetConVar("sv_gravity")
+    local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize")
 
     CalcStrafe()
 
     if inaccuracyValue then
-        swingrange = swingrange - math.abs(inaccuracyValue)
+        TotalSwingRange = TotalSwingRange - math.abs(inaccuracyValue)
     end
 
     -- Local player prediction
@@ -1018,7 +980,7 @@ end
 
         strafeAngle = Menu.Misc.strafePred and strafeAngles[pLocal:GetIndex()] or 0
         if not Menu.Misc.advancedHitreg then
-            swingrange = swingrange - math.abs(strafeAngle)
+            TotalSwingRange = TotalSwingRange - math.abs(strafeAngle)
         end
 
         local predData = PredictPlayer(player, time, strafeAngle)
@@ -1073,7 +1035,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
     local inRange = false
     local inRangePoint = Vector3(0, 0, 0)
 
-    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd)
+    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd, OnGround, pLocal:InCond(17))
     -- Use inRange to decide if can attack
     can_attack = inRange
 
@@ -1097,7 +1059,15 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
             aim_angles = aimpos
         end
 
-        if pLocal:InCond(17) and Menu.Aimbot.ChargeBot and not can_attack then
+        if Menu.Aimbot.ChargeBot and pLocal:InCond(17) and not can_attack then
+            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
+            if trace.fraction == 1 or trace.entity == CurrentTarget then
+                -- If the trace hit something, set the view angles to the position of the hit
+                aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
+                -- Set view angles based on the future position of the local player
+                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
+            end
+        elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
             local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
@@ -1122,6 +1092,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         ChargeControl(pCmd)
     end
 
+
         --Check if attack simulation was succesfull
             if can_attack == true then
                 --remove tick
@@ -1134,7 +1105,13 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
             end
 
             if can_charge then
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
+                if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and OnGround then
+                    pCmd:SetButtons(pCmd:GetButtons() & ~IN_JUMP)-- stop jump for moment
+                    pCmd:SetButtons(pCmd:GetButtons() & ~IN_ATTACK2) -- stop charge for moment
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
+                else
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
+                end
                 can_charge = false
             end
 
@@ -1175,19 +1152,13 @@ local function setup_sphere(center, radius, segments)
     end
 end
 
--- Normalize a vector
-local function NormalizeVector(v)
-    local length = math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
-    return Vector3(v.x / length, v.y / length, v.z / length)
-end
-
 local function arrowPathArrow2(startPos, endPos, width)
     if not (startPos and endPos) then return nil, nil end
 
     local direction = endPos - startPos
     local length = direction:Length()
     if length == 0 then return nil, nil end
-    direction = NormalizeVector(direction)
+    direction = Normalize(direction)
 
     local perpDir = Vector3(-direction.y, direction.x, 0)
     local leftBase = startPos + perpDir * width
@@ -1217,7 +1188,7 @@ local function arrowPathArrow(startPos, endPos, arrowWidth)
     if direction:Length() == 0 then return end
 
     -- Normalize the direction vector and calculate perpendicular direction
-    direction = NormalizeVector(direction)
+    direction = Normalize(direction)
     local perpendicular = Vector3(-direction.y, direction.x, 0) * arrowWidth
 
     -- Calculate points for arrow fins
@@ -1244,7 +1215,7 @@ local function drawPavement(startPos, endPos, width)
     local direction = endPos - startPos
     local length = direction:Length()
     if length == 0 then return nil end
-    direction = NormalizeVector(direction)
+    direction = Normalize(direction)
 
     -- Calculate perpendicular direction for the width
     local perpDir = Vector3(-direction.y, direction.x, 0)
@@ -1391,7 +1362,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                     local center = pLocalFuture - Vheight -- Center of the circle at the player's feet
                     local viewPos = pLocalOrigin -- View position to shoot traces from
-                    local radius = Menu.Misc.ChargeReach and pLocalClass == 4 and chargeLeft == 100 and Charge_Range or swingrange  -- Radius of the circle
+                    local radius = Menu.Misc.ChargeReach and pLocalClass == 4 and chargeLeft == 100 and Charge_Range or TotalSwingRange  -- Radius of the circle
                     local segments = 32 -- Number of segments to draw the circle
                     local angleStep = (2 * math.pi) / segments
 
@@ -1598,7 +1569,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                     -- Example draw call
                     sphere_cache.center = pLocalOrigin  -- Replace with actual player origin
-                    sphere_cache.radius = swingrange    -- Replace with actual swing range value
+                    sphere_cache.radius = TotalSwingRange    -- Replace with actual swing range value
                     draw_sphere()
                 end
 
@@ -1823,6 +1794,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
             end
 
             if Menu.tabs.Misc then
+                
                 ImMenu.BeginFrame(1)
                     Menu.Misc.strafePred = ImMenu.Checkbox("Local Strafe Pred", Menu.Misc.strafePred)
                     Menu.Misc.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Misc.ChargeReach)
@@ -1849,6 +1821,7 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                 ImMenu.BeginFrame(1)
                     Menu.Misc.ChargeControl = ImMenu.Checkbox("Charge Control", Menu.Misc.ChargeControl)
+                    Menu.Misc.ChargeJump = ImMenu.Checkbox("Charge Jump", Menu.Misc.ChargeJump)
                 ImMenu.EndFrame()
 
                 ImMenu.BeginFrame(1)
