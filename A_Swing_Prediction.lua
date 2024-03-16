@@ -661,8 +661,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, on
                 if tick_count >= (time - 1) then
                     tick_count = 0
                     can_charge = true
-                elseif Menu.Misc.ChargeJump and tick_count >= (time - 2) then
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
+                elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (time - 2) then
+                    cmd:SetButtons(cmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
                 end
             elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
                 inRange = true
@@ -671,8 +671,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, on
                 if tick_count >= (time - 1) then
                     tick_count = 0
                     can_charge = true
-                elseif Menu.Misc.ChargeJump and tick_count >= (time - 2) then
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
+                elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (time - 2) then
+                    cmd:SetButtons(cmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
                 end
             end
             if inRange then
