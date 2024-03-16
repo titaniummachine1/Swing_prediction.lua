@@ -4,7 +4,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/network)
 [![GitHub stars](https://img.shields.io/github/stars/titaniummachine1/Swing_prediction.lua.svg)](https://github.com/titaniummachine1/Swing_prediction.lua/stargazers)
 
-![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/0cf3a001-a827-4dcd-84a4-df9b424f4185)
+![image](https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/67fdf884-6773-4b93-983e-bd1d674d29b6)
 
 # Setup
 
