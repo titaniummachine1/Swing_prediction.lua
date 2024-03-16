@@ -455,6 +455,28 @@ end
 local playerTicks = {}
 local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
 
+-- Returns if the player is visible
+---@param target Entity
+---@param from Vector3
+---@param to Vector3
+---@return boolean
+local function VisPos(target, from, to)
+    local trace = engine.TraceLine(from, to, MASK_SHOT | CONTENTS_GRATE)
+    return (trace.entity == target) or (trace.fraction > 0.99)
+end
+
+-- Returns whether the entity can be seen from the given entity
+---@param fromEntity Entity
+function IsVisible(player, fromEntity)
+    local from = fromEntity:GetAbsOrigin()
+    local to = player:GetAbsOrigin()
+    if from and to then
+        return VisPos(player, from, to)
+    else
+        return false
+    end
+end
+
 local function GetBestTarget(me)
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
@@ -467,7 +489,8 @@ local function GetBestTarget(me)
         if player == nil or not player:IsAlive()
         or player:IsDormant()
         or player == me or player:GetTeamNumber() == me:GetTeamNumber()
-        or gui.GetValue("ignore cloaked") == 1 and player:InCond(4) then
+        or gui.GetValue("ignore cloaked") == 1 and player:InCond(4)
+        or not IsVisible(player, pLocal) then
             goto continue
         end
     
