@@ -468,8 +468,8 @@ end
 -- Returns whether the entity can be seen from the given entity
 ---@param fromEntity Entity
 function IsVisible(player, fromEntity)
-    local from = fromEntity:GetAbsOrigin()
-    local to = player:GetAbsOrigin()
+    local from = fromEntity:GetAbsOrigin() + Vheight
+    local to = player:GetAbsOrigin() + Vheight
     if from and to then
         return VisPos(player, from, to)
     else
@@ -490,7 +490,8 @@ local function GetBestTarget(me)
         or player:IsDormant()
         or player == me or player:GetTeamNumber() == me:GetTeamNumber()
         or gui.GetValue("ignore cloaked") == 1 and player:InCond(4)
-        or not IsVisible(player, pLocal) then
+        or not IsVisible(player, pLocal) 
+        or (pLocal:InCond(17) and (player:GetAbsOrigin().z - pLocalOrigin.z) > 17) then
             goto continue
         end
     
@@ -1091,7 +1092,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
             end
         elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
-            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
+            local trace = engine.TraceHull(pLocalFuture, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
                 aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
