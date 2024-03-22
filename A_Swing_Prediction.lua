@@ -349,6 +349,9 @@ local function shouldHitEntityFun(entity, player, ignoreEntities)
         end
     end
 
+    local pos = entity:GetAbsOrigin() + Vector3(0,0,1)
+    local contents = engine.GetPointContents(pos)
+    if contents == 0 then return true end
     if entity:GetName() == player:GetName() then return false end --ignore self
     if entity:GetTeamNumber() == player:GetTeamNumber() then return false end --ignore teammates
     return true
