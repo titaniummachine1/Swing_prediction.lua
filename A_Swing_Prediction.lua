@@ -309,7 +309,7 @@ local function CalcStrafe()
 
         local vector1 = Vector3(1, 0, 0)
         local vector2 = Vector3(1, 0, 0)
-        
+
         -- Apply deviation
         local ang1 = vector1:Angles()
         ang1.y = ang1.y + (lastDeltas[entityIndex] or delta)
@@ -342,6 +342,18 @@ function Normalize(vec)
     return Vector3(vec.x / length, vec.y / length, vec.z / length)
 end
 
+local function shouldHitEntityFun(entity, player, ignoreEntities)
+    for _, ignoreEntity in ipairs(ignoreEntities) do --ignore custom
+        if entity:GetClass() == ignoreEntity then
+            return false
+        end
+    end
+
+    if entity:GetName() == player:GetName() then return false end --ignore self
+    if entity:GetTeamNumber() == player:GetTeamNumber() then return false end --ignore teammates
+    return true
+end
+
     -- [WIP] Predict the position of a player
     ---@param player WPlayer
     ---@param t integer
@@ -349,11 +361,11 @@ end
     ---@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
     ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
     local function PredictPlayer(player, t, d)
-  
         if not gravity or not stepSize then return nil end
         local vUp = Vector3(0, 0, 1)
         local vStep = Vector3(0, 0, stepSize)
-        local shouldHitEntity = function(entity) return entity:GetName() ~= player:GetName() end --trace ignore simulated player 
+        local ignoreEntities = {"CTFAmmoPack", "CTFDroppedWeapon"}
+        local shouldHitEntity = function(entity) return shouldHitEntityFun(entity, player, ignoreEntities) end --trace ignore simulated player 
         local pFlags = player:GetPropInt("m_fFlags")
         -- Add the current record
         local _out = {
@@ -1122,8 +1134,7 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         --Check if attack simulation was succesfull
             if can_attack == true then
                 --remove tick
-                    if Menu.Misc.InstantAttack == true and warp.GetChargedTicks() > 15 then
-                        warp.TriggerDoubleTap()
+                    if Menu.Misc.InstantAttack == true and warp.GetChargedTicks() == 13 then
                         warp.TriggerWarp()
                     end
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
