@@ -1,5 +1,4 @@
 --[[ Swing prediction for  Lmaobox  ]]--
---[[      (Modded misc-tools)       ]]--
 --[[          --Authors--           ]]--
 --[[           Terminator           ]]--
 --[[  (github.com/titaniummachine1  ]]--
@@ -219,10 +218,12 @@ local vPlayerPath = {}
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
+local stepSize = 18
+
 if pLocal then
-    local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
+    stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
 else
-    local stepSize = 18
+    stepSize = 18
 end
 
 local pLocalClass = nil
@@ -348,6 +349,7 @@ end
     ---@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
     ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
     local function PredictPlayer(player, t, d)
+  
         if not gravity or not stepSize then return nil end
         local vUp = Vector3(0, 0, 1)
         local vStep = Vector3(0, 0, stepSize)
@@ -448,7 +450,6 @@ end
             -- Add the prediction record
             _out.pos[i], _out.vel[i], _out.onGround[i] = pos, vel, onGround1
         end
-
         return _out
     end
 
@@ -987,7 +988,7 @@ end
 --[--------------Prediction-------------------]
 -- Predict both players' positions after swing
     local gravity = client.GetConVar("sv_gravity")
-    local stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize")
+    local stepSize = pLocal:GetPropFloat("m_flStepSize")
 
     CalcStrafe()
 
@@ -1008,6 +1009,7 @@ end
         end
 
         local predData = PredictPlayer(player, time, strafeAngle)
+        if not predData then return end
 
         pLocalPath = predData.pos
         pLocalFuture = predData.pos[time] + viewOffset
