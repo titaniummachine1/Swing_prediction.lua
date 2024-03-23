@@ -352,9 +352,9 @@ local function shouldHitEntityFun(entity, player, ignoreEntities)
 
     local pos = entity:GetAbsOrigin() + Vector3(0,0,1)
     local contents = engine.GetPointContents(pos)
-    if contents == 0 then return true end
+    if contents ~= 0 then return true end
     if entity:GetName() == player:GetName() then return false end --ignore self
-    if entity:GetTeamNumber() == player:GetTeamNumber() then return false end --ignore teammates
+    if entity:GetTeamNumber() ~= player:GetTeamNumber() then return false end --ignore teammates
     return true
 end
 
@@ -1106,15 +1106,7 @@ end
 
     --vHitbox[2].z = pViewheight + 7
 
-    -- Target player prediction
-    if CurrentTarget:EstimateAbsVelocity() == 0 then
-        -- If the target player is not accelerating, set the predicted position to their current position
-        vPlayerFuture = CurrentTarget:GetAbsOrigin()
-    elseif Menu.Misc.InstantAttack == true and warp.GetChargedTicks() > 12 then
-        vPlayerFuture = CurrentTarget:GetAbsOrigin()
-        drawVhitbox[1] = vPlayerFuture + vHitbox[1]
-        drawVhitbox[2] = vPlayerFuture + vHitbox[2]
-    else
+    if Menu.Misc.InstantAttack == false or not warp.CanWarp() and warp.GetChargedTicks() < 13 then
         local player = WPlayer.FromEntity(CurrentTarget)
 
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
@@ -1125,6 +1117,10 @@ end
         vPlayerPath = predData.pos
         vPlayerFuture = predData.pos[time]
 
+        drawVhitbox[1] = vPlayerFuture + vHitbox[1]
+        drawVhitbox[2] = vPlayerFuture + vHitbox[2]
+    else
+        vPlayerFuture = CurrentTarget:GetAbsOrigin()
         drawVhitbox[1] = vPlayerFuture + vHitbox[1]
         drawVhitbox[2] = vPlayerFuture + vHitbox[2]
     end
@@ -1199,10 +1195,10 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
             if can_attack == true then
                 if Menu.Misc.InstantAttack == true then
                     local oppositePoint = pLocal:GetAbsOrigin() - pLocal:EstimateAbsVelocity()
-                    WalkTo(pCmd, pLocal, oppositePoint)
                     if tickCounteratack % 2 == 0 then
                         pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- attack
                     else
+                        WalkTo(pCmd, pLocal, oppositePoint)
                         client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
                         client.SetConVar("sv_maxusrcmdprocessticks", 13, true) -- force sv_cheats 1 localy(bypass sv_cheats 0)
                         warp.TriggerWarp()
