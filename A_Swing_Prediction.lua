@@ -241,6 +241,7 @@ local chargeLeft = nil
 local onGround = nil
 local CurrentTarget = nil
 local aimposVis = nil
+local tickCounterrecharge = 0
 
 local settings = {
     MinDistance = 0,
@@ -1004,6 +1005,18 @@ end
 
 ---------------critHack------------------
     -- Main logic
+
+    -- Trigger recharge if warp ticks are less than 23
+    if Menu.Misc.InstantAttack and warp.GetChargedTicks() < 23 and not warp.IsWarping()
+    and not can_attack and not can_charge then
+        if tickCounterrecharge >= 66 then
+            warp.TriggerCharge()
+            tickCounterrecharge = 0
+        else
+            tickCounterrecharge = tickCounterrecharge + 1
+        end
+    end
+
     if CurrentTarget == nil then
         local CritValue = 39  -- Base value for crit token bucket calculation
         local CritBucket = pWeapon:GetCritTokenBucket()
