@@ -1006,17 +1006,6 @@ end
 ---------------critHack------------------
     -- Main logic
 
-    -- Trigger recharge if warp ticks are less than 23
-    if Menu.Misc.InstantAttack and warp.GetChargedTicks() < 23 and not warp.IsWarping()
-    and not can_attack and not can_charge then
-        if tickCounterrecharge >= 66 then
-            warp.TriggerCharge()
-            tickCounterrecharge = 0
-        else
-            tickCounterrecharge = tickCounterrecharge + 1
-        end
-    end
-
     if CurrentTarget == nil then
         local CritValue = 39  -- Base value for crit token bucket calculation
         local CritBucket = pWeapon:GetCritTokenBucket()
@@ -1086,7 +1075,7 @@ end
     if pLocal:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position
         pLocalFuture = pLocalOrigin
-    else
+    elseif Menu.Misc.InstantAttack == false or not warp.CanWarp() and warp.GetChargedTicks() < 13 then
         local player = WPlayer.FromEntity(pLocal)
 
         strafeAngle = Menu.Misc.strafePred and strafeAngles[pLocal:GetIndex()] or 0
@@ -1099,6 +1088,9 @@ end
 
         pLocalPath = predData.pos
         pLocalFuture = predData.pos[time] + viewOffset
+    else
+        local player = WPlayer.FromEntity(pLocal)
+        pLocalFuture = pLocal:GetAbsOrigin() + viewOffset
     end
 
 -- stop if no target
@@ -1997,12 +1989,33 @@ local function OnUnload()                                -- Called when the scri
     client.Command('play "ui/buttonclickrelease"', true) -- Play the "buttonclickrelease" sound
 end
 
+local function damageLogger(event)
+    if (event:GetName() == 'player_hurt' ) then
+        local victim = entities.GetByUserID(event:GetInt("userid"))
+        local attacker = entities.GetByUserID(event:GetInt("attacker"))
+        if (attacker == nil or pLocal:GetName() ~= attacker:GetName()) then
+            return
+        end
+        local damage = event:GetInt("damageamount")
+        if damage <= victim:GetHealth() then return end
+                -- Trigger recharge if warp ticks are less than 23
+                if Menu.Misc.InstantAttack and warp.GetChargedTicks() < 23
+                and not warp.IsWarping()
+                and not can_attack and not can_charge then
+                        warp.TriggerCharge()
+                        tickCounterrecharge = 0
+                end
+    end
+end
+
 --[[ Unregister previous callbacks ]]--
 callbacks.Unregister("CreateMove", "MCT_CreateMove")            -- Unregister the "CreateMove" callback
+callbacks.Unregister("FireGameEvent", "adaamaXDgeLogger")
 callbacks.Unregister("Unload", "MCT_Unload")                    -- Unregister the "Unload" callback
 callbacks.Unregister("Draw", "MCT_Draw")                        -- Unregister the "Draw" callback
 --[[ Register callbacks ]]--
 callbacks.Register("CreateMove", "MCT_CreateMove", OnCreateMove)             -- Register the "CreateMove" callback
+callbacks.Register("FireGameEvent", "adaamaXDgeLogger", damageLogger)
 callbacks.Register("Unload", "MCT_Unload", OnUnload)                         -- Register the "Unload" callback
 callbacks.Register("Draw", "MCT_Draw", doDraw)                               -- Register the "Draw" callback
 --[[ Play sound when loaded ]]--
