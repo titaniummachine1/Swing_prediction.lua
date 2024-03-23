@@ -219,6 +219,7 @@ local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
 local stepSize = 18
+local tickCounteratack = 0
 
 if pLocal then
     stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
@@ -467,6 +468,63 @@ end
         end
         return _out
     end
+
+    -- Constants for minimum and maximum speed
+local MIN_SPEED = 10  -- Minimum speed to avoid jittery movements
+local MAX_SPEED = 650 -- Maximum speed the player can move
+
+local MoveDir = Vector3(0,0,0) -- Variable to store the movement direction
+local pLocal = entities.GetLocalPlayer()  -- Variable to store the local player
+
+local function NormalizeVector(vector)
+    local length = math.sqrt(vector.x * vector.x + vector.y * vector.y + vector.z * vector.z)
+    if length == 0 then
+        return Vector3(0, 0, 0)
+    else
+        return Vector3(vector.x / length, vector.y / length, vector.z / length)
+    end
+end
+
+-- Function to compute the move direction
+local function ComputeMove(pCmd, a, b)
+    local diff = (b - a)
+    if diff:Length() == 0 then return Vector3(0, 0, 0) end
+
+    local x = diff.x
+    local y = diff.y
+    local vSilent = Vector3(x, y, 0)
+
+    local ang = vSilent:Angles()
+    local cPitch, cYaw, cRoll = pCmd:GetViewAngles()
+    local yaw = math.rad(ang.y - cYaw)
+    local pitch = math.rad(ang.x - cPitch)
+    local move = Vector3(math.cos(yaw) * MAX_SPEED, -math.sin(yaw) * MAX_SPEED, 0)
+
+    return move
+end
+
+-- Function to make the player walk to a destination smoothly
+local function WalkTo(pCmd, pLocal, pDestination)
+    local localPos = pLocal:GetAbsOrigin()
+    local distVector = pDestination - localPos
+    local dist = distVector:Length()
+
+    -- Determine the speed based on the distance
+    local speed = math.max(MIN_SPEED, math.min(MAX_SPEED, dist))
+
+    -- If distance is greater than 1, proceed with walking
+    if dist > 1 then
+        local result = ComputeMove(pCmd, localPos, pDestination)
+
+        -- Scale down the movements based on the calculated speed
+        local scaleFactor = speed / MAX_SPEED
+        pCmd:SetForwardMove(result.x * scaleFactor)
+        pCmd:SetSideMove(result.y * scaleFactor)
+    else
+        pCmd:SetForwardMove(0)
+        pCmd:SetSideMove(0)
+    end
+end
 
 local playerTicks = {}
 local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
@@ -1052,6 +1110,10 @@ end
     if CurrentTarget:EstimateAbsVelocity() == 0 then
         -- If the target player is not accelerating, set the predicted position to their current position
         vPlayerFuture = CurrentTarget:GetAbsOrigin()
+    elseif Menu.Misc.InstantAttack == true and warp.GetChargedTicks() > 12 then
+        vPlayerFuture = CurrentTarget:GetAbsOrigin()
+        drawVhitbox[1] = vPlayerFuture + vHitbox[1]
+        drawVhitbox[2] = vPlayerFuture + vHitbox[2]
     else
         local player = WPlayer.FromEntity(CurrentTarget)
 
@@ -1133,14 +1195,24 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         ChargeControl(pCmd)
     end
 
-
         --Check if attack simulation was succesfull
             if can_attack == true then
-                --remove tick
-                    if Menu.Misc.InstantAttack == true and warp.GetChargedTicks() == 13 then
+                if Menu.Misc.InstantAttack == true then
+                    local oppositePoint = pLocal:GetAbsOrigin() - pLocal:EstimateAbsVelocity()
+                    WalkTo(pCmd, pLocal, oppositePoint)
+                    if tickCounteratack % 2 == 0 then
+                        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- attack
+                    else
+                        client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
+                        client.SetConVar("sv_maxusrcmdprocessticks", 13, true) -- force sv_cheats 1 localy(bypass sv_cheats 0)
                         warp.TriggerWarp()
                     end
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)-- attack
+                    tickCounteratack = tickCounteratack + 1
+                else
+                    client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
+                    client.SetConVar("sv_maxusrcmdprocessticks", 24, true) -- force sv_cheats 1 localy(bypass sv_cheats 0
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- attack
+                end
                 can_attack = false
             end
 
