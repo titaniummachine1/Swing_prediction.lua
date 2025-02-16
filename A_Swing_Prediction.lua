@@ -8,23 +8,57 @@ if package.loaded["ImMenu"] then
     package.loaded["ImMenu"] = nil
 end
 
--- Load the module
-local menuLoaded, ImMenu = pcall(require, "ImMenu")
-assert(menuLoaded, "ImMenu not found, please install it!")
-assert(ImMenu.GetVersion() >= 0.66, "ImMenu version is too old, please update it!")
+--------------------------------------------------------------------------------------
+--Library loading--
+--------------------------------------------------------------------------------------
 
----@type boolean, lnxLib
-local libLoaded, lnxLib = pcall(require, "lnxLib")
-assert(libLoaded, "lnxLib not found, please install it!")
+-- Function to download content from a URL
+local function downloadFile(url)
+    local body = http.Get(url)
+    if body and body ~= "" then
+        return body
+    else
+        error("Failed to download file from " .. url)
+    end
+end
+
+local latestLNXlib = "https://github.com/lnx00/Lmaobox-Library/releases/latest/download/lnxLib.lua"
+local LatestImMenu = "https://github.com/titaniummachine1/Lmaobox-ImMenu/blob/main/src/New_ImMenu.lua"
+
+-- Load and validate library
+local function loadlib(libName, libURL)
+    local libLoaded, Lib = pcall(require, libName)
+    if not libLoaded or not Lib.GetVersion then
+        print(libName .. " not found or version is too old. Attempting to download the latest version...")
+
+        -- Download and load the library
+        local libContent = downloadFile(libURL)
+        local libFunction, loadError = load(libContent)
+        if libFunction then
+            libFunction()
+            libLoaded, Lib = pcall(require, libName)
+            if not libLoaded then
+                error("Failed to load " .. libName .. " after downloading: " .. loadError)
+            end
+        else
+            error("Error loading " .. libName .. ": " .. loadError)
+        end
+    end
+
+    return Lib
+end
+
+-- Initialize libraries
+local lnxLib = loadlib("LNXlib", latestLNXlib)
+local ImMenu = loadlib("New_ImMenu", LatestImMenu)
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
 local Helpers = lnxLib.TF2.Helpers
-local Prediction = lnxLib.TF2.Prediction
-local Fonts = lnxLib.UI.Fonts
+--local Prediction = lnxLib.TF2.Prediction
+--local Fonts = lnxLib.UI.Fonts
 local Input = lnxLib.Utils.Input
 local Notify = lnxLib.UI.Notify
-
 
 local function GetPressedkey()
     local pressedKey = Input.GetPressedKey()
@@ -54,20 +88,22 @@ end, ItemFlags.FullWidth))]]
 
 local Menu = {
 
+    currentTab = 0,
     tabs = { -- dont touch this, this is just for managing the tabs in the menu
-    Aimbot = true,
-    Visuals = false,
-    Misc = false
+        Aimbot = true,
+        Visuals = false,
+        Misc = false
     },
 
     Aimbot = {
         Aimbot = true,
         ChargeBot = true,
         AimbotFOV = 360,
+        SwingTime = 13,
         Silent = true,
     },
     Visuals = {
-        EnableVisuals = false,
+        EnableVisuals = true,
         Sphere = false,
         Section = 1,
         Sections = {"Local", "Target", "Experimental"},
@@ -98,7 +134,7 @@ local Menu = {
         CritRefill = {Active = true, NumCrits = 1},
         CritMode = 1,
         CritModes = {"Rage", "On Button"},
-        InstantAttack = true,
+        InstantAttack = false,
         ChargeReach = false,
         TroldierAssist = false,
         advancedHitreg = false,
@@ -208,7 +244,6 @@ local TotalSwingRange = 48
 local SwingHullSize = 38
 local SwingHalfhullSize = SwingHullSize / 2
 local tick_count = 0
-local time = 13 -- ~0.2s
 local can_attack = false
 local can_charge = false
 local Charge_Range = 128
@@ -340,7 +375,7 @@ local function CalcStrafe()
 end
 
 function Normalize(vec)
-    local length = math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z)
+    local length = vec:Length()
     return Vector3(vec.x / length, vec.y / length, vec.z / length)
 end
 
@@ -399,7 +434,7 @@ end
 
             --[[ Forward collision ]]
 
-            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
+            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
             --DrawLine(last.p + vStep, pos + vStep)
             if wallTrace.fraction < 1 then
                 -- We'll collide
@@ -424,7 +459,7 @@ end
             if not onGround1 then downStep = Vector3() end
 
             -- Ground collision
-            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY, shouldHitEntity)
+            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
             if groundTrace.fraction < 1 then
                 -- We'll hit the ground
                 local normal = groundTrace.plane
@@ -552,6 +587,9 @@ function IsVisible(player, fromEntity)
     end
 end
 
+
+
+-- Function to get the best target
 local function GetBestTarget(me)
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
@@ -564,15 +602,15 @@ local function GetBestTarget(me)
         if player == nil or not player:IsAlive()
         or player:IsDormant()
         or player == me or player:GetTeamNumber() == me:GetTeamNumber()
-        or gui.GetValue("ignore cloaked") == 1 and player:InCond(4)
-        or not IsVisible(player, pLocal) 
-        or (pLocal:InCond(17) and (player:GetAbsOrigin().z - pLocalOrigin.z) > 17) then
+        or (gui.GetValue("ignore cloaked") == 1 and player:InCond(4))
+        or not IsVisible(player, me)
+        or (me:InCond(17) and (player:GetAbsOrigin().z - me:GetAbsOrigin().z) > 17) then
             goto continue
         end
-    
-        local numBacktrackTicks = gui.GetValue("Fake Latency") == 1 and maxTick or gui.GetValue("Fake Latency") == 0 and gui.GetValue("Backtrack") == 1 and 4 or 0
 
-        if numBacktrackTicks ~= 0 then
+        local numBacktrackTicks = (gui.GetValue("Fake Latency") == 1 and maxTick) or (gui.GetValue("Fake Latency") == 0 and gui.GetValue("Backtrack") == 1 and 4) or 0
+
+        --[[if numBacktrackTicks ~= 0 then
             local playerIndex = player:GetIndex()
             playerTicks[playerIndex] = playerTicks[playerIndex] or {}
             table.insert(playerTicks[playerIndex], player:GetAbsOrigin())
@@ -580,7 +618,7 @@ local function GetBestTarget(me)
             if #playerTicks[playerIndex] > numBacktrackTicks then
                 table.remove(playerTicks[playerIndex], 1)
             end
-        end
+        end]]
 
         local playerOrigin = player:GetAbsOrigin()
         local distance = (playerOrigin - localPlayer:GetAbsOrigin()):Length()
@@ -594,9 +632,11 @@ local function GetBestTarget(me)
 
             if fov <= Menu.Aimbot.AimbotFOV then
                 local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.9)
-                local fovFactor = Math.RemapValClamped(fov, settings.MinFOV, Menu.Aimbot.AimbotFOV, 1, 1)
+                local fovFactor = Math.RemapValClamped(fov, 0, Menu.Aimbot.AimbotFOV, 1, 0.1)
+                local isVisible = Helpers.VisPos(player, localPlayer:GetAbsOrigin() + Vector3(0,0,75), playerOrigin + Vector3(0,0,75))
+                local visibilityFactor = isVisible and 1 or 0.5
 
-                local factor = distanceFactor * fovFactor
+                local factor = distanceFactor * fovFactor * visibilityFactor
                 if factor > bestFactor then
                     bestTarget = player
                     bestFactor = factor
@@ -610,7 +650,7 @@ local function GetBestTarget(me)
 end
 
 -- Function to check if target is in range
-local function checkInRange(targetPos, spherePos, sphereRadius, pWeapon)
+local function checkInRange(targetPos, spherePos, sphereRadius)
     local hitbox_min_trigger = targetPos + vHitbox[1]
     local hitbox_max_trigger = targetPos + vHitbox[2]
 
@@ -699,7 +739,7 @@ local function ChargeControl(pCmd)
     angleChange = math.max(math.min(angleChange, maxAngleChange), -maxAngleChange)
 
     -- Interpolate between the current yaw and the new yaw
-    local interpolationTime = 0.15 -- Time in seconds for a full transition
+    local interpolationTime = 0.1515 -- Time in seconds for a full transition
     local interpolationFraction = 1 / (66 * interpolationTime) -- Adjusted for smoother transition
     local interpolatedYaw = currentAngles.yaw + angleChange * interpolationFraction
 
@@ -715,7 +755,7 @@ local function UpdateHomingMissile()
     local pLocalVel = pLocal:EstimateAbsVelocity()
     local vPlayerVel = vPlayer:EstimateAbsVelocity()
     
-    local timeStep = 0.015 -- Time step for simulation
+    local timeStep = globals.TickInterval() -- Time step for simulation
     local interceptPoint = nil
     local interceptTime = 0
 
@@ -744,7 +784,7 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, onGround)
+local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
     local inRange = false
     local point = nil
     local Backtrack = gui.GetValue("Backtrack")
@@ -757,20 +797,20 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, on
                 inRange = true
                 point = vPlayerOrigin
                 tick_count = tick_count + 1
-                if tick_count >= (time - 1) then
+                if tick_count >= (Menu.Aimbot.SwingTime - 1) then
                     tick_count = 0
                     can_charge = true
-                elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (time - 2) then
+                elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (Menu.Aimbot.SwingTime - 2) then
                     cmd:SetButtons(cmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
                 end
             elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
                 inRange = true
                 point = vPlayerFuture
                 tick_count = tick_count + 1
-                if tick_count >= (time - 1) then
+                if tick_count >= (Menu.Aimbot.SwingTime - 1) then
                     tick_count = 0
                     can_charge = true
-                elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (time - 2) then
+                elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (Menu.Aimbot.SwingTime - 2) then
                     cmd:SetButtons(cmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
                 end
             end
@@ -783,7 +823,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, on
                 inRange = true
                 point = vPlayerOrigin
                 tick_count = tick_count + 1
-                if tick_count >= (time - 1) then
+                if tick_count > (Menu.Aimbot.SwingTime - 1) then
                     tick_count = 0
                     can_charge = true
                 end
@@ -827,7 +867,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, on
                                 inRange = true
                                 point = vPlayerOrigin
                                 tick_count = tick_count + 1
-                                if tick_count >= (time - 1) then
+                                if tick_count >= (Menu.Aimbot.SwingTime - 1) then
                                 tick_count = 0
                                 can_charge = true
                             end
@@ -850,14 +890,14 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, on
                     inRange = true
                     point = vPlayerOrigin
                     tick_count = tick_count + 1
-                    if tick_count >= (time - 1) then
+                    if tick_count >= (Menu.Aimbot.SwingTime - 1) then
                     tick_count = 0
                     can_charge = true
                 elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
                     inRange = true
                     point = vPlayerFuture
                     tick_count = tick_count + 1
-                    if tick_count >= (time - 1) then
+                    if tick_count >= (Menu.Aimbot.SwingTime - 1) then
                         tick_count = 0
                         can_charge = true
                         end
@@ -883,9 +923,6 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, on
     return false, nil
 end
 
-
--- Initialize a counter outside of your game loop
-local attackCounter = 0
 -- Store the original Crit Hack Key value outside the main loop or function
 local originalCritHackKey = gui.GetValue("Crit Hack Key")
 local critkeyRestored = false
@@ -899,6 +936,10 @@ local function OnCreateMove(pCmd)
     if not pLocal or not pLocal:IsAlive() then
         goto continue -- Return if the local player entity doesn't exist or is dead
     end
+
+    
+    local fChargeBeginTime =  (pLocal:GetPropFloat("PipebombLauncherLocalData", "m_flChargeBeginTime") or 0);
+
     -- Check if the local player is a spy
     pLocalClass = pLocal:GetPropInt("m_iClass")
     if pLocalClass == nil or pLocalClass == 8 then
@@ -913,11 +954,8 @@ local function OnCreateMove(pCmd)
     local nextPrimaryAttack = pWeapon:GetPropFloat("LocalActiveWeaponData", "m_flNextPrimaryAttack")
     --print(Conversion.Time_to_Ticks(nextPrimaryAttack) .. "LastShoot", globals.TickCount())
 
-    -- Get the current latency and lerp
-    local latOut = clientstate.GetLatencyOut()
-    local latIn = clientstate.GetLatencyIn()
         lerp = client.GetConVar("cl_interp") or 0
-        Latency = (latOut + lerp) -- Calculate the reaction time in seconds
+        Latency = (lerp) -- Calculate the reaction time in seconds
         Latency = math.floor(Latency * (globals.TickInterval() * 66) + 1) -- Convert the delay to ticks
         defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
 
@@ -989,6 +1027,7 @@ end
 
 --[-----Get best target------------------]
     local keybind = Menu.Keybind
+
     players = entities.FindByClass("CTFPlayer")
         if keybind == 0 then
             -- Check if player has no key bound
@@ -1062,14 +1101,10 @@ end
 
 --[--------------Prediction-------------------]
 -- Predict both players' positions after swing
-    local gravity = client.GetConVar("sv_gravity")
-    local stepSize = pLocal:GetPropFloat("m_flStepSize")
+    gravity = client.GetConVar("sv_gravity")
+    stepSize = pLocal:GetPropFloat("m_flStepSize")
 
     CalcStrafe()
-
-    if inaccuracyValue then
-        TotalSwingRange = TotalSwingRange - math.abs(inaccuracyValue)
-    end
 
     -- Local player prediction
     if pLocal:EstimateAbsVelocity() == 0 then
@@ -1079,15 +1114,16 @@ end
         local player = WPlayer.FromEntity(pLocal)
 
         strafeAngle = Menu.Misc.strafePred and strafeAngles[pLocal:GetIndex()] or 0
-        if not Menu.Misc.advancedHitreg then
-            TotalSwingRange = TotalSwingRange - math.abs(strafeAngle)
-        end
 
-        local predData = PredictPlayer(player, time, strafeAngle)
+        local predData = PredictPlayer(player, Menu.Aimbot.SwingTime, strafeAngle)
         if not predData then return end
 
+        if inaccuracyValue then
+            TotalSwingRange = TotalSwingRange - math.abs(inaccuracyValue)
+        end
+
         pLocalPath = predData.pos
-        pLocalFuture = predData.pos[time] + viewOffset
+        pLocalFuture = predData.pos[Menu.Aimbot.SwingTime] + viewOffset
     else
         local player = WPlayer.FromEntity(pLocal)
         pLocalFuture = pLocal:GetAbsOrigin() + viewOffset
@@ -1116,11 +1152,11 @@ end
 
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
 
-        local predData = PredictPlayer(player, time, strafeAngle)
+        local predData = PredictPlayer(player, Menu.Aimbot.SwingTime, strafeAngle)
         if not predData then return end
 
         vPlayerPath = predData.pos
-        vPlayerFuture = predData.pos[time]
+        vPlayerFuture = predData.pos[Menu.Aimbot.SwingTime]
 
         drawVhitbox[1] = vPlayerFuture + vHitbox[1]
         drawVhitbox[2] = vPlayerFuture + vHitbox[2]
@@ -1391,18 +1427,6 @@ local drawPolygon = (function()
 	end
 end)();
 
-local lastToggleTime = 0
-local Lbox_Menu_Open = true
-local toggleCooldown = 0.2  -- 200 milliseconds
-
-local function toggleMenu()
-    local currentTime = globals.RealTime()
-    if currentTime - lastToggleTime >= toggleCooldown then
-        Lbox_Menu_Open = not Lbox_Menu_Open  -- Toggle the state
-        lastToggleTime = currentTime  -- Reset the last toggle time
-    end
-end
-
 local bindTimer = 0
 local bindDelay = 0.25  -- Delay of 0.25 seconds
 
@@ -1435,6 +1459,8 @@ local function handleKeybind(noKeyText, keybind, keybindName)
     return keybind, keybindName
 end
 
+
+
 local function L_line(start_pos, end_pos, secondary_line_size)
     if not (start_pos and end_pos) then
         return
@@ -1459,8 +1485,16 @@ local function L_line(start_pos, end_pos, secondary_line_size)
     end
 end
 
+-- Function to update the tabs
+local function updateTabs(selectedTab)
+    for tabName, _ in pairs(Menu.tabs) do
+        Menu.tabs[tabName] = (tabName == selectedTab)
+    end
+end
+
 -- debug command: ent_fire !picker Addoutput "health 99999" --superbot
 local Verdana = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
+draw.SetFont(Verdana)
 --[[ Code called every frame ]]--
 local function doDraw()
 if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.EnableVisuals then
@@ -1862,28 +1896,10 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
         end
     end
 
-        -- Inside your OnCreateMove or similar function where you check for input
-    if input.IsButtonDown(KEY_INSERT) then  -- Replace 72 with the actual key code for the button you want to use
-        toggleMenu()
-    end
-
-    if Lbox_Menu_Open == true and ImMenu and ImMenu.Begin("Swing Prediction", true) then
+    if gui.IsMenuOpen() and ImMenu and ImMenu.Begin("Swing Prediction", true) then
             ImMenu.BeginFrame(1) -- tabs
-                if ImMenu.Button("Aimbot") then
-                    Menu.tabs.Aimbot = true
-                    Menu.tabs.Misc = false
-                    Menu.tabs.Visuals = false
-                end
-                if ImMenu.Button("Misc") then
-                    Menu.tabs.Aimbot = false
-                    Menu.tabs.Misc = true
-                    Menu.tabs.Visuals = false
-                end
-                if ImMenu.Button("Visuals") then
-                    Menu.tabs.Aimbot = false
-                    Menu.tabs.Misc = false
-                    Menu.tabs.Visuals = true
-                end
+                Menu.currentTab = ImMenu.TabControl(Menu.tabs, Menu.currentTab)
+                updateTabs(Menu.currentTab)
             ImMenu.EndFrame()
 
             if Menu.tabs.Aimbot then
@@ -1901,6 +1917,10 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
                 ImMenu.EndFrame()
 
                 ImMenu.BeginFrame(1)
+                    Menu.Aimbot.SwingTime = ImMenu.Slider("Swing Time", Menu.Aimbot.SwingTime, 1, 13)
+                ImMenu.EndFrame()
+
+                ImMenu.BeginFrame(1)
                     ImMenu.Text("Keybind: ")
                     Menu.Keybind, Menu.KeybindName = handleKeybind("Always On", Menu.Keybind,  Menu.KeybindName)
                 ImMenu.EndFrame()
@@ -1913,19 +1933,19 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
                     Menu.Misc.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Misc.ChargeReach)
                 ImMenu.EndFrame()
 
-                ImMenu.BeginFrame(1)
+                ImMenu.BeginFrame("Advanced")
                     Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
                     Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
                     Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
                 ImMenu.EndFrame()
 
-                ImMenu.BeginFrame(1)
+                ImMenu.BeginFrame("Crit Bucket")
                     Menu.Misc.CritRefill.Active = ImMenu.Checkbox("Auto Crit refill", Menu.Misc.CritRefill.Active)
                     if Menu.Misc.CritRefill.Active then
                         Menu.Misc.CritRefill.NumCrits = ImMenu.Slider("Crit Number", Menu.Misc.CritRefill.NumCrits, 1, 25)
                     end
                 ImMenu.EndFrame()
-                ImMenu.BeginFrame(1)
+                ImMenu.BeginFrame("Charge")
                     if Menu.Misc.CritRefill.Active then
                         Menu.Misc.CritMode = ImMenu.Option(Menu.Misc.CritMode, Menu.Misc.CritModes)
                     end
