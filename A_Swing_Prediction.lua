@@ -49,12 +49,7 @@ end, ItemFlags.FullWidth))]]
 local Menu = {
     -- Tab management - Start with Aimbot tab open by default
     currentTab = 1, -- 1 = Aimbot, 2 = Charge, 3 = Visuals, 4 = Misc
-    tabs = {
-        Aimbot = true,
-        Charge = false,
-        Visuals = false,
-        Misc = false
-    },
+    tabs = { "Aimbot", "Demoknight", "Visuals", "Misc" },
 
     -- Aimbot settings
     Aimbot = {
@@ -815,7 +810,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
     -- Check if instant attack is ready
     local dashKeyBound = gui.GetValue("dash move key") ~= 0
     local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and
-    dashKeyBound
+        dashKeyBound
 
     -- Don't attempt prediction when charging without jump charge
     if isCharging and not Menu.Misc.ChargeJump then
@@ -1231,7 +1226,7 @@ local function OnCreateMove(pCmd)
 
     --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
     local aimpos = CurrentTarget:GetAbsOrigin() +
-    Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
+        Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
 
     -- Inside your game loop
     if Menu.Aimbot.Aimbot then
@@ -2046,17 +2041,15 @@ local function doDraw()
     if gui.IsMenuOpen() and ImMenu and ImMenu.Begin("Swing Prediction", true) then
         ImMenu.BeginFrame(1) -- tabs
         Menu.currentTab = ImMenu.TabControl(Menu.tabs, Menu.currentTab)
-        updateTabs(Menu.currentTab)
         ImMenu.EndFrame()
 
-        if Menu.tabs.Aimbot then
+        if Menu.currentTab == 1 then -- Aimbot tab
             ImMenu.BeginFrame(1)
             Menu.Aimbot.Aimbot = ImMenu.Checkbox("Enable", Menu.Aimbot.Aimbot)
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
             Menu.Aimbot.Silent = ImMenu.Checkbox("Silent Aim", Menu.Aimbot.Silent)
-            Menu.Aimbot.ChargeBot = ImMenu.Checkbox("Charge Bot", Menu.Aimbot.ChargeBot)
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
@@ -2073,16 +2066,29 @@ local function doDraw()
             ImMenu.EndFrame()
         end
 
-        if Menu.tabs.Misc then
+        if Menu.currentTab == 2 then -- Demoknight tab
             ImMenu.BeginFrame(1)
-            Menu.Misc.strafePred = ImMenu.Checkbox("Local Strafe Pred", Menu.Misc.strafePred)
-            Menu.Misc.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Misc.ChargeReach)
+            Menu.Charge.ChargeBot = ImMenu.Checkbox("Charge Bot", Menu.Charge.ChargeBot)
             ImMenu.EndFrame()
 
+            ImMenu.BeginFrame(1)
+            Menu.Charge.ChargeControl = ImMenu.Checkbox("Charge Control", Menu.Charge.ChargeControl)
+            ImMenu.EndFrame()
+
+            ImMenu.BeginFrame(1)
+            Menu.Charge.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Charge.ChargeReach)
+            ImMenu.EndFrame()
+
+            ImMenu.BeginFrame(1)
+            Menu.Charge.ChargeJump = ImMenu.Checkbox("Charge Jump", Menu.Charge.ChargeJump)
+            ImMenu.EndFrame()
+        end
+
+        if Menu.currentTab == 4 then -- Misc tab
             ImMenu.BeginFrame()
-            Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
-            Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
-            Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
+                Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
+                Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
+                Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame()
@@ -2097,14 +2103,12 @@ local function doDraw()
             end
             ImMenu.EndFrame()
 
-
             ImMenu.BeginFrame(1)
-            Menu.Misc.ChargeControl = ImMenu.Checkbox("Charge Control", Menu.Misc.ChargeControl)
-            Menu.Misc.ChargeJump = ImMenu.Checkbox("Charge Jump", Menu.Misc.ChargeJump)
+            Menu.Misc.strafePred = ImMenu.Checkbox("Local Strafe Pred", Menu.Misc.strafePred)
             ImMenu.EndFrame()
         end
 
-        if Menu.tabs.Visuals then
+        if Menu.currentTab == 3 then -- Visuals tab
             ImMenu.BeginFrame(1)
             Menu.Visuals.EnableVisuals = ImMenu.Checkbox("Enable", Menu.Visuals.EnableVisuals)
             ImMenu.EndFrame()
@@ -2135,6 +2139,7 @@ local function doDraw()
                 ImMenu.EndFrame()
             end
         end
+
         ImMenu.End()
     end
 end
