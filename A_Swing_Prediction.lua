@@ -175,7 +175,7 @@ local function LoadCFG(folder_name)
         local content = file:read("*a")
         file:close()
         local chunk, err = load("return " .. content)
-        if chunk then
+        if chunk and not input.IsButtonDown(KEY_LSHIFT) then
             printc(0, 255, 140, 255, "[" .. os.date("%H:%M:%S") .. "] Loaded Config from " .. tostring(fullPath))
             return chunk()
         else
@@ -212,19 +212,6 @@ end
 -- Call the initialization function to ensure no nil values
 -- This ensures settings are properly initialized even after loading the config
 SafeInitMenu()
-
--- Synchronize duplicated settings to avoid conflicts
-local function SyncSettings()
-    -- Synchronize ChargeBot setting (exists in both Aimbot and Charge sections)
-    if Menu.Charge.ChargeBot ~= Menu.Aimbot.ChargeBot then
-        -- Prefer the Charge tab setting as it's the proper location
-        Menu.Aimbot.ChargeBot = Menu.Charge.ChargeBot
-        print("Synchronized ChargeBot settings")
-    end
-end
-
--- Run synchronization after loading config
-SyncSettings()
 
 local isMelee = false
 local pLocal = nil
@@ -1316,13 +1303,8 @@ local function OnCreateMove(pCmd)
     dashKeyBound = gui.GetValue("dash move key") ~= 0
     local canInstantAttack = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and dashKeyBound
 
-    -- Temporarily disable charge reach if instant attack is ready
-    local tempChargeReach = Menu.Misc.ChargeReach
-    if canInstantAttack then
-        Menu.Misc.ChargeReach = false
-    end
-
-    -- Distance check and target range check
+    -- No need to temporarily store ChargeReach - directly check it when needed
+    -- Get distance check and target range check
     -- Get current distance between local player and closest player
     Vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
@@ -1337,8 +1319,7 @@ local function OnCreateMove(pCmd)
     can_attack = inRange
 
     --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
-    hitboxes = CurrentTarget:GetHitboxes()
-    hitbox = hitboxes[6]
+
     aimpos = nil
     --else
     aimpos = CurrentTarget:GetAbsOrigin() +
@@ -1397,7 +1378,7 @@ local function OnCreateMove(pCmd)
             local weaponData = pWeapon:GetWeaponData()
             if weaponData and weaponData.smackDelay then
                 -- Convert smackDelay time to ticks (rounded up to ensure we have enough time)
-                weaponSmackDelay = math.ceil(weaponData.smackDelay / globals.TickInterval())
+                weaponSmackDelay = math.floor(weaponData.smackDelay / globals.TickInterval())
                 -- Ensure a minimum viable value
                 weaponSmackDelay = math.max(weaponSmackDelay, 5)
 
@@ -1485,8 +1466,7 @@ local function OnCreateMove(pCmd)
         can_attack = false
     end
 
-    -- Restore original charge reach setting
-    Menu.Misc.ChargeReach = tempChargeReach
+    -- No need to restore any ChargeReach setting as we're not temporarily changing it
 
     if can_charge then
         if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and OnGround then
@@ -2203,15 +2183,30 @@ local function doDraw()
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
+            local oldChargeControl = Menu.Charge.ChargeControl
             Menu.Charge.ChargeControl = ImMenu.Checkbox("Charge Control", Menu.Charge.ChargeControl)
+            -- If the value changed, synchronize with the Misc setting
+            if oldChargeControl ~= Menu.Charge.ChargeControl then
+                Menu.Misc.ChargeControl = Menu.Charge.ChargeControl
+            end
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
+            local oldChargeReach = Menu.Charge.ChargeReach
             Menu.Charge.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Charge.ChargeReach)
+            -- If the value changed, synchronize with the Misc setting
+            if oldChargeReach ~= Menu.Charge.ChargeReach then
+                Menu.Misc.ChargeReach = Menu.Charge.ChargeReach
+            end
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
+            local oldChargeJump = Menu.Charge.ChargeJump
             Menu.Charge.ChargeJump = ImMenu.Checkbox("Charge Jump", Menu.Charge.ChargeJump)
+            -- If the value changed, synchronize with the Misc setting
+            if oldChargeJump ~= Menu.Charge.ChargeJump then
+                Menu.Misc.ChargeJump = Menu.Charge.ChargeJump
+            end
             ImMenu.EndFrame()
         end
 
