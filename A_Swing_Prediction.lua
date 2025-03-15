@@ -20,6 +20,14 @@ local Helpers = lnxLib.TF2.Helpers
 local Input = lnxLib.Utils.Input
 local Notify = lnxLib.UI.Notify
 
+-- Function to safely ensure a value is set, using a default if nil
+local function SafeValue(value, default)
+    if value == nil then
+        return default
+    end
+    return value
+end
+
 local function GetPressedkey()
     local pressedKey = Input.GetPressedKey()
     if not pressedKey then
@@ -57,7 +65,9 @@ local Menu = {
         Silent = true,
         AimbotFOV = 360,
         SwingTime = 13,
-        ChargeBot = true, -- Moved to Charge tab in UI but kept here for backward compatibility
+        AlwaysUseMaxSwingTime = true, -- Default to always use max for best experience
+        MaxSwingTime = 13,            -- Starting value, will be updated based on weapon
+        ChargeBot = true,             -- Moved to Charge tab in UI but kept here for backward compatibility
     },
 
     -- Charge settings (moved from mixed locations to a dedicated section)
@@ -179,34 +189,45 @@ local status, loadedMenu = pcall(function()
     return assert(LoadCFG(string.format([[Lua %s]], Lua__fileName)))
 end) -- Auto-load config
 
--- Function to check if the loaded config is valid
-local function isValidConfig(loadedMenu)
-    -- Check for presence of essential menu sections
-    if not loadedMenu.tabs or not loadedMenu.Aimbot or not loadedMenu.Visuals or not loadedMenu.Misc then
-        print("Missing essential menu sections")
-        return false
-    end
-
-    -- Basic structure validation is enough, no need to check function types
-    return true
+if status and loadedMenu then
+    Menu = loadedMenu
 end
 
--- Execute this block only if loading the config was successful
-if status then
-    if isValidConfig(loadedMenu) and not input.IsButtonDown(KEY_LSHIFT) then
-        Menu = loadedMenu
-        print("Successfully loaded config from " .. string.format([[Lua %s]], Lua__fileName))
-    else
-        print("Config is outdated or invalid. Creating a new config.")
-        CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) -- Save the config
-    end
-else
-    print("Failed to load config. Creating a new config.")
-    CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) -- Save the config
+-- Ensure all the Menu settings are initialized
+local function SafeInitMenu()
+    -- Initialize Aimbot settings
+    Menu.Aimbot = Menu.Aimbot or {}
+    Menu.Aimbot.Aimbot = SafeValue(Menu.Aimbot.Aimbot, true)
+    Menu.Aimbot.Silent = SafeValue(Menu.Aimbot.Silent, true)
+    Menu.Aimbot.AimbotFOV = SafeValue(Menu.Aimbot.AimbotFOV, 360)
+    Menu.Aimbot.SwingTime = SafeValue(Menu.Aimbot.SwingTime, 13)
+    Menu.Aimbot.AlwaysUseMaxSwingTime = SafeValue(Menu.Aimbot.AlwaysUseMaxSwingTime, true)
+    Menu.Aimbot.MaxSwingTime = SafeValue(Menu.Aimbot.MaxSwingTime, 13)
+    Menu.Aimbot.ChargeBot = SafeValue(Menu.Aimbot.ChargeBot, true)
+
+    -- Initialize other sections if needed
+    -- (We can add more sections here if they also have nil issues)
 end
+
+-- Call the initialization function to ensure no nil values
+-- This ensures settings are properly initialized even after loading the config
+SafeInitMenu()
+
+-- Synchronize duplicated settings to avoid conflicts
+local function SyncSettings()
+    -- Synchronize ChargeBot setting (exists in both Aimbot and Charge sections)
+    if Menu.Charge.ChargeBot ~= Menu.Aimbot.ChargeBot then
+        -- Prefer the Charge tab setting as it's the proper location
+        Menu.Aimbot.ChargeBot = Menu.Charge.ChargeBot
+        print("Synchronized ChargeBot settings")
+    end
+end
+
+-- Run synchronization after loading config
+SyncSettings()
 
 local isMelee = false
-local pLocal = entities.GetLocalPlayer()
+local pLocal = nil
 local players = entities.FindByClass("CTFPlayer")
 local swingrange = 48
 local TotalSwingRange = 48
@@ -374,6 +395,8 @@ local function PredictPlayer(player, t, d)
     local vUp = Vector3(0, 0, 1)
     local vStep = Vector3(0, 0, stepSize)
     local ignoreEntities = { "CTFAmmoPack", "CTFDroppedWeapon" }
+    pLocal = entities.GetLocalPlayer()
+    if not pLocal then return nil end
     local shouldHitEntity = function(entity) return shouldHitEntityFun(entity, player, ignoreEntities) end --trace ignore simulated player
     local pFlags = player:GetPropInt("m_fFlags")
     -- Add the current record
@@ -512,8 +535,19 @@ end
 
 -- Function to make the player walk to a destination smoothly
 local function WalkTo(pCmd, pLocal, pDestination)
+    -- Safety check - if destination is invalid, don't attempt to move
+    if not pDestination or not pLocal then
+        return
+    end
+
     local localPos = pLocal:GetAbsOrigin()
     local distVector = pDestination - localPos
+
+    -- Safety check - make sure the distance vector is valid
+    if not distVector or distVector:Length() > 1000 then
+        return
+    end
+
     local dist = distVector:Length()
 
     -- Determine the speed based on the distance
@@ -522,6 +556,9 @@ local function WalkTo(pCmd, pLocal, pDestination)
     -- If distance is greater than 1, proceed with walking
     if dist > 1 then
         local result = ComputeMove(pCmd, localPos, pDestination)
+
+        -- Safety check - make sure result is valid
+        if not result then return end
 
         -- Scale down the movements based on the calculated speed
         local scaleFactor = speed / MAX_SPEED
@@ -580,12 +617,14 @@ local function GetBestTarget(me)
     local localPlayerEyePos = localPlayerOrigin + Vector3(0, 0, 75)
 
     for _, player in pairs(players) do
-        if player == nil or not player:IsAlive()
+        if player == nil
+            or not player:IsValid()
+            or not player:IsAlive()
             or player:IsDormant()
             or player == me or player:GetTeamNumber() == me:GetTeamNumber()
             or (gui.GetValue("ignore cloaked") == 1 and player:InCond(4))
-            or not IsVisible(player, me)
-            or (me:InCond(17) and (player:GetAbsOrigin().z - me:GetAbsOrigin().z) > 17) then
+            or (me:InCond(17) and (player:GetAbsOrigin().z - me:GetAbsOrigin().z) > 17)
+            or not IsVisible(player, me) then
             goto continue
         end
 
@@ -803,13 +842,14 @@ local hasNotified = false
 local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, OnGround, isCharging)
     local inRange = false
     local point = nil
-    local can_charge = false
+    can_charge = false
     local Backtrack = gui.GetValue("Backtrack")
     local fakelatencyON = gui.GetValue("Fake Latency")
 
     -- Check if instant attack is ready
     local dashKeyBound = gui.GetValue("dash move key") ~= 0
-    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and
+    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
+        warp.GetChargedTicks() >= Menu.Aimbot.SwingTime and
         dashKeyBound
 
     -- Don't attempt prediction when charging without jump charge
@@ -984,7 +1024,7 @@ local function OnCreateMove(pCmd)
     local nextPrimaryAttack = pWeapon:GetPropFloat("LocalActiveWeaponData", "m_flNextPrimaryAttack")
     --print(Conversion.Time_to_Ticks(nextPrimaryAttack) .. "LastShoot", globals.TickCount())
 
-    lerp = client.GetConVar("cl_interp") or 0
+    local lerp = client.GetConVar("cl_interp") or 0
     Latency = (lerp)                                                  -- Calculate the reaction time in seconds
     Latency = math.floor(Latency * (globals.TickInterval() * 66) + 1) -- Convert the delay to ticks
     defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
@@ -1004,10 +1044,8 @@ local function OnCreateMove(pCmd)
     local pUsingMargetGarden = false
 
     if pWeaponDefIndex == 416 then
-        -- If "pWeapon" is not set, break
         pUsingMargetGarden = true
-        -- Set "pUsingProjectileWeapon" to true
-    end -- Set "pUsingProjectileWeapon" to false
+    end
 
     --[--Troldier assist--]
     if Menu.Misc.TroldierAssist then
@@ -1145,10 +1183,11 @@ local function OnCreateMove(pCmd)
         local player = WPlayer.FromEntity(pLocal)
         strafeAngle = Menu.Misc.strafePred and strafeAngles[pLocal:GetIndex()] or 0
 
-        -- Always use 13 ticks for simulation with instant attack
-        local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and
+        -- Always use weapon-specific ticks for simulation with instant attack
+        local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
+            warp.GetChargedTicks() >= Menu.Aimbot.SwingTime and
             gui.GetValue("dash move key") ~= 0
-        local simTicks = 13
+        local simTicks = Menu.Aimbot.SwingTime
         if not instantAttackReady then
             simTicks = Menu.Aimbot.SwingTime
         end
@@ -1184,7 +1223,8 @@ local function OnCreateMove(pCmd)
 
     -- Check if instant attack is ready
     local dashKeyBound = gui.GetValue("dash move key") ~= 0
-    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and
+    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
+        warp.GetChargedTicks() >= Menu.Aimbot.SwingTime and
         dashKeyBound
 
     if not instantAttackReady then
@@ -1351,22 +1391,96 @@ local function OnCreateMove(pCmd)
 
     -- Only try instant attack when it's possible
     if can_attack then
+        -- Get the actual weapon smack delay if available
+        local weaponSmackDelay = 13 -- Default fallback value
+        if pWeapon and pWeapon:GetWeaponData() then
+            local weaponData = pWeapon:GetWeaponData()
+            if weaponData and weaponData.smackDelay then
+                -- Convert smackDelay time to ticks (rounded up to ensure we have enough time)
+                weaponSmackDelay = math.ceil(weaponData.smackDelay / globals.TickInterval())
+                -- Ensure a minimum viable value
+                weaponSmackDelay = math.max(weaponSmackDelay, 5)
+
+                -- Update the menu's SwingTime setting to match the current weapon's properties
+                -- Only update if it's different to avoid constant updates
+                if Menu.Aimbot.SwingTime ~= weaponSmackDelay then
+                    local oldValue = Menu.Aimbot.SwingTime or 13 -- Add default value if nil
+
+                    -- If user has enabled "Always Use Max", or set the value to the current max,
+                    -- update the swing time to the new maximum
+                    if Menu.Aimbot.AlwaysUseMaxSwingTime or oldValue >= (Menu.Aimbot.MaxSwingTime or 13) then
+                        Menu.Aimbot.SwingTime = weaponSmackDelay
+                    end
+
+                    -- Update the maximum swing time value for the slider
+                    Menu.Aimbot.MaxSwingTime = weaponSmackDelay
+
+                    -- Display notification about the change with weapon name
+                    local pWeaponName = "Unknown"
+                    pcall(function()
+                        local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
+                        local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
+                        pWeaponName = pWeaponDef and pWeaponDef:GetName() or "Unknown"
+                    end)
+
+                    -- Display formatted notification with more details
+                    Notify.Simple(string.format(
+                        "Updated SwingTime for %s:\n - Old value: %d ticks\n - New value: %d ticks\n - Actual delay: %.2f seconds",
+                        pWeaponName,
+                        oldValue,
+                        Menu.Aimbot.SwingTime or weaponSmackDelay,
+                        weaponData.smackDelay
+                    ))
+                end
+            end
+        end
+
         if Menu.Misc.InstantAttack and canInstantAttack then
-            local oppositePoint = pLocal:GetAbsOrigin() - pLocal:EstimateAbsVelocity()
-            if tickCounteratack % 2 == 0 then
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- attack
+            -- Remove cooldown code and directly proceed to instant attack logic
+            local velocity = pLocal:EstimateAbsVelocity()
+            -- Safety check: only calculate oppositePoint if we have actual velocity
+            local oppositePoint
+            if velocity:Length() > 10 then -- Only use if we have meaningful velocity
+                oppositePoint = pLocal:GetAbsOrigin() - velocity
             else
-                WalkTo(pCmd, pLocal, oppositePoint)
+                -- If no significant velocity, use a point slightly in front based on view angles
+                local angles = engine.GetViewAngles()
+                local forward = angles:Forward()
+                oppositePoint = pLocal:GetAbsOrigin() + forward * 20
+            end
+
+            if tickCounteratack % 2 == 0 then
+                -- IMPORTANT: First initiate the attack, THEN trigger warp
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- First initiate attack
+            else
+                -- Safety check to prevent empty vectors or extreme values
+                if oppositePoint and (oppositePoint - pLocal:GetAbsOrigin()):Length() < 300 then
+                    WalkTo(pCmd, pLocal, oppositePoint)
+                end
                 client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
-                client.SetConVar("sv_maxusrcmdprocessticks", 13, true)    -- Always use exactly 13 ticks for warp
-                warp.TriggerWarp()
+
+                -- Add safety cap to prevent freezes - never allow more than 20 ticks
+                local safeTickValue = math.min(weaponSmackDelay, 20)
+                client.SetConVar("sv_maxusrcmdprocessticks", safeTickValue)
+
+                -- Safety check before triggering warp
+                local chargedTicks = warp.GetChargedTicks() or 0
+                if chargedTicks >= safeTickValue then
+                    warp.TriggerWarp() -- Then trigger warp
+                    -- We've removed the cooldown, so no need to track the last attack time
+                else
+                    -- Fall back to normal attack when we don't have enough ticks
+                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+                end
             end
             tickCounteratack = tickCounteratack + 1
         else
             -- Normal attack if instant attack is disabled or not enough ticks
-            client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
-            client.SetConVar("sv_maxusrcmdprocessticks", 24, true)    -- force sv_cheats 1 localy(bypass sv_cheats 0)
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)            -- attack
+            -- Use a higher value for normal attacks, but cap it for safety
+            local normalAttackTicks = math.min(math.ceil(weaponSmackDelay * 1.8), 24) -- 1.8x multiplier with safety cap
+            client.RemoveConVarProtection("sv_maxusrcmdprocessticks")                 --bypass security
+            client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)                            -- attack
         end
         can_attack = false
     end
@@ -1619,7 +1733,7 @@ draw.SetFont(Verdana)
 --[[ Code called every frame ]]                     --
 local function doDraw()
     if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.EnableVisuals then
-        --local pLocal = entities.GetLocalPlayer()
+        pLocal = entities.GetLocalPlayer()
         pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
         if Menu.Visuals.EnableVisuals or pWeapon:IsMeleeWeapon() and pLocal and pLocal:IsAlive() then
             draw.Color(255, 255, 255, 255)
@@ -2057,7 +2171,19 @@ local function doDraw()
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
-            Menu.Aimbot.SwingTime = ImMenu.Slider("Swing Time", Menu.Aimbot.SwingTime, 1, 13)
+            -- Use dynamic maximum value from the current weapon's smack delay
+            local swingTimeMaxDisplay = Menu.Aimbot.MaxSwingTime or 13 -- Add default value if nil
+            local swingTimeLabel = string.format("Swing Time (max: %d)", swingTimeMaxDisplay)
+            Menu.Aimbot.SwingTime = ImMenu.Slider(swingTimeLabel, Menu.Aimbot.SwingTime, 1, swingTimeMaxDisplay)
+            ImMenu.EndFrame()
+
+            ImMenu.BeginFrame(1)
+            Menu.Aimbot.AlwaysUseMaxSwingTime = ImMenu.Checkbox("Always Use Max Swing Time",
+                Menu.Aimbot.AlwaysUseMaxSwingTime)
+            -- If the user enables "Always Use Max", automatically set the value to max
+            if Menu.Aimbot.AlwaysUseMaxSwingTime then
+                Menu.Aimbot.SwingTime = Menu.Aimbot.MaxSwingTime or 13 -- Add default value if nil
+            end
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
@@ -2068,7 +2194,12 @@ local function doDraw()
 
         if Menu.currentTab == 2 then -- Demoknight tab
             ImMenu.BeginFrame(1)
+            local oldValue = Menu.Charge.ChargeBot
             Menu.Charge.ChargeBot = ImMenu.Checkbox("Charge Bot", Menu.Charge.ChargeBot)
+            -- If the value changed, synchronize with the Aimbot setting
+            if oldValue ~= Menu.Charge.ChargeBot then
+                Menu.Aimbot.ChargeBot = Menu.Charge.ChargeBot
+            end
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
@@ -2086,9 +2217,9 @@ local function doDraw()
 
         if Menu.currentTab == 4 then -- Misc tab
             ImMenu.BeginFrame()
-                Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
-                Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
-                Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
+            Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
+            Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
+            Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame()
