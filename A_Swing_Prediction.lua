@@ -1,56 +1,16 @@
---[[ Swing prediction for  Lmaobox  ]]--
---[[          --Authors--           ]]--
---[[           Terminator           ]]--
---[[  (github.com/titaniummachine1  ]]--
+--[[ Swing prediction for  Lmaobox  ]] --
+--[[          --Authors--           ]] --
+--[[           Terminator           ]] --
+--[[  (github.com/titaniummachine1  ]] --
 
 -- Unload the module if it's already loaded
 if package.loaded["ImMenu"] then
     package.loaded["ImMenu"] = nil
 end
 
---------------------------------------------------------------------------------------
---Library loading--
---------------------------------------------------------------------------------------
-
--- Function to download content from a URL
-local function downloadFile(url)
-    local body = http.Get(url)
-    if body and body ~= "" then
-        return body
-    else
-        error("Failed to download file from " .. url)
-    end
-end
-
-local latestLNXlib = "https://github.com/lnx00/Lmaobox-Library/releases/latest/download/lnxLib.lua"
-local LatestImMenu = "https://github.com/titaniummachine1/Lmaobox-ImMenu/blob/main/src/New_ImMenu.lua"
-
--- Load and validate library
-local function loadlib(libName, libURL)
-    local libLoaded, Lib = pcall(require, libName)
-    if not libLoaded or not Lib.GetVersion then
-        print(libName .. " not found or version is too old. Attempting to download the latest version...")
-
-        -- Download and load the library
-        local libContent = downloadFile(libURL)
-        local libFunction, loadError = load(libContent)
-        if libFunction then
-            libFunction()
-            libLoaded, Lib = pcall(require, libName)
-            if not libLoaded then
-                error("Failed to load " .. libName .. " after downloading: " .. loadError)
-            end
-        else
-            error("Error loading " .. libName .. ": " .. loadError)
-        end
-    end
-
-    return Lib
-end
-
 -- Initialize libraries
-local lnxLib = loadlib("LNXlib", latestLNXlib)
-local ImMenu = loadlib("New_ImMenu", LatestImMenu)
+local lnxLib = require("lnxlib")
+local ImMenu = require("immenu")
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
@@ -62,18 +22,18 @@ local Notify = lnxLib.UI.Notify
 
 local function GetPressedkey()
     local pressedKey = Input.GetPressedKey()
-        if not pressedKey then
-            -- Check for standard mouse buttons
-            if input.IsButtonDown(MOUSE_LEFT) then return MOUSE_LEFT end
-            if input.IsButtonDown(MOUSE_RIGHT) then return MOUSE_RIGHT end
-            if input.IsButtonDown(MOUSE_MIDDLE) then return MOUSE_MIDDLE end
+    if not pressedKey then
+        -- Check for standard mouse buttons
+        if input.IsButtonDown(MOUSE_LEFT) then return MOUSE_LEFT end
+        if input.IsButtonDown(MOUSE_RIGHT) then return MOUSE_RIGHT end
+        if input.IsButtonDown(MOUSE_MIDDLE) then return MOUSE_MIDDLE end
 
-            -- Check for additional mouse buttons
-            for i = 1, 10 do
-                if input.IsButtonDown(MOUSE_FIRST + i - 1) then return MOUSE_FIRST + i - 1 end
-            end
+        -- Check for additional mouse buttons
+        for i = 1, 10 do
+            if input.IsButtonDown(MOUSE_FIRST + i - 1) then return MOUSE_FIRST + i - 1 end
         end
-        return pressedKey
+    end
+    return pressedKey
 end
 
 --[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
@@ -87,32 +47,45 @@ end
 end, ItemFlags.FullWidth))]]
 
 local Menu = {
-
-    currentTab = 0,
-    tabs = { -- dont touch this, this is just for managing the tabs in the menu
+    -- Tab management - Start with Aimbot tab open by default
+    currentTab = 1, -- 1 = Aimbot, 2 = Charge, 3 = Visuals, 4 = Misc
+    tabs = {
         Aimbot = true,
+        Charge = false,
         Visuals = false,
         Misc = false
     },
 
+    -- Aimbot settings
     Aimbot = {
         Aimbot = true,
-        ChargeBot = true,
+        Silent = true,
         AimbotFOV = 360,
         SwingTime = 13,
-        Silent = true,
+        ChargeBot = true, -- Moved to Charge tab in UI but kept here for backward compatibility
     },
+
+    -- Charge settings (moved from mixed locations to a dedicated section)
+    Charge = {
+        ChargeBot = true,
+        ChargeControl = true,
+        ChargeSensitivity = 1.0,
+        ChargeReach = false,
+        ChargeJump = true,
+    },
+
+    -- Visuals settings
     Visuals = {
         EnableVisuals = true,
         Sphere = false,
         Section = 1,
-        Sections = {"Local", "Target", "Experimental"},
+        Sections = { "Local", "Target", "Experimental" },
         Local = {
             RangeCircle = true,
             path = {
                 enable = true,
                 Color = { 255, 255, 255, 255 },
-                Styles = {"Pavement", "ArrowPath", "Arrows", "L Line" , "dashed", "line"},
+                Styles = { "Pavement", "ArrowPath", "Arrows", "L Line", "dashed", "line" },
                 Style = 1,
                 width = 5,
             },
@@ -121,25 +94,31 @@ local Menu = {
             path = {
                 enable = true,
                 Color = { 255, 255, 255, 255 },
-                Styles = {"Pavement", "ArrowPath", "Arrows", "L Line" , "dashed", "line"},
+                Styles = { "Pavement", "ArrowPath", "Arrows", "L Line", "dashed", "line" },
                 Style = 1,
                 width = 5,
             },
         },
     },
+
+    -- Misc settings
     Misc = {
         strafePred = true,
-        ChargeControl = true,
-        ChargeSensitivity = 50,
-        CritRefill = {Active = true, NumCrits = 1},
+        CritRefill = { Active = true, NumCrits = 1 },
         CritMode = 1,
-        CritModes = {"Rage", "On Button"},
+        CritModes = { "Rage", "On Button" },
         InstantAttack = false,
-        ChargeReach = false,
         TroldierAssist = false,
         advancedHitreg = false,
+
+        -- These are moved to Charge tab in UI but kept here for backward compatibility
+        ChargeControl = true,
+        ChargeReach = false,
         ChargeJump = true,
+        ChargeSensitivity = 1.0,
     },
+
+    -- Global settings
     Keybind = KEY_NONE,
     KeybindName = "Always On",
 }
@@ -151,7 +130,7 @@ local function CreateCFG(folder_name, table)
     local success, fullPath = filesystem.CreateDirectory(folder_name)
     local filepath = tostring(fullPath .. "/config.cfg")
     local file = io.open(filepath, "w")
-    
+
     if file then
         local function serializeTable(tbl, level)
             level = level or 0
@@ -174,11 +153,11 @@ local function CreateCFG(folder_name, table)
             result = result .. string.rep("    ", level) .. "}"
             return result
         end
-        
+
         local serializedConfig = serializeTable(table)
         file:write(serializedConfig)
         file:close()
-        printc( 255, 183, 0, 255, "["..os.date("%H:%M:%S").."] Saved Config to ".. tostring(fullPath))
+        printc(255, 183, 0, 255, "[" .. os.date("%H:%M:%S") .. "] Saved Config to " .. tostring(fullPath))
     end
 end
 
@@ -192,7 +171,7 @@ local function LoadCFG(folder_name)
         file:close()
         local chunk, err = load("return " .. content)
         if chunk then
-            printc( 0, 255, 140, 255, "["..os.date("%H:%M:%S").."] Loaded Config from ".. tostring(fullPath))
+            printc(0, 255, 140, 255, "[" .. os.date("%H:%M:%S") .. "] Loaded Config from " .. tostring(fullPath))
             return chunk()
         else
             CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
@@ -201,32 +180,27 @@ local function LoadCFG(folder_name)
     end
 end
 
-local status, loadedMenu = pcall(function() 
-    return assert(LoadCFG(string.format([[Lua %s]], Lua__fileName))) 
+local status, loadedMenu = pcall(function()
+    return assert(LoadCFG(string.format([[Lua %s]], Lua__fileName)))
 end) -- Auto-load config
 
--- Function to check if all expected functions exist in the loaded config
-local function checkAllFunctionsExist(expectedMenu, loadedMenu)
-    for key, value in pairs(expectedMenu) do
-        if type(value) == 'function' then
-            -- Check if the function exists in the loaded menu and has the correct type
-            if not loadedMenu[key] or type(loadedMenu[key]) ~= 'function' then
-                return false
-            end
-        end
+-- Function to check if the loaded config is valid
+local function isValidConfig(loadedMenu)
+    -- Check for presence of essential menu sections
+    if not loadedMenu.tabs or not loadedMenu.Aimbot or not loadedMenu.Visuals or not loadedMenu.Misc then
+        print("Missing essential menu sections")
+        return false
     end
-    for key, value in pairs(expectedMenu) do
-        if not loadedMenu[key] or type(loadedMenu[key]) ~= type(value) then
-            return false
-        end
-    end
+
+    -- Basic structure validation is enough, no need to check function types
     return true
 end
 
 -- Execute this block only if loading the config was successful
 if status then
-    if checkAllFunctionsExist(Menu, loadedMenu) and not input.IsButtonDown(KEY_LSHIFT) then
+    if isValidConfig(loadedMenu) and not input.IsButtonDown(KEY_LSHIFT) then
         Menu = loadedMenu
+        print("Successfully loaded config from " .. string.format([[Lua %s]], Lua__fileName))
     else
         print("Config is outdated or invalid. Creating a new config.")
         CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) -- Save the config
@@ -252,7 +226,7 @@ local pLocalPath = {}
 local vPlayerPath = {}
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local drawVhitbox = {}
-local gravity = client.GetConVar("sv_gravity") or 800   -- Get the current gravity
+local gravity = client.GetConVar("sv_gravity") or 800 -- Get the current gravity
 local stepSize = 18
 local tickCounteratack = 0
 
@@ -291,14 +265,14 @@ local avgDeltas = {} ---@type table<number, number>
 local strafeAngles = {} ---@type table<number, number>
 local inaccuracy = {} ---@type table<number, number>
 local pastPositions = {} -- Stores past positions of the local player
-local maxPositions = 4 -- Number of past positions to consider
+local maxPositions = 4   -- Number of past positions to consider
 
 local function CalcStrafe()
     local autostrafe = gui.GetValue("Auto Strafe")
     local flags = entities.GetLocalPlayer():GetPropInt("m_fFlags")
     local OnGround = flags & FL_ONGROUND == 1
 
-    for idx, entity in ipairs(players) do
+    for idx, entity in pairs(players) do
         local entityIndex = entity:GetIndex()
 
         if entity:IsDormant() or not entity:IsAlive() then
@@ -386,131 +360,133 @@ local function shouldHitEntityFun(entity, player, ignoreEntities)
         end
     end
 
-    local pos = entity:GetAbsOrigin() + Vector3(0,0,1)
+    local pos = entity:GetAbsOrigin() + Vector3(0, 0, 1)
     local contents = engine.GetPointContents(pos)
     if contents ~= 0 then return true end
-    if entity:GetName() == player:GetName() then return false end --ignore self
+    if entity:GetName() == player:GetName() then return false end             --ignore self
     if entity:GetTeamNumber() ~= player:GetTeamNumber() then return false end --ignore teammates
     return true
 end
 
-    -- [WIP] Predict the position of a player
-    ---@param player WPlayer
-    ---@param t integer
-    ---@param d number?
-    ---@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
-    ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
-    local function PredictPlayer(player, t, d)
-        if not gravity or not stepSize then return nil end
-        local vUp = Vector3(0, 0, 1)
-        local vStep = Vector3(0, 0, stepSize)
-        local ignoreEntities = {"CTFAmmoPack", "CTFDroppedWeapon"}
-        local shouldHitEntity = function(entity) return shouldHitEntityFun(entity, player, ignoreEntities) end --trace ignore simulated player 
-        local pFlags = player:GetPropInt("m_fFlags")
-        -- Add the current record
-        local _out = {
-            pos = { [0] = player:GetAbsOrigin() },
-            vel = { [0] = player:EstimateAbsVelocity() },
-            onGround = { [0] = player:IsOnGround() }
-        }
+-- [WIP] Predict the position of a player
+---@param player WPlayer
+---@param t integer
+---@param d number?
+---@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
+---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
+local function PredictPlayer(player, t, d)
+    if not gravity or not stepSize then return nil end
+    local vUp = Vector3(0, 0, 1)
+    local vStep = Vector3(0, 0, stepSize)
+    local ignoreEntities = { "CTFAmmoPack", "CTFDroppedWeapon" }
+    local shouldHitEntity = function(entity) return shouldHitEntityFun(entity, player, ignoreEntities) end --trace ignore simulated player
+    local pFlags = player:GetPropInt("m_fFlags")
+    -- Add the current record
+    local _out = {
+        pos = { [0] = player:GetAbsOrigin() },
+        vel = { [0] = player:EstimateAbsVelocity() },
+        onGround = { [0] = player:IsOnGround() }
+    }
 
-        -- Perform the prediction
-        for i = 1, t do
-            local lastP, lastV, lastG = _out.pos[i - 1], _out.vel[i - 1], _out.onGround[i - 1]
+    -- Perform the prediction
+    for i = 1, t do
+        local lastP, lastV, lastG = _out.pos[i - 1], _out.vel[i - 1], _out.onGround[i - 1]
 
-            --[[if chargeLeft < 100 and player:InCond(17) then
-                
+        --[[if chargeLeft < 100 and player:InCond(17) then
+
             end]]
-            local pos = lastP + lastV * globals.TickInterval()
-            local vel = lastV
-            local onGround1 = lastG
+        local pos = lastP + lastV * globals.TickInterval()
+        local vel = lastV
+        local onGround1 = lastG
 
-            -- Apply deviation
-            if d then
-                local ang = vel:Angles()
-                ang.y = ang.y + d
-                vel = ang:Forward() * vel:Length()
-            end
-
-            --[[ Forward collision ]]
-
-            local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
-            --DrawLine(last.p + vStep, pos + vStep)
-            if wallTrace.fraction < 1 then
-                -- We'll collide
-                local normal = wallTrace.plane
-                local angle = math.deg(math.acos(normal:Dot(vUp)))
-
-                -- Check the wall angle
-                if angle > 55 then
-                    -- The wall is too steep, we'll collide
-                    local dot = vel:Dot(normal)
-                    vel = vel - normal * dot
-                end
-
-                pos.x, pos.y = wallTrace.endpos.x, wallTrace.endpos.y
-            end
-
-            --[[ Ground collision ]]
-
-            -- Don't step down if we're in-air
-            local downStep = vStep
-            local simulateJump = false
-            if not onGround1 then downStep = Vector3() end
-
-            -- Ground collision
-            local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
-            if groundTrace.fraction < 1 then
-                -- We'll hit the ground
-                local normal = groundTrace.plane
-                local angle = math.deg(math.acos(normal:Dot(vUp)))
-
-                -- Check the ground angle
-                if angle < 45 then
-                    if onGround1 and player:GetIndex() == pLocal:GetIndex() and gui.GetValue("Bunny Hop") == 1 and input.IsButtonDown(KEY_SPACE) then
-                        -- Jump
-                        if gui.GetValue("Duck Jump") == 1 then
-                            vel.z = 277
-                            onGround1 = false
-                        else
-                            vel.z = 271
-                            onGround1 = false
-                        end
-                    else
-                        pos = groundTrace.endpos
-                        onGround1 = true
-                    end
-                elseif angle < 55 then
-                    vel.x, vel.y, vel.z = 0, 0, 0
-                    onGround1 = false
-                else
-                    local dot = vel:Dot(normal)
-                        vel = vel - normal * dot
-                        onGround1 = true
-                end
-            else
-                -- We're in the air
-                onGround1 = false
-            end
-
-            -- Gravity
-            --local isSwimming, isWalking = checkPlayerState(player) -- todo: fix this
-            if not onGround1 then
-                vel.z = vel.z - gravity * globals.TickInterval()
-            end
-
-            -- Add the prediction record
-            _out.pos[i], _out.vel[i], _out.onGround[i] = pos, vel, onGround1
+        -- Apply deviation
+        if d then
+            local ang = vel:Angles()
+            ang.y = ang.y + d
+            vel = ang:Forward() * vel:Length()
         end
-        return _out
+
+        --[[ Forward collision ]]
+
+        local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID,
+            shouldHitEntity)
+        --DrawLine(last.p + vStep, pos + vStep)
+        if wallTrace.fraction < 1 then
+            -- We'll collide
+            local normal = wallTrace.plane
+            local angle = math.deg(math.acos(normal:Dot(vUp)))
+
+            -- Check the wall angle
+            if angle > 55 then
+                -- The wall is too steep, we'll collide
+                local dot = vel:Dot(normal)
+                vel = vel - normal * dot
+            end
+
+            pos.x, pos.y = wallTrace.endpos.x, wallTrace.endpos.y
+        end
+
+        --[[ Ground collision ]]
+
+        -- Don't step down if we're in-air
+        local downStep = vStep
+        local simulateJump = false
+        if not onGround1 then downStep = Vector3() end
+
+        -- Ground collision
+        local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID,
+            shouldHitEntity)
+        if groundTrace.fraction < 1 then
+            -- We'll hit the ground
+            local normal = groundTrace.plane
+            local angle = math.deg(math.acos(normal:Dot(vUp)))
+
+            -- Check the ground angle
+            if angle < 45 then
+                if onGround1 and player:GetIndex() == pLocal:GetIndex() and gui.GetValue("Bunny Hop") == 1 and input.IsButtonDown(KEY_SPACE) then
+                    -- Jump
+                    if gui.GetValue("Duck Jump") == 1 then
+                        vel.z = 277
+                        onGround1 = false
+                    else
+                        vel.z = 271
+                        onGround1 = false
+                    end
+                else
+                    pos = groundTrace.endpos
+                    onGround1 = true
+                end
+            elseif angle < 55 then
+                vel.x, vel.y, vel.z = 0, 0, 0
+                onGround1 = false
+            else
+                local dot = vel:Dot(normal)
+                vel = vel - normal * dot
+                onGround1 = true
+            end
+        else
+            -- We're in the air
+            onGround1 = false
+        end
+
+        -- Gravity
+        --local isSwimming, isWalking = checkPlayerState(player) -- todo: fix this
+        if not onGround1 then
+            vel.z = vel.z - gravity * globals.TickInterval()
+        end
+
+        -- Add the prediction record
+        _out.pos[i], _out.vel[i], _out.onGround[i] = pos, vel, onGround1
     end
+    return _out
+end
 
-    -- Constants for minimum and maximum speed
-local MIN_SPEED = 10  -- Minimum speed to avoid jittery movements
-local MAX_SPEED = 650 -- Maximum speed the player can move
+-- Constants for minimum and maximum speed
+local MIN_SPEED = 10                     -- Minimum speed to avoid jittery movements
+local MAX_SPEED = 650                    -- Maximum speed the player can move
 
-local MoveDir = Vector3(0,0,0) -- Variable to store the movement direction
-local pLocal = entities.GetLocalPlayer()  -- Variable to store the local player
+local MoveDir = Vector3(0, 0, 0)         -- Variable to store the movement direction
+local pLocal = entities.GetLocalPlayer() -- Variable to store the local player
 
 local function NormalizeVector(vector)
     local length = math.sqrt(vector.x * vector.x + vector.y * vector.y + vector.z * vector.z)
@@ -563,7 +539,7 @@ local function WalkTo(pCmd, pLocal, pDestination)
 end
 
 local playerTicks = {}
-local maxTick = math.floor(((defFakeLatency) / 1000)  / 0.015)
+local maxTick = math.floor(((defFakeLatency) / 1000) / 0.015)
 
 -- Returns if the player is visible
 ---@param target Entity
@@ -587,66 +563,85 @@ function IsVisible(player, fromEntity)
     end
 end
 
-
-
 -- Function to get the best target
 local function GetBestTarget(me)
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
 
+    -- Variables to track best target among all players
     local bestTarget = nil
     local bestFactor = 0
+
+    -- Variables to track best target within melee range
+    local bestMeleeTarget = nil
+    local bestMeleeFactor = 0
+
+    -- Range threshold - use TotalSwingRange plus a buffer of 50 units
+    local meleeRangeThreshold = TotalSwingRange + 50
+    local foundTargetInMeleeRange = false
+
     local localPlayerViewAngles = engine.GetViewAngles()
+    local localPlayerOrigin = localPlayer:GetAbsOrigin()
+    local localPlayerEyePos = localPlayerOrigin + Vector3(0, 0, 75)
 
     for _, player in pairs(players) do
         if player == nil or not player:IsAlive()
-        or player:IsDormant()
-        or player == me or player:GetTeamNumber() == me:GetTeamNumber()
-        or (gui.GetValue("ignore cloaked") == 1 and player:InCond(4))
-        or not IsVisible(player, me)
-        or (me:InCond(17) and (player:GetAbsOrigin().z - me:GetAbsOrigin().z) > 17) then
+            or player:IsDormant()
+            or player == me or player:GetTeamNumber() == me:GetTeamNumber()
+            or (gui.GetValue("ignore cloaked") == 1 and player:InCond(4))
+            or not IsVisible(player, me)
+            or (me:InCond(17) and (player:GetAbsOrigin().z - me:GetAbsOrigin().z) > 17) then
             goto continue
         end
 
-        local numBacktrackTicks = (gui.GetValue("Fake Latency") == 1 and maxTick) or (gui.GetValue("Fake Latency") == 0 and gui.GetValue("Backtrack") == 1 and 4) or 0
-
-        --[[if numBacktrackTicks ~= 0 then
-            local playerIndex = player:GetIndex()
-            playerTicks[playerIndex] = playerTicks[playerIndex] or {}
-            table.insert(playerTicks[playerIndex], player:GetAbsOrigin())
-
-            if #playerTicks[playerIndex] > numBacktrackTicks then
-                table.remove(playerTicks[playerIndex], 1)
-            end
-        end]]
-
         local playerOrigin = player:GetAbsOrigin()
-        local distance = (playerOrigin - localPlayer:GetAbsOrigin()):Length()
+        local distance = (playerOrigin - localPlayerOrigin):Length()
+        local Pviewoffset = player:GetPropVector("localdata", "m_vecViewOffset[0]")
+        local Pviewpos = playerOrigin + Pviewoffset
 
-        if distance <= 770 then
-            local Pviewoffset = player:GetPropVector("localdata", "m_vecViewOffset[0]")
-            local Pviewpos = playerOrigin + Pviewoffset
+        -- Check if player is in FOV
+        local angles = Math.PositionAngles(localPlayerOrigin, Pviewpos)
+        local fov = Math.AngleFov(localPlayerViewAngles, angles)
+        if fov > Menu.Aimbot.AimbotFOV then
+            goto continue
+        end
 
-            local angles = Math.PositionAngles(localPlayer:GetAbsOrigin(), Pviewpos)
-            local fov = Math.AngleFov(localPlayerViewAngles, angles)
+        -- Check if target is visible
+        local isVisible = Helpers.VisPos(player, localPlayerEyePos, playerOrigin + Vector3(0, 0, 75))
+        local visibilityFactor = isVisible and 1 or 0.1
 
-            if fov <= Menu.Aimbot.AimbotFOV then
-                local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.9)
-                local fovFactor = Math.RemapValClamped(fov, 0, Menu.Aimbot.AimbotFOV, 1, 0.1)
-                local isVisible = Helpers.VisPos(player, localPlayer:GetAbsOrigin() + Vector3(0,0,75), playerOrigin + Vector3(0,0,75))
-                local visibilityFactor = isVisible and 1 or 0.5
+        -- First priority: targets within melee range
+        if distance <= meleeRangeThreshold then
+            foundTargetInMeleeRange = true
 
-                local factor = distanceFactor * fovFactor * visibilityFactor
-                if factor > bestFactor then
-                    bestTarget = player
-                    bestFactor = factor
-                end
+            -- For targets in melee range, mostly consider visibility and a bit of FOV
+            local meleeFovFactor = Math.RemapValClamped(fov, 0, Menu.Aimbot.AimbotFOV, 1, 0.7)
+            local meleeFactor = meleeFovFactor * visibilityFactor
+
+            if meleeFactor > bestMeleeFactor then
+                bestMeleeTarget = player
+                bestMeleeFactor = meleeFactor
+            end
+        elseif distance <= 770 then
+            -- For targets outside melee range but within max distance, use standard targeting
+            local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.9)
+            local fovFactor = Math.RemapValClamped(fov, 0, Menu.Aimbot.AimbotFOV, 1, 0.1)
+
+            local factor = distanceFactor * fovFactor * visibilityFactor
+            if factor > bestFactor then
+                bestTarget = player
+                bestFactor = factor
             end
         end
         ::continue::
     end
 
-    return bestTarget
+    -- Return the best target in melee range if found, otherwise return best target by other factors
+    if foundTargetInMeleeRange and bestMeleeTarget then
+        return bestMeleeTarget
+    else
+        return bestTarget
+    end
 end
 
 -- Function to check if target is in range
@@ -675,7 +670,11 @@ local function checkInRange(targetPos, spherePos, sphereRadius)
             if trace.fraction < 1 and trace.entity == TargetEntity then
                 return true, closestPoint
             else
-                local SwingHull = {Min = Vector3(-SwingHalfhullSize,-SwingHalfhullSize,-SwingHalfhullSize), Max = Vector3(SwingHalfhullSize,SwingHalfhullSize,SwingHalfhullSize)}
+                local SwingHull = {
+                    Min = Vector3(-SwingHalfhullSize, -SwingHalfhullSize, -SwingHalfhullSize),
+                    Max =
+                        Vector3(SwingHalfhullSize, SwingHalfhullSize, SwingHalfhullSize)
+                }
                 trace = engine.TraceHull(spherePos, SwingtraceEnd, SwingHull.Min, SwingHull.Max, MASK_SHOT_HULL)
                 if trace.fraction < 1 and trace.entity == TargetEntity then
                     return true, closestPoint
@@ -719,8 +718,30 @@ local function calculateMaxAngleChange(currentVelocity, minVelocity, maxTurnRate
     return maxSafeTurnRate
 end
 
---   pCmd (CUserCmd): The user command
+-- At the top of the file, after the initial libraries and imports
+
+-- Constants for charge control
+local CHARGE_CONSTANTS = {
+    TURN_MULTIPLIER = 1.0,
+    MAX_ROTATION_PER_FRAME = 73.04,
+    SIDE_MOVE_VALUE = 450
+}
+
+-- State tracking variables
+local prevCharging = false
+
+-- Condition IDs
+local CONDITIONS = {
+    CHARGING = 17
+}
+
+-- Improved ChargeControl function that incorporates logic from Charge_controll.lua
 local function ChargeControl(pCmd)
+    -- Check if charge control is enabled in the menu
+    if not Menu.Misc.ChargeControl then
+        return
+    end
+
     -- Get the current view angles and sensitivity
     local sensitivity = Menu.Misc.ChargeSensitivity
     local currentAngles = engine.GetViewAngles()
@@ -739,7 +760,7 @@ local function ChargeControl(pCmd)
     angleChange = math.max(math.min(angleChange, maxAngleChange), -maxAngleChange)
 
     -- Interpolate between the current yaw and the new yaw
-    local interpolationTime = 0.1515 -- Time in seconds for a full transition
+    local interpolationTime = 0.1515                           -- Time in seconds for a full transition
     local interpolationFraction = 1 / (66 * interpolationTime) -- Adjusted for smoother transition
     local interpolatedYaw = currentAngles.yaw + angleChange * interpolationFraction
 
@@ -754,7 +775,7 @@ local function UpdateHomingMissile()
     local vPlayerPos = vPlayerOrigin
     local pLocalVel = pLocal:EstimateAbsVelocity()
     local vPlayerVel = vPlayer:EstimateAbsVelocity()
-    
+
     local timeStep = globals.TickInterval() -- Time step for simulation
     local interceptPoint = nil
     local interceptTime = 0
@@ -784,15 +805,26 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
+local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, OnGround, isCharging)
     local inRange = false
     local point = nil
+    local can_charge = false
     local Backtrack = gui.GetValue("Backtrack")
     local fakelatencyON = gui.GetValue("Fake Latency")
 
+    -- Check if instant attack is ready
+    local dashKeyBound = gui.GetValue("dash move key") ~= 0
+    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and
+    dashKeyBound
+
+    -- Don't attempt prediction when charging without jump charge
+    if isCharging and not Menu.Misc.ChargeJump then
+        return false, nil, false
+    end
+
     if Backtrack == 0 and fakelatencyON == 0 then
-        -- Check for charge range bug
-        if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 then -- charge metter is full
+        -- Check for charge range bug - only if instant attack is NOT ready
+        if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not instantAttackReady then -- charge meter is full
             if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
                 inRange = true
                 point = vPlayerOrigin
@@ -801,7 +833,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
                     tick_count = 0
                     can_charge = true
                 elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (Menu.Aimbot.SwingTime - 2) then
-                    cmd:SetButtons(cmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
+                    cmd:SetButtons(cmd:GetButtons() | IN_JUMP) -- jump at 2 ticks before attack
                 end
             elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
                 inRange = true
@@ -811,7 +843,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
                     tick_count = 0
                     can_charge = true
                 elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (Menu.Aimbot.SwingTime - 2) then
-                    cmd:SetButtons(cmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
+                    cmd:SetButtons(cmd:GetButtons() | IN_JUMP) -- jump at 2 ticks before attack
                 end
             end
             if inRange then
@@ -859,20 +891,18 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
             if playerTicks[playerIndex] then
                 local pastOrigin = playerTicks[playerIndex][tick]
 
-                        -- Check for charge range bug
-                        if pLocalClass == 4 -- player is Demoman
-                            and Menu.Misc.ChargeReach -- menu option for such option is true
-                            and chargeLeft == 100 then -- charge metter is full
-                            if checkInRange(pastOrigin, pLocalOrigin, Charge_Range) then
-                                inRange = true
-                                point = vPlayerOrigin
-                                tick_count = tick_count + 1
-                                if tick_count >= (Menu.Aimbot.SwingTime - 1) then
-                                tick_count = 0
-                                can_charge = true
-                            end
-                            end
+                -- Check for charge range bug - only if instant attack is NOT ready
+                if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not instantAttackReady then -- charge meter is full
+                    if checkInRange(pastOrigin, pLocalOrigin, Charge_Range) then
+                        inRange = true
+                        point = vPlayerOrigin
+                        tick_count = tick_count + 1
+                        if tick_count >= (Menu.Aimbot.SwingTime - 1) then
+                            tick_count = 0
+                            can_charge = true
                         end
+                    end
+                end
 
                 inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange, pWeapon, cmd)
                 if inRange then
@@ -881,16 +911,13 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
             end
         end
     elseif Backtrack == 1 then
-
-        -- Check for charge range bug
-        if pLocalClass == 4 -- player is Demoman
-                and Menu.Misc.ChargeReach -- menu option for such option is true
-                and chargeLeft == 100 then -- charge metter is full
-                if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
-                    inRange = true
-                    point = vPlayerOrigin
-                    tick_count = tick_count + 1
-                    if tick_count >= (Menu.Aimbot.SwingTime - 1) then
+        -- Check for charge range bug - only if instant attack is NOT ready
+        if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not instantAttackReady then -- charge meter is full
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
+                inRange = true
+                point = vPlayerOrigin
+                tick_count = tick_count + 1
+                if tick_count >= (Menu.Aimbot.SwingTime - 1) then
                     tick_count = 0
                     can_charge = true
                 elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
@@ -900,12 +927,12 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
                     if tick_count >= (Menu.Aimbot.SwingTime - 1) then
                         tick_count = 0
                         can_charge = true
-                        end
-                    end
-                    if inRange then
-                        return inRange, point, can_charge
                     end
                 end
+                if inRange then
+                    return inRange, point, can_charge
+                end
+            end
         end
 
         -- Adjust hitbox for current position
@@ -926,8 +953,9 @@ end
 -- Store the original Crit Hack Key value outside the main loop or function
 local originalCritHackKey = gui.GetValue("Crit Hack Key")
 local critkeyRestored = false
+local dashKeyNotBoundNotified = false
 
---[[ Code needed to run 66 times a second ]]--
+--[[ Code needed to run 66 times a second ]] --
 -- Predicts player position after set amount of ticks
 ---@param strafeAngle number
 local function OnCreateMove(pCmd)
@@ -937,8 +965,15 @@ local function OnCreateMove(pCmd)
         goto continue -- Return if the local player entity doesn't exist or is dead
     end
 
-    
-    local fChargeBeginTime =  (pLocal:GetPropFloat("PipebombLauncherLocalData", "m_flChargeBeginTime") or 0);
+    -- Show notification if instant attack is enabled but dash key is not bound
+    if Menu.Misc.InstantAttack and gui.GetValue("dash move key") == 0 and not dashKeyNotBoundNotified then
+        Notify.Simple("Instant Attack Warning", "Dash key is not bound. Instant Attack will not work properly.", 4)
+        dashKeyNotBoundNotified = true
+    elseif (not Menu.Misc.InstantAttack or gui.GetValue("dash move key") ~= 0) and dashKeyNotBoundNotified then
+        dashKeyNotBoundNotified = false
+    end
+
+    local fChargeBeginTime = (pLocal:GetPropFloat("PipebombLauncherLocalData", "m_flChargeBeginTime") or 0);
 
     -- Check if the local player is a spy
     pLocalClass = pLocal:GetPropInt("m_iClass")
@@ -954,32 +989,32 @@ local function OnCreateMove(pCmd)
     local nextPrimaryAttack = pWeapon:GetPropFloat("LocalActiveWeaponData", "m_flNextPrimaryAttack")
     --print(Conversion.Time_to_Ticks(nextPrimaryAttack) .. "LastShoot", globals.TickCount())
 
-        lerp = client.GetConVar("cl_interp") or 0
-        Latency = (lerp) -- Calculate the reaction time in seconds
-        Latency = math.floor(Latency * (globals.TickInterval() * 66) + 1) -- Convert the delay to ticks
-        defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
+    lerp = client.GetConVar("cl_interp") or 0
+    Latency = (lerp)                                                  -- Calculate the reaction time in seconds
+    Latency = math.floor(Latency * (globals.TickInterval() * 66) + 1) -- Convert the delay to ticks
+    defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
 
     -- Get the local player's flags and charge meter
-        local flags = pLocal:GetPropInt("m_fFlags")
-        local airbone = pLocal:InCond(81)
-        chargeLeft = pLocal:GetPropFloat("m_flChargeMeter")
-        chargeLeft = math.floor(chargeLeft)
+    local flags = pLocal:GetPropInt("m_fFlags")
+    local airbone = pLocal:InCond(81)
+    chargeLeft = pLocal:GetPropFloat("m_flChargeMeter")
+    chargeLeft = math.floor(chargeLeft)
 
     -- Get the local player's active weapon data and definition
-        local pWeaponData = pWeapon:GetWeaponData()
-        local pWeaponID = pWeapon:GetWeaponID()
-        local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
-        local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
-        local pWeaponName = pWeaponDef:GetName()
-        local pUsingMargetGarden = false
+    local pWeaponData = pWeapon:GetWeaponData()
+    local pWeaponID = pWeapon:GetWeaponID()
+    local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
+    local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
+    local pWeaponName = pWeaponDef:GetName()
+    local pUsingMargetGarden = false
 
-        if pWeaponDefIndex == 416 then
-            -- If "pWeapon" is not set, break
-            pUsingMargetGarden = true
-            -- Set "pUsingProjectileWeapon" to true
-        end                                        -- Set "pUsingProjectileWeapon" to false
+    if pWeaponDefIndex == 416 then
+        -- If "pWeapon" is not set, break
+        pUsingMargetGarden = true
+        -- Set "pUsingProjectileWeapon" to true
+    end -- Set "pUsingProjectileWeapon" to false
 
---[--Troldier assist--]
+    --[--Troldier assist--]
     if Menu.Misc.TroldierAssist then
         local state = ""
         if airbone then
@@ -992,61 +1027,61 @@ local function OnCreateMove(pCmd)
         client.Command(state, true)
     end
 
---[-Don`t run script below when not usign melee--]
+    --[-Don`t run script below when not usign melee--]
 
-    isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
+    isMelee = pWeapon:IsMeleeWeapon()     -- check if using melee weapon
     if not isMelee then goto continue end -- if not melee then skip code
 
---[-------Get pLocalOrigin--------]
+    --[-------Get pLocalOrigin--------]
 
     -- Get pLocal eye level and set vector at our eye level to ensure we check distance from eyes
     local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]") -- Vector3(0, 0, 70)
     local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
     viewheight = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
 
-    -- Eye level 
-        Vheight = Vector3(0, 0, viewheight)
-        pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
+    -- Eye level
+    Vheight = Vector3(0, 0, viewheight)
+    pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
 
---[-------- Get SwingRange --------]
-swingrange = pWeapon:GetSwingRange()
+    --[-------- Get SwingRange --------]
+    swingrange = pWeapon:GetSwingRange()
 
-SwingHullSize = 35.6
-SwingHalfhullSize = SwingHullSize / 2
+    SwingHullSize = 35.6
+    SwingHalfhullSize = SwingHullSize / 2
 
-if pWeaponDef:GetName() == "The Disciplinary Action" then
-    SwingHullSize = 55.8
-    swingrange = 81.6
-end
+    if pWeaponDef:GetName() == "The Disciplinary Action" then
+        SwingHullSize = 55.8
+        swingrange = 81.6
+    end
     TotalSwingRange = swingrange + (SwingHullSize / 2)
---[--Manual charge control--]
+    --[--Manual charge control--]
 
     if Menu.Misc.ChargeControl and pLocal:InCond(17) then
         ChargeControl(pCmd)
     end
 
---[-----Get best target------------------]
+    --[-----Get best target------------------]
     local keybind = Menu.Keybind
 
     players = entities.FindByClass("CTFPlayer")
-        if keybind == 0 then
-            -- Check if player has no key bound
-            CurrentTarget = GetBestTarget(pLocal)
-            vPlayer = CurrentTarget
-        elseif input.IsButtonDown(keybind) then
-            -- If player has bound key for aimbot, only work when it's on
-            CurrentTarget = GetBestTarget(pLocal)
-            vPlayer = CurrentTarget
-        else
-            CurrentTarget = nil
-            vPlayer = nil
-        end
+    if keybind == 0 then
+        -- Check if player has no key bound
+        CurrentTarget = GetBestTarget(pLocal)
+        vPlayer = CurrentTarget
+    elseif input.IsButtonDown(keybind) then
+        -- If player has bound key for aimbot, only work when it's on
+        CurrentTarget = GetBestTarget(pLocal)
+        vPlayer = CurrentTarget
+    else
+        CurrentTarget = nil
+        vPlayer = nil
+    end
 
----------------critHack------------------
+    ---------------critHack------------------
     -- Main logic
 
     if CurrentTarget == nil then
-        local CritValue = 39  -- Base value for crit token bucket calculation
+        local CritValue = 39 -- Base value for crit token bucket calculation
         local CritBucket = pWeapon:GetCritTokenBucket()
         local NumCrits = CritValue * Menu.Misc.CritRefill.NumCrits
 
@@ -1057,7 +1092,7 @@ end
             if CritBucket < NumCrits then
                 -- Temporarily disable Crit Hack Key while refilling
                 if critkeyRestored then
-                    gui.SetValue("Crit Hack Key", 0)  -- Set to 0 to disable
+                    gui.SetValue("Crit Hack Key", 0) -- Set to 0 to disable
                     critkeyRestored = false
                 end
                 gui.SetValue("Melee Crit Hack", 2) -- Stop using crit bucket to stock up crits
@@ -1092,15 +1127,15 @@ end
     local stop = false
     local OnGround = flags & FL_ONGROUND == 1
 
---[[--------------Charge Jump-------------------]]
-if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and chargeLeft == 100 and OnGround then
-    pCmd:SetButtons(pCmd:GetButtons() & ~IN_JUMP)-- stop jump for moment
-    pCmd:SetButtons(pCmd:GetButtons() & ~IN_ATTACK2) -- stop charge for moment
-    pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
-end
+    --[[--------------Charge Jump-------------------]]
+    if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and chargeLeft == 100 and OnGround then
+        pCmd:SetButtons(pCmd:GetButtons() & ~IN_JUMP)    -- stop jump for moment
+        pCmd:SetButtons(pCmd:GetButtons() & ~IN_ATTACK2) -- stop charge for moment
+        pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)     -- jump at 2 ticks before attack
+    end
 
---[--------------Prediction-------------------]
--- Predict both players' positions after swing
+    --[--------------Prediction-------------------]
+    -- Predict both players' positions after swing
     gravity = client.GetConVar("sv_gravity")
     stepSize = pLocal:GetPropFloat("m_flStepSize")
 
@@ -1110,12 +1145,20 @@ end
     if pLocal:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position
         pLocalFuture = pLocalOrigin
-    elseif Menu.Misc.InstantAttack == false or not warp.CanWarp() and warp.GetChargedTicks() < 13 then
+    else
+        -- Always predict local player movement regardless of instant attack state
         local player = WPlayer.FromEntity(pLocal)
-
         strafeAngle = Menu.Misc.strafePred and strafeAngles[pLocal:GetIndex()] or 0
 
-        local predData = PredictPlayer(player, Menu.Aimbot.SwingTime, strafeAngle)
+        -- Always use 13 ticks for simulation with instant attack
+        local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and
+            gui.GetValue("dash move key") ~= 0
+        local simTicks = 13
+        if not instantAttackReady then
+            simTicks = Menu.Aimbot.SwingTime
+        end
+
+        local predData = PredictPlayer(player, simTicks, strafeAngle)
         if not predData then return end
 
         if inaccuracyValue then
@@ -1123,17 +1166,14 @@ end
         end
 
         pLocalPath = predData.pos
-        pLocalFuture = predData.pos[Menu.Aimbot.SwingTime] + viewOffset
-    else
-        local player = WPlayer.FromEntity(pLocal)
-        pLocalFuture = pLocal:GetAbsOrigin() + viewOffset
+        pLocalFuture = predData.pos[simTicks] + viewOffset
     end
 
--- stop if no target
-if CurrentTarget == nil then
-    vPlayerFuture = nil
-    return
-end
+    -- stop if no target
+    if CurrentTarget == nil then
+        vPlayerFuture = nil
+        return
+    end
 
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
 
@@ -1147,44 +1187,127 @@ end
 
     --vHitbox[2].z = pViewheight + 7
 
-    if Menu.Misc.InstantAttack == false or not warp.CanWarp() and warp.GetChargedTicks() < 13 then
-        local player = WPlayer.FromEntity(CurrentTarget)
+    -- Check if instant attack is ready
+    local dashKeyBound = gui.GetValue("dash move key") ~= 0
+    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and
+        dashKeyBound
 
+    if not instantAttackReady then
+        -- Only predict enemy movement when NOT using instant attack
+        local player = WPlayer.FromEntity(CurrentTarget)
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
 
-        local predData = PredictPlayer(player, Menu.Aimbot.SwingTime, strafeAngle)
+        -- Default to Menu.Aimbot.SwingTime since we're not using instant attack
+        local simTicks = Menu.Aimbot.SwingTime
+
+        local predData = PredictPlayer(player, simTicks, strafeAngle)
         if not predData then return end
 
         vPlayerPath = predData.pos
-        vPlayerFuture = predData.pos[Menu.Aimbot.SwingTime]
+        vPlayerFuture = predData.pos[simTicks]
 
         drawVhitbox[1] = vPlayerFuture + vHitbox[1]
         drawVhitbox[2] = vPlayerFuture + vHitbox[2]
     else
+        -- When using instant attack, enemy doesn't move (time is frozen for them)
         vPlayerFuture = CurrentTarget:GetAbsOrigin()
         drawVhitbox[1] = vPlayerFuture + vHitbox[1]
         drawVhitbox[2] = vPlayerFuture + vHitbox[2]
     end
 
---[--------------Distance check-------------------]
--- Get current distance between local player and closest player
-vdistance = (vPlayerOrigin - pLocalOrigin):Length()
+    --[--------------Distance check-------------------]
+    -- Get current distance between local player and closest player
+    vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
     -- Get distance between local player and closest player after swing
     fDistance = (vPlayerFuture - pLocalFuture):Length()
     local inRange = false
     local inRangePoint = Vector3(0, 0, 0)
 
-    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd, OnGround, pLocal:InCond(17))
+    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd,
+        OnGround, pLocal:InCond(17))
     -- Use inRange to decide if can attack
     can_attack = inRange
 
---[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
-    local hitboxes = CurrentTarget:GetHitboxes()
-    local hitbox = hitboxes[6]
-    local aimpos = nil
+    --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
+    local aimpos = CurrentTarget:GetAbsOrigin() +
+    Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
+
+    -- Inside your game loop
+    if Menu.Aimbot.Aimbot then
+        local aim_angles
+        if InRangePoint then
+            aimpos = InRangePoint
+            aimposVis = aimpos -- transfer aim point to visuals
+
+            -- Calculate aim position only once
+            aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
+            aim_angles = aimpos
+        end
+
+        if Menu.Aimbot.ChargeBot and pLocal:InCond(17) and not can_attack then
+            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
+                MASK_PLAYERSOLID_BRUSHONLY)
+            if trace.fraction == 1 or trace.entity == CurrentTarget then
+                -- If the trace hit something, set the view angles to the position of the hit
+                aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
+                -- Set view angles based on the future position of the local player
+                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
+            end
+        elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
+            local trace = engine.TraceHull(pLocalFuture, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
+                MASK_PLAYERSOLID_BRUSHONLY)
+            if trace.fraction == 1 or trace.entity == CurrentTarget then
+                -- If the trace hit something, set the view angles to the position of the hit
+                aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
+                -- Set view angles based on the future position of the local player
+                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
+            end
+        elseif can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
+            -- Set view angles based on whether silent aim is enabled
+            if Menu.Aimbot.Silent then
+                pCmd:SetViewAngles(aim_angles.pitch, aim_angles.yaw, 0)
+            else
+                engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
+            end
+        elseif pLocalClass == 4 then
+            -- Remove ChargeControl call from here
+        end
+    elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
+        -- Removed ChargeControl call from here
+    end
+
+    -- Check if instant attack is available
+    dashKeyBound = gui.GetValue("dash move key") ~= 0
+    local canInstantAttack = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and dashKeyBound
+
+    -- Temporarily disable charge reach if instant attack is ready
+    local tempChargeReach = Menu.Misc.ChargeReach
+    if canInstantAttack then
+        Menu.Misc.ChargeReach = false
+    end
+
+    -- Distance check and target range check
+    -- Get current distance between local player and closest player
+    Vdistance = (vPlayerOrigin - pLocalOrigin):Length()
+
+    -- Get distance between local player and closest player after swing
+    FDistance = (vPlayerFuture - pLocalFuture):Length()
+    local inRange = false
+    local inRangePoint = Vector3(0, 0, 0)
+
+    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd,
+        OnGround, pLocal:InCond(17))
+    -- Use inRange to decide if can attack
+    can_attack = inRange
+
+    --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
+    hitboxes = CurrentTarget:GetHitboxes()
+    hitbox = hitboxes[6]
+    aimpos = nil
     --else
-        aimpos = CurrentTarget:GetAbsOrigin() + Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
+    aimpos = CurrentTarget:GetAbsOrigin() +
+        Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
     --end
 
     -- Inside your game loop
@@ -1200,7 +1323,8 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
         end
 
         if Menu.Aimbot.ChargeBot and pLocal:InCond(17) and not can_attack then
-            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
+            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
+                MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
                 aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
@@ -1208,7 +1332,8 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
             end
         elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
-            local trace = engine.TraceHull(pLocalFuture, UpdateHomingMissile(), vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
+            local trace = engine.TraceHull(pLocalFuture, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
+                MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
                 aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
@@ -1223,49 +1348,50 @@ vdistance = (vPlayerOrigin - pLocalOrigin):Length()
                 engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
             end
         elseif pLocalClass == 4 then
-            -- Control charge if charge bot is enabled and the local player is in condition 17
-            ChargeControl(pCmd)
+            -- Remove ChargeControl call from here
         end
-
     elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
-        -- Control charge if charge bot is enabled and the local player is in condition 17
-        ChargeControl(pCmd)
+        -- Removed ChargeControl call from here
     end
 
-        --Check if attack simulation was succesfull
-            if can_attack == true then
-                if Menu.Misc.InstantAttack == true then
-                    local oppositePoint = pLocal:GetAbsOrigin() - pLocal:EstimateAbsVelocity()
-                    if tickCounteratack % 2 == 0 then
-                        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- attack
-                    else
-                        WalkTo(pCmd, pLocal, oppositePoint)
-                        client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
-                        client.SetConVar("sv_maxusrcmdprocessticks", 13, true) -- force sv_cheats 1 localy(bypass sv_cheats 0)
-                        warp.TriggerWarp()
-                    end
-                    tickCounteratack = tickCounteratack + 1
-                else
-                    client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
-                    client.SetConVar("sv_maxusrcmdprocessticks", 24, true) -- force sv_cheats 1 localy(bypass sv_cheats 0
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- attack
-                end
-                can_attack = false
+    -- Only try instant attack when it's possible
+    if can_attack then
+        if Menu.Misc.InstantAttack and canInstantAttack then
+            local oppositePoint = pLocal:GetAbsOrigin() - pLocal:EstimateAbsVelocity()
+            if tickCounteratack % 2 == 0 then
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- attack
+            else
+                WalkTo(pCmd, pLocal, oppositePoint)
+                client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
+                client.SetConVar("sv_maxusrcmdprocessticks", 13, true)    -- Always use exactly 13 ticks for warp
+                warp.TriggerWarp()
             end
+            tickCounteratack = tickCounteratack + 1
+        else
+            -- Normal attack if instant attack is disabled or not enough ticks
+            client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
+            client.SetConVar("sv_maxusrcmdprocessticks", 24, true)    -- force sv_cheats 1 localy(bypass sv_cheats 0)
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)            -- attack
+        end
+        can_attack = false
+    end
 
-            if can_charge then
-                if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and OnGround then
-                    pCmd:SetButtons(pCmd:GetButtons() & ~IN_JUMP)-- stop jump for moment
-                    pCmd:SetButtons(pCmd:GetButtons() & ~IN_ATTACK2) -- stop charge for moment
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)-- jump at 2 ticks before attack
-                else
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)-- charge
-                end
-                can_charge = false
-            end
+    -- Restore original charge reach setting
+    Menu.Misc.ChargeReach = tempChargeReach
 
-        -- Update last variables
-            vHitbox[2].z = 82
+    if can_charge then
+        if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and OnGround then
+            pCmd:SetButtons(pCmd:GetButtons() & ~IN_JUMP)    -- stop jump for moment
+            pCmd:SetButtons(pCmd:GetButtons() & ~IN_ATTACK2) -- stop charge for moment
+            pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)     -- jump at 2 ticks before attack
+        else
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)  -- charge
+        end
+        can_charge = false
+    end
+
+    -- Update last variables
+    vHitbox[2].z = 82
     ::continue::
 end
 
@@ -1277,7 +1403,7 @@ local function setup_sphere(center, radius, segments)
     sphere_cache.center = center
     sphere_cache.radius = radius
     sphere_cache.segments = segments
-    sphere_cache.vertices = {}  -- Clear the old vertices
+    sphere_cache.vertices = {} -- Clear the old vertices
 
     local thetaStep = math.pi / segments
     local phiStep = 2 * math.pi / segments
@@ -1394,41 +1520,41 @@ end
 setup_sphere(Vector3(0, 0, 0), 90, 7)
 
 local white_texture = draw.CreateTextureRGBA(string.char(
-	0xff, 0xff, 0xff, 25,
-	0xff, 0xff, 0xff, 25,
-	0xff, 0xff, 0xff, 25,
-	0xff, 0xff, 0xff, 25
+    0xff, 0xff, 0xff, 25,
+    0xff, 0xff, 0xff, 25,
+    0xff, 0xff, 0xff, 25,
+    0xff, 0xff, 0xff, 25
 ), 2, 2);
 
 local drawPolygon = (function()
-	local v1x, v1y = 0, 0;
-	local function cross(a, b)
-		return (b[1] - a[1]) * (v1y - a[2]) - (b[2] - a[2]) * (v1x - a[1])
-	end
+    local v1x, v1y = 0, 0;
+    local function cross(a, b)
+        return (b[1] - a[1]) * (v1y - a[2]) - (b[2] - a[2]) * (v1x - a[1])
+    end
 
-	local TexturedPolygon = draw.TexturedPolygon;
+    local TexturedPolygon = draw.TexturedPolygon;
 
-	return function(vertices)
-		local cords, reverse_cords = {}, {};
-		local sizeof = #vertices;
-		local sum = 0;
+    return function(vertices)
+        local cords, reverse_cords = {}, {};
+        local sizeof = #vertices;
+        local sum = 0;
 
-		v1x, v1y = vertices[1][1], vertices[1][2];
-		for i, pos in pairs(vertices) do
-			local convertedTbl = {pos[1], pos[2], 0, 0};
+        v1x, v1y = vertices[1][1], vertices[1][2];
+        for i, pos in ipairs(vertices) do
+            local convertedTbl = { pos[1], pos[2], 0, 0 };
 
-			cords[i], reverse_cords[sizeof - i + 1] = convertedTbl, convertedTbl;
+            cords[i], reverse_cords[sizeof - i + 1] = convertedTbl, convertedTbl;
 
-			sum = sum + cross(pos, vertices[(i % sizeof) + 1]);
-		end
+            sum = sum + cross(pos, vertices[(i % sizeof) + 1]);
+        end
 
 
-		TexturedPolygon(white_texture, (sum < 0) and reverse_cords or cords, true)
-	end
+        TexturedPolygon(white_texture, (sum < 0) and reverse_cords or cords, true)
+    end
 end)();
 
 local bindTimer = 0
-local bindDelay = 0.25  -- Delay of 0.25 seconds
+local bindDelay = 0.25 -- Delay of 0.25 seconds
 
 local function handleKeybind(noKeyText, keybind, keybindName)
     if KeybindName ~= "Press The Key" and ImMenu.Button(KeybindName or noKeyText) then
@@ -1493,53 +1619,56 @@ local function updateTabs(selectedTab)
 end
 
 -- debug command: ent_fire !picker Addoutput "health 99999" --superbot
-local Verdana = draw.CreateFont( "Verdana", 16, 800 ) -- Create a font for doDraw
+local Verdana = draw.CreateFont("Verdana", 16, 800) -- Create a font for doDraw
 draw.SetFont(Verdana)
---[[ Code called every frame ]]--
+--[[ Code called every frame ]]                     --
 local function doDraw()
-if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.EnableVisuals then
-
+    if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.EnableVisuals then
         --local pLocal = entities.GetLocalPlayer()
         pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
-    if Menu.Visuals.EnableVisuals or pWeapon:IsMeleeWeapon() and pLocal and pLocal:IsAlive() then
-        draw.Color( 255, 255, 255, 255 )
-        local w, h = draw.GetScreenSize()
-        if Menu.Visuals.Local.RangeCircle and pLocalFuture then
-                    draw.Color(255, 255, 255, 255)
+        if Menu.Visuals.EnableVisuals or pWeapon:IsMeleeWeapon() and pLocal and pLocal:IsAlive() then
+            draw.Color(255, 255, 255, 255)
+            local w, h = draw.GetScreenSize()
+            if Menu.Visuals.Local.RangeCircle and pLocalFuture then
+                draw.Color(255, 255, 255, 255)
 
-                    local center = pLocalFuture - Vheight -- Center of the circle at the player's feet
-                    local viewPos = pLocalOrigin -- View position to shoot traces from
-                    local radius = Menu.Misc.ChargeReach and pLocalClass == 4 and chargeLeft == 100 and Charge_Range or TotalSwingRange  -- Radius of the circle
-                    local segments = 32 -- Number of segments to draw the circle
-                    local angleStep = (2 * math.pi) / segments
+                local center = pLocalFuture -
+                    Vheight         -- Center of the circle at the player's feet
+                local viewPos =
+                    pLocalOrigin    -- View position to shoot traces from
+                local radius = Menu.Misc.ChargeReach and pLocalClass == 4 and chargeLeft == 100 and Charge_Range or
+                    TotalSwingRange -- Radius of the circle
+                local segments = 32 -- Number of segments to draw the circle
+                local angleStep = (2 * math.pi) / segments
 
-                    -- Determine the color of the circle based on TargetPlayer
-                    local circleColor = TargetPlayer and {0, 255, 0, 255} or {255, 255, 255, 255} -- Green if TargetPlayer exists, otherwise white
+                -- Determine the color of the circle based on TargetPlayer
+                local circleColor = TargetPlayer and { 0, 255, 0, 255 } or
+                    { 255, 255, 255, 255 } -- Green if TargetPlayer exists, otherwise white
 
-                    -- Set the drawing color
-                    draw.Color(table.unpack(circleColor))
+                -- Set the drawing color
+                draw.Color(table.unpack(circleColor))
 
-                    local vertices = {} -- Table to store adjusted vertices
+                local vertices = {} -- Table to store adjusted vertices
 
-                    -- Calculate vertices and adjust based on trace results
-                    for i = 1, segments do
-                        local angle = angleStep * i
-                        local circlePoint = center + Vector3(math.cos(angle), math.sin(angle), 0) * radius
+                -- Calculate vertices and adjust based on trace results
+                for i = 1, segments do
+                    local angle = angleStep * i
+                    local circlePoint = center + Vector3(math.cos(angle), math.sin(angle), 0) * radius
 
-                        local trace = engine.TraceLine(viewPos, circlePoint, MASK_SHOT_HULL) --engine.TraceHull(viewPos, circlePoint, vHitbox[1], vHitbox[2], MASK_SHOT_HULL)
-                        local endPoint = trace.fraction < 1.0 and trace.endpos or circlePoint
+                    local trace = engine.TraceLine(viewPos, circlePoint, MASK_SHOT_HULL) --engine.TraceHull(viewPos, circlePoint, vHitbox[1], vHitbox[2], MASK_SHOT_HULL)
+                    local endPoint = trace.fraction < 1.0 and trace.endpos or circlePoint
 
-                        vertices[i] = client.WorldToScreen(endPoint)
+                    vertices[i] = client.WorldToScreen(endPoint)
+                end
+
+                -- Draw the circle using adjusted vertices
+                for i = 1, segments do
+                    local j = (i % segments) + 1 -- Wrap around to the first vertex after the last one
+                    if vertices[i] and vertices[j] then
+                        draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
                     end
-
-                    -- Draw the circle using adjusted vertices
-                    for i = 1, segments do
-                        local j = (i % segments) + 1 -- Wrap around to the first vertex after the last one
-                        if vertices[i] and vertices[j] then
-                            draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
-                        end
-                    end
-        end
+                end
+            end
             if Menu.Visuals.Local.path.enable and pLocalFuture then
                 local style = Menu.Visuals.Local.path.Style
                 local width1 = Menu.Visuals.Local.path.width
@@ -1552,15 +1681,17 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                         if startPos and endPos then
                             local leftBase, rightBase = drawPavement(startPos, endPos, width1)
-                            
+
                             if leftBase and rightBase then
                                 local screenLeftBase = client.WorldToScreen(leftBase)
                                 local screenRightBase = client.WorldToScreen(rightBase)
 
                                 if screenLeftBase and screenRightBase then
                                     if lastLeftBaseScreen and lastRightBaseScreen then
-                                        draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1], screenLeftBase[2])
-                                        draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1], screenRightBase[2])
+                                        draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1],
+                                            screenLeftBase[2])
+                                        draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1],
+                                            screenRightBase[2])
                                     end
 
                                     lastLeftBaseScreen = screenLeftBase
@@ -1577,7 +1708,8 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                         if screenFinalPos then
                             draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
-                            draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
+                            draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenFinalPos[1],
+                                screenFinalPos[2])
                         end
                     end
                 elseif style == 2 then
@@ -1590,15 +1722,17 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
 
                         if startPos and endPos then
                             local leftBase, rightBase = arrowPathArrow2(startPos, endPos, width1)
-                            
+
                             if leftBase and rightBase then
                                 local screenLeftBase = client.WorldToScreen(leftBase)
                                 local screenRightBase = client.WorldToScreen(rightBase)
 
                                 if screenLeftBase and screenRightBase then
                                     if lastLeftBaseScreen and lastRightBaseScreen then
-                                        draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1], screenLeftBase[2])
-                                        draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1], screenRightBase[2])
+                                        draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1],
+                                            screenLeftBase[2])
+                                        draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1],
+                                            screenRightBase[2])
                                     end
 
                                     lastLeftBaseScreen = screenLeftBase
@@ -1607,10 +1741,9 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
                             end
                         end
                     end
-
                 elseif style == 3 then
                     -- Arrows Style
-                     for i = 1, #pLocalPath - 1 do
+                    for i = 1, #pLocalPath - 1 do
                         local startPos = pLocalPath[i]
                         local endPos = pLocalPath[i + 1]
 
@@ -1623,9 +1756,9 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
                     for i = 1, #pLocalPath - 1 do
                         local pos1 = pLocalPath[i]
                         local pos2 = pLocalPath[i + 1]
-            
+
                         if pos1 and pos2 then
-                            L_line(pos1, pos2, width1)  -- Adjust the size for the perpendicular segment as needed
+                            L_line(pos1, pos2, width1) -- Adjust the size for the perpendicular segment as needed
                         end
                     end
                 elseif style == 5 then
@@ -1646,371 +1779,375 @@ if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.Ena
                     for i = 1, #pLocalPath - 1 do
                         local pos1 = pLocalPath[i]
                         local pos2 = pLocalPath[i + 1]
-    
+
                         local screenPos1 = client.WorldToScreen(pos1)
                         local screenPos2 = client.WorldToScreen(pos2)
-    
+
                         if screenPos1 ~= nil and screenPos2 ~= nil then
                             draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
                         end
                     end
                 end
             end
----------------------------------------------------------sphere
-                if Menu.Visuals.Sphere then
-                    -- Function to draw the sphere
-                    local function draw_sphere()
-                        local playerYaw = engine.GetViewAngles().yaw
-                        local cos_yaw = math.cos(math.rad(playerYaw))
-                        local sin_yaw = math.sin(math.rad(playerYaw))
+            ---------------------------------------------------------sphere
+            if Menu.Visuals.Sphere then
+                -- Function to draw the sphere
+                local function draw_sphere()
+                    local playerYaw = engine.GetViewAngles().yaw
+                    local cos_yaw = math.cos(math.rad(playerYaw))
+                    local sin_yaw = math.sin(math.rad(playerYaw))
 
-                        local playerForward = Vector3(-cos_yaw, -sin_yaw, 0)  -- Forward vector based on player's yaw
+                    local playerForward = Vector3(-cos_yaw, -sin_yaw, 0) -- Forward vector based on player's yaw
 
-                        for _, vertex in ipairs(sphere_cache.vertices) do
-                            local rotated_vertex1 = Vector3(-vertex[1].x * cos_yaw + vertex[1].y * sin_yaw, -vertex[1].x * sin_yaw - vertex[1].y * cos_yaw, vertex[1].z)
-                            local rotated_vertex2 = Vector3(-vertex[2].x * cos_yaw + vertex[2].y * sin_yaw, -vertex[2].x * sin_yaw - vertex[2].y * cos_yaw, vertex[2].z)
-                            local rotated_vertex3 = Vector3(-vertex[3].x * cos_yaw + vertex[3].y * sin_yaw, -vertex[3].x * sin_yaw - vertex[3].y * cos_yaw, vertex[3].z)
-                            local rotated_vertex4 = Vector3(-vertex[4].x * cos_yaw + vertex[4].y * sin_yaw, -vertex[4].x * sin_yaw - vertex[4].y * cos_yaw, vertex[4].z)
+                    for _, vertex in ipairs(sphere_cache.vertices) do
+                        local rotated_vertex1 = Vector3(-vertex[1].x * cos_yaw + vertex[1].y * sin_yaw,
+                            -vertex[1].x * sin_yaw - vertex[1].y * cos_yaw, vertex[1].z)
+                        local rotated_vertex2 = Vector3(-vertex[2].x * cos_yaw + vertex[2].y * sin_yaw,
+                            -vertex[2].x * sin_yaw - vertex[2].y * cos_yaw, vertex[2].z)
+                        local rotated_vertex3 = Vector3(-vertex[3].x * cos_yaw + vertex[3].y * sin_yaw,
+                            -vertex[3].x * sin_yaw - vertex[3].y * cos_yaw, vertex[3].z)
+                        local rotated_vertex4 = Vector3(-vertex[4].x * cos_yaw + vertex[4].y * sin_yaw,
+                            -vertex[4].x * sin_yaw - vertex[4].y * cos_yaw, vertex[4].z)
 
-                            local worldPos1 = sphere_cache.center + rotated_vertex1 * sphere_cache.radius
-                            local worldPos2 = sphere_cache.center + rotated_vertex2 * sphere_cache.radius
-                            local worldPos3 = sphere_cache.center + rotated_vertex3 * sphere_cache.radius
-                            local worldPos4 = sphere_cache.center + rotated_vertex4 * sphere_cache.radius
+                        local worldPos1 = sphere_cache.center + rotated_vertex1 * sphere_cache.radius
+                        local worldPos2 = sphere_cache.center + rotated_vertex2 * sphere_cache.radius
+                        local worldPos3 = sphere_cache.center + rotated_vertex3 * sphere_cache.radius
+                        local worldPos4 = sphere_cache.center + rotated_vertex4 * sphere_cache.radius
 
-                            -- Trace from the center to the vertices with a hull size of 18x18
-                            local hullSize = Vector3(18, 18, 18)
-                            local trace1 = engine.TraceHull(sphere_cache.center, worldPos1, -hullSize, hullSize, MASK_SHOT_HULL)
-                            local trace2 = engine.TraceHull(sphere_cache.center, worldPos2, -hullSize, hullSize, MASK_SHOT_HULL)
-                            local trace3 = engine.TraceHull(sphere_cache.center, worldPos3, -hullSize, hullSize, MASK_SHOT_HULL)
-                            local trace4 = engine.TraceHull(sphere_cache.center, worldPos4, -hullSize, hullSize, MASK_SHOT_HULL)
+                        -- Trace from the center to the vertices with a hull size of 18x18
+                        local hullSize = Vector3(18, 18, 18)
+                        local trace1 = engine.TraceHull(sphere_cache.center, worldPos1, -hullSize, hullSize,
+                            MASK_SHOT_HULL)
+                        local trace2 = engine.TraceHull(sphere_cache.center, worldPos2, -hullSize, hullSize,
+                            MASK_SHOT_HULL)
+                        local trace3 = engine.TraceHull(sphere_cache.center, worldPos3, -hullSize, hullSize,
+                            MASK_SHOT_HULL)
+                        local trace4 = engine.TraceHull(sphere_cache.center, worldPos4, -hullSize, hullSize,
+                            MASK_SHOT_HULL)
 
-                            local endPos1 = trace1.fraction < 1.0 and trace1.endpos or worldPos1
-                            local endPos2 = trace2.fraction < 1.0 and trace2.endpos or worldPos2
-                            local endPos3 = trace3.fraction < 1.0 and trace3.endpos or worldPos3
-                            local endPos4 = trace4.fraction < 1.0 and trace4.endpos or worldPos4
+                        local endPos1 = trace1.fraction < 1.0 and trace1.endpos or worldPos1
+                        local endPos2 = trace2.fraction < 1.0 and trace2.endpos or worldPos2
+                        local endPos3 = trace3.fraction < 1.0 and trace3.endpos or worldPos3
+                        local endPos4 = trace4.fraction < 1.0 and trace4.endpos or worldPos4
 
-                            local screenPos1 = client.WorldToScreen(endPos1)
-                            local screenPos2 = client.WorldToScreen(endPos2)
-                            local screenPos3 = client.WorldToScreen(endPos3)
-                            local screenPos4 = client.WorldToScreen(endPos4)
+                        local screenPos1 = client.WorldToScreen(endPos1)
+                        local screenPos2 = client.WorldToScreen(endPos2)
+                        local screenPos3 = client.WorldToScreen(endPos3)
+                        local screenPos4 = client.WorldToScreen(endPos4)
 
-                            -- Calculate normal vector of the square
-                            local normal = Normalize(rotated_vertex2 - rotated_vertex1):Cross(rotated_vertex3 - rotated_vertex1)
+                        -- Calculate normal vector of the square
+                        local normal = Normalize(rotated_vertex2 - rotated_vertex1):Cross(rotated_vertex3 -
+                            rotated_vertex1)
 
-                            -- Draw square only if its normal faces towards the player
-                            if normal:Dot(playerForward) > 0.1 then
-                                if screenPos1 and screenPos2 and screenPos3 and screenPos4 then
-                                    -- Draw the square
-                                    drawPolygon({screenPos1, screenPos2, screenPos3, screenPos4})
+                        -- Draw square only if its normal faces towards the player
+                        if normal:Dot(playerForward) > 0.1 then
+                            if screenPos1 and screenPos2 and screenPos3 and screenPos4 then
+                                -- Draw the square
+                                drawPolygon({ screenPos1, screenPos2, screenPos3, screenPos4 })
 
-                                    -- Optionally, draw lines between the vertices of the square for wireframe visualization
-                                    draw.Color(255, 255, 255, 25) -- Set color and alpha for lines
-                                    draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
-                                    draw.Line(screenPos2[1], screenPos2[2], screenPos3[1], screenPos3[2])
-                                    draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
-                                    draw.Line(screenPos4[1], screenPos4[2], screenPos1[1], screenPos1[2])
-                                end
+                                -- Optionally, draw lines between the vertices of the square for wireframe visualization
+                                draw.Color(255, 255, 255, 25) -- Set color and alpha for lines
+                                draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                                draw.Line(screenPos2[1], screenPos2[2], screenPos3[1], screenPos3[2])
+                                draw.Line(screenPos3[1], screenPos3[2], screenPos4[1], screenPos4[2])
+                                draw.Line(screenPos4[1], screenPos4[2], screenPos1[1], screenPos1[2])
                             end
                         end
                     end
-
-                    -- Example draw call
-                    sphere_cache.center = pLocalOrigin  -- Replace with actual player origin
-                    sphere_cache.radius = TotalSwingRange    -- Replace with actual swing range value
-                    draw_sphere()
                 end
 
-                    -- enemy
-                    if vPlayerFuture then
-                        -- Draw lines between the predicted positions
-                        if Menu.Visuals.Target.path.enable then
-                            local style = Menu.Visuals.Target.path.Style
-                            local width = Menu.Visuals.Target.path.width
+                -- Example draw call
+                sphere_cache.center = pLocalOrigin    -- Replace with actual player origin
+                sphere_cache.radius = TotalSwingRange -- Replace with actual swing range value
+                draw_sphere()
+            end
 
-                            if style == 1 then
-                                local lastLeftBaseScreen, lastRightBaseScreen = nil, nil
-                                -- Pavement Style
-                                for i = 1, #vPlayerPath - 1 do
-                                    local startPos = vPlayerPath[i]
-                                    local endPos = vPlayerPath[i + 1]
+            -- enemy
+            if vPlayerFuture then
+                -- Draw lines between the predicted positions
+                if Menu.Visuals.Target.path.enable then
+                    local style = Menu.Visuals.Target.path.Style
+                    local width = Menu.Visuals.Target.path.width
 
-                                    if startPos and endPos then
-                                        local leftBase, rightBase = drawPavement(startPos, endPos, width)
-                                        
-                                        if leftBase and rightBase then
-                                            local screenLeftBase = client.WorldToScreen(leftBase)
-                                            local screenRightBase = client.WorldToScreen(rightBase)
+                    if style == 1 then
+                        local lastLeftBaseScreen, lastRightBaseScreen = nil, nil
+                        -- Pavement Style
+                        for i = 1, #vPlayerPath - 1 do
+                            local startPos = vPlayerPath[i]
+                            local endPos = vPlayerPath[i + 1]
 
-                                            if screenLeftBase and screenRightBase then
-                                                if lastLeftBaseScreen and lastRightBaseScreen then
-                                                    draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1], screenLeftBase[2])
-                                                    draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1], screenRightBase[2])
-                                                end
+                            if startPos and endPos then
+                                local leftBase, rightBase = drawPavement(startPos, endPos, width)
 
-                                                lastLeftBaseScreen = screenLeftBase
-                                                lastRightBaseScreen = screenRightBase
-                                            end
+                                if leftBase and rightBase then
+                                    local screenLeftBase = client.WorldToScreen(leftBase)
+                                    local screenRightBase = client.WorldToScreen(rightBase)
+
+                                    if screenLeftBase and screenRightBase then
+                                        if lastLeftBaseScreen and lastRightBaseScreen then
+                                            draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1],
+                                                screenLeftBase[2])
+                                            draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1],
+                                                screenRightBase[2])
                                         end
+
+                                        lastLeftBaseScreen = screenLeftBase
+                                        lastRightBaseScreen = screenRightBase
                                     end
                                 end
+                            end
+                        end
 
-                                -- Draw the final line segment
-                                if lastLeftBaseScreen and lastRightBaseScreen and #vPlayerPath > 0 then
-                                    local finalPos = vPlayerPath[#vPlayerPath]
-                                    local screenFinalPos = client.WorldToScreen(finalPos)
+                        -- Draw the final line segment
+                        if lastLeftBaseScreen and lastRightBaseScreen and #vPlayerPath > 0 then
+                            local finalPos = vPlayerPath[#vPlayerPath]
+                            local screenFinalPos = client.WorldToScreen(finalPos)
 
-                                    if screenFinalPos then
-                                        draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
-                                        draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
-                                    end
-                                end
-                            elseif style == 2 then
-                                local lastLeftBaseScreen, lastRightBaseScreen = nil, nil
+                            if screenFinalPos then
+                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1],
+                                    screenFinalPos[2])
+                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenFinalPos[1],
+                                    screenFinalPos[2])
+                            end
+                        end
+                    elseif style == 2 then
+                        local lastLeftBaseScreen, lastRightBaseScreen = nil, nil
 
-                                -- Start from the second element (i = 2)
-                                for i = 2, #vPlayerPath - 1 do
-                                    local startPos = vPlayerPath[i]
-                                    local endPos = vPlayerPath[i + 1]
+                        -- Start from the second element (i = 2)
+                        for i = 2, #vPlayerPath - 1 do
+                            local startPos = vPlayerPath[i]
+                            local endPos = vPlayerPath[i + 1]
 
-                                    if startPos and endPos then
-                                        local leftBase, rightBase = arrowPathArrow2(startPos, endPos, width)
-                                        
-                                        if leftBase and rightBase then
-                                            local screenLeftBase = client.WorldToScreen(leftBase)
-                                            local screenRightBase = client.WorldToScreen(rightBase)
+                            if startPos and endPos then
+                                local leftBase, rightBase = arrowPathArrow2(startPos, endPos, width)
 
-                                            if screenLeftBase and screenRightBase then
-                                                if lastLeftBaseScreen and lastRightBaseScreen then
-                                                    draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1], screenLeftBase[2])
-                                                    draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1], screenRightBase[2])
-                                                end
+                                if leftBase and rightBase then
+                                    local screenLeftBase = client.WorldToScreen(leftBase)
+                                    local screenRightBase = client.WorldToScreen(rightBase)
 
-                                                lastLeftBaseScreen = screenLeftBase
-                                                lastRightBaseScreen = screenRightBase
-                                            end
+                                    if screenLeftBase and screenRightBase then
+                                        if lastLeftBaseScreen and lastRightBaseScreen then
+                                            draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1],
+                                                screenLeftBase[2])
+                                            draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1],
+                                                screenRightBase[2])
                                         end
-                                    end
-                                end
 
-                            elseif style == 3 then
-                                -- Arrows Style
-                                 for i = 1, #vPlayerPath - 1 do
-                                    local startPos = vPlayerPath[i]
-                                    local endPos = vPlayerPath[i + 1]
-
-                                    if startPos and endPos then
-                                        arrowPathArrow(startPos, endPos, width)
-                                    end
-                                end
-                            elseif style == 4 then
-                                -- L Line Style
-                                for i = 1, #vPlayerPath - 1 do
-                                    local pos1 = vPlayerPath[i]
-                                    local pos2 = vPlayerPath[i + 1]
-
-                                    if pos1 and pos2 then
-                                        L_line(pos1, pos2, width)  -- Adjust the size for the perpendicular segment as needed
-                                    end
-                                end
-                            elseif style == 5 then
-                                -- Draw a dashed line for vPlayerPath
-                                for i = 1, #vPlayerPath - 1 do
-                                    local pos1 = vPlayerPath[i]
-                                    local pos2 = vPlayerPath[i + 1]
-
-                                    local screenPos1 = client.WorldToScreen(pos1)
-                                    local screenPos2 = client.WorldToScreen(pos2)
-
-                                    if screenPos1 ~= nil and screenPos2 ~= nil and i % 2 == 1 then
-                                        draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
-                                    end
-                                end
-                            elseif style == 6 then
-                                -- Draw a dashed line for vPlayerPath
-                                for i = 1, #vPlayerPath - 1 do
-                                    local pos1 = vPlayerPath[i]
-                                    local pos2 = vPlayerPath[i + 1]
-
-                                    local screenPos1 = client.WorldToScreen(pos1)
-                                    local screenPos2 = client.WorldToScreen(pos2)
-
-                                    if screenPos1 ~= nil and screenPos2 ~= nil then
-                                        draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                                        lastLeftBaseScreen = screenLeftBase
+                                        lastRightBaseScreen = screenRightBase
                                     end
                                 end
                             end
                         end
+                    elseif style == 3 then
+                        -- Arrows Style
+                        for i = 1, #vPlayerPath - 1 do
+                            local startPos = vPlayerPath[i]
+                            local endPos = vPlayerPath[i + 1]
 
-                        if aimposVis then
-                            --draw predicted local position with strafe prediction
-                            local screenPos = client.WorldToScreen(aimposVis)
-                            if screenPos ~= nil then
-                                draw.Line( screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
-                                draw.Line( screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+                            if startPos and endPos then
+                                arrowPathArrow(startPos, endPos, width)
                             end
                         end
-                
-                        -- Calculate min and max points
-                        local minPoint = drawVhitbox[1]
-                        local maxPoint = drawVhitbox[2]
+                    elseif style == 4 then
+                        -- L Line Style
+                        for i = 1, #vPlayerPath - 1 do
+                            local pos1 = vPlayerPath[i]
+                            local pos2 = vPlayerPath[i + 1]
 
-                        -- Calculate vertices of the AABB
-                        -- Assuming minPoint and maxPoint are the minimum and maximum points of the AABB:
-                        local vertices = {
-                            Vector3(minPoint.x, minPoint.y, minPoint.z),  -- Bottom-back-left
-                            Vector3(minPoint.x, maxPoint.y, minPoint.z),  -- Bottom-front-left
-                            Vector3(maxPoint.x, maxPoint.y, minPoint.z),  -- Bottom-front-right
-                            Vector3(maxPoint.x, minPoint.y, minPoint.z),  -- Bottom-back-right
-                            Vector3(minPoint.x, minPoint.y, maxPoint.z),  -- Top-back-left
-                            Vector3(minPoint.x, maxPoint.y, maxPoint.z),  -- Top-front-left
-                            Vector3(maxPoint.x, maxPoint.y, maxPoint.z),  -- Top-front-right
-                            Vector3(maxPoint.x, minPoint.y, maxPoint.z)   -- Top-back-right
-                        }
-
-                        -- Convert 3D coordinates to 2D screen coordinates
-                        for i, vertex in ipairs(vertices) do
-                            vertices[i] = client.WorldToScreen(vertex)
-                        end
-
-                            -- Draw lines between vertices to visualize the box
-                            if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
-                                -- Draw front face
-                                draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
-                                draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
-                                draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
-                                draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
-
-                                -- Draw back face
-                                draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
-                                draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
-                                draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
-                                draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
-
-                                -- Draw connecting lines
-                                draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2])
-                                draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2])
-                                draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2])
-                                draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2])
+                            if pos1 and pos2 then
+                                L_line(pos1, pos2, width) -- Adjust the size for the perpendicular segment as needed
                             end
                         end
+                    elseif style == 5 then
+                        -- Draw a dashed line for vPlayerPath
+                        for i = 1, #vPlayerPath - 1 do
+                            local pos1 = vPlayerPath[i]
+                            local pos2 = vPlayerPath[i + 1]
+
+                            local screenPos1 = client.WorldToScreen(pos1)
+                            local screenPos2 = client.WorldToScreen(pos2)
+
+                            if screenPos1 ~= nil and screenPos2 ~= nil and i % 2 == 1 then
+                                draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                            end
+                        end
+                    elseif style == 6 then
+                        -- Draw a dashed line for vPlayerPath
+                        for i = 1, #vPlayerPath - 1 do
+                            local pos1 = vPlayerPath[i]
+                            local pos2 = vPlayerPath[i + 1]
+
+                            local screenPos1 = client.WorldToScreen(pos1)
+                            local screenPos2 = client.WorldToScreen(pos2)
+
+                            if screenPos1 ~= nil and screenPos2 ~= nil then
+                                draw.Line(screenPos1[1], screenPos1[2], screenPos2[1], screenPos2[2])
+                            end
+                        end
+                    end
+                end
+
+                if aimposVis then
+                    --draw predicted local position with strafe prediction
+                    local screenPos = client.WorldToScreen(aimposVis)
+                    if screenPos ~= nil then
+                        draw.Line(screenPos[1] + 10, screenPos[2], screenPos[1] - 10, screenPos[2])
+                        draw.Line(screenPos[1], screenPos[2] - 10, screenPos[1], screenPos[2] + 10)
+                    end
+                end
+
+                -- Calculate min and max points
+                local minPoint = drawVhitbox[1]
+                local maxPoint = drawVhitbox[2]
+
+                -- Calculate vertices of the AABB
+                -- Assuming minPoint and maxPoint are the minimum and maximum points of the AABB:
+                local vertices = {
+                    Vector3(minPoint.x, minPoint.y, minPoint.z), -- Bottom-back-left
+                    Vector3(minPoint.x, maxPoint.y, minPoint.z), -- Bottom-front-left
+                    Vector3(maxPoint.x, maxPoint.y, minPoint.z), -- Bottom-front-right
+                    Vector3(maxPoint.x, minPoint.y, minPoint.z), -- Bottom-back-right
+                    Vector3(minPoint.x, minPoint.y, maxPoint.z), -- Top-back-left
+                    Vector3(minPoint.x, maxPoint.y, maxPoint.z), -- Top-front-left
+                    Vector3(maxPoint.x, maxPoint.y, maxPoint.z), -- Top-front-right
+                    Vector3(maxPoint.x, minPoint.y, maxPoint.z)  -- Top-back-right
+                }
+
+                -- Convert 3D coordinates to 2D screen coordinates
+                for i, vertex in ipairs(vertices) do
+                    vertices[i] = client.WorldToScreen(vertex)
+                end
+
+                -- Draw lines between vertices to visualize the box
+                if vertices[1] and vertices[2] and vertices[3] and vertices[4] and vertices[5] and vertices[6] and vertices[7] and vertices[8] then
+                    -- Draw front face
+                    draw.Line(vertices[1][1], vertices[1][2], vertices[2][1], vertices[2][2])
+                    draw.Line(vertices[2][1], vertices[2][2], vertices[3][1], vertices[3][2])
+                    draw.Line(vertices[3][1], vertices[3][2], vertices[4][1], vertices[4][2])
+                    draw.Line(vertices[4][1], vertices[4][2], vertices[1][1], vertices[1][2])
+
+                    -- Draw back face
+                    draw.Line(vertices[5][1], vertices[5][2], vertices[6][1], vertices[6][2])
+                    draw.Line(vertices[6][1], vertices[6][2], vertices[7][1], vertices[7][2])
+                    draw.Line(vertices[7][1], vertices[7][2], vertices[8][1], vertices[8][2])
+                    draw.Line(vertices[8][1], vertices[8][2], vertices[5][1], vertices[5][2])
+
+                    -- Draw connecting lines
+                    draw.Line(vertices[1][1], vertices[1][2], vertices[5][1], vertices[5][2])
+                    draw.Line(vertices[2][1], vertices[2][2], vertices[6][1], vertices[6][2])
+                    draw.Line(vertices[3][1], vertices[3][2], vertices[7][1], vertices[7][2])
+                    draw.Line(vertices[4][1], vertices[4][2], vertices[8][1], vertices[8][2])
+                end
+            end
         end
     end
 
     if gui.IsMenuOpen() and ImMenu and ImMenu.Begin("Swing Prediction", true) then
-            ImMenu.BeginFrame(1) -- tabs
-                Menu.currentTab = ImMenu.TabControl(Menu.tabs, Menu.currentTab)
-                updateTabs(Menu.currentTab)
+        ImMenu.BeginFrame(1) -- tabs
+        Menu.currentTab = ImMenu.TabControl(Menu.tabs, Menu.currentTab)
+        updateTabs(Menu.currentTab)
+        ImMenu.EndFrame()
+
+        if Menu.tabs.Aimbot then
+            ImMenu.BeginFrame(1)
+            Menu.Aimbot.Aimbot = ImMenu.Checkbox("Enable", Menu.Aimbot.Aimbot)
             ImMenu.EndFrame()
 
-            if Menu.tabs.Aimbot then
-                ImMenu.BeginFrame(1)
-                    Menu.Aimbot.Aimbot = ImMenu.Checkbox("Enable", Menu.Aimbot.Aimbot)
-                ImMenu.EndFrame()
+            ImMenu.BeginFrame(1)
+            Menu.Aimbot.Silent = ImMenu.Checkbox("Silent Aim", Menu.Aimbot.Silent)
+            Menu.Aimbot.ChargeBot = ImMenu.Checkbox("Charge Bot", Menu.Aimbot.ChargeBot)
+            ImMenu.EndFrame()
 
-                ImMenu.BeginFrame(1)
-                    Menu.Aimbot.Silent = ImMenu.Checkbox("Silent Aim", Menu.Aimbot.Silent)
-                    Menu.Aimbot.ChargeBot = ImMenu.Checkbox("Charge Bot", Menu.Aimbot.ChargeBot)
-                ImMenu.EndFrame()
+            ImMenu.BeginFrame(1)
+            Menu.Aimbot.AimbotFOV = ImMenu.Slider("Fov", Menu.Aimbot.AimbotFOV, 1, 360)
+            ImMenu.EndFrame()
 
-                ImMenu.BeginFrame(1)
-                    Menu.Aimbot.AimbotFOV = ImMenu.Slider("Fov", Menu.Aimbot.AimbotFOV, 1, 360)
-                ImMenu.EndFrame()
+            ImMenu.BeginFrame(1)
+            Menu.Aimbot.SwingTime = ImMenu.Slider("Swing Time", Menu.Aimbot.SwingTime, 1, 13)
+            ImMenu.EndFrame()
 
-                ImMenu.BeginFrame(1)
-                    Menu.Aimbot.SwingTime = ImMenu.Slider("Swing Time", Menu.Aimbot.SwingTime, 1, 13)
-                ImMenu.EndFrame()
+            ImMenu.BeginFrame(1)
+            ImMenu.Text("Keybind: ")
+            Menu.Keybind, Menu.KeybindName = handleKeybind("Always On", Menu.Keybind, Menu.KeybindName)
+            ImMenu.EndFrame()
+        end
 
-                ImMenu.BeginFrame(1)
-                    ImMenu.Text("Keybind: ")
-                    Menu.Keybind, Menu.KeybindName = handleKeybind("Always On", Menu.Keybind,  Menu.KeybindName)
-                ImMenu.EndFrame()
+        if Menu.tabs.Misc then
+            ImMenu.BeginFrame(1)
+            Menu.Misc.strafePred = ImMenu.Checkbox("Local Strafe Pred", Menu.Misc.strafePred)
+            Menu.Misc.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Misc.ChargeReach)
+            ImMenu.EndFrame()
+
+            ImMenu.BeginFrame()
+            Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
+            Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
+            Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
+            ImMenu.EndFrame()
+
+            ImMenu.BeginFrame()
+            Menu.Misc.CritRefill.Active = ImMenu.Checkbox("Auto Crit refill", Menu.Misc.CritRefill.Active)
+            if Menu.Misc.CritRefill.Active then
+                Menu.Misc.CritRefill.NumCrits = ImMenu.Slider("Crit Number", Menu.Misc.CritRefill.NumCrits, 1, 25)
+            end
+            ImMenu.EndFrame()
+            ImMenu.BeginFrame()
+            if Menu.Misc.CritRefill.Active then
+                Menu.Misc.CritMode = ImMenu.Option(Menu.Misc.CritMode, Menu.Misc.CritModes)
+            end
+            ImMenu.EndFrame()
+
+
+            ImMenu.BeginFrame(1)
+            Menu.Misc.ChargeControl = ImMenu.Checkbox("Charge Control", Menu.Misc.ChargeControl)
+            Menu.Misc.ChargeJump = ImMenu.Checkbox("Charge Jump", Menu.Misc.ChargeJump)
+            ImMenu.EndFrame()
+        end
+
+        if Menu.tabs.Visuals then
+            ImMenu.BeginFrame(1)
+            Menu.Visuals.EnableVisuals = ImMenu.Checkbox("Enable", Menu.Visuals.EnableVisuals)
+            ImMenu.EndFrame()
+
+            ImMenu.BeginFrame(1)
+            Menu.Visuals.Section = ImMenu.Option(Menu.Visuals.Section, Menu.Visuals.Sections)
+            ImMenu.EndFrame()
+
+            if Menu.Visuals.Section == 1 then
+                Menu.Visuals.Local.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.Local.RangeCircle)
+                Menu.Visuals.Local.path.enable = ImMenu.Checkbox("Local Path", Menu.Visuals.Local.path.enable)
+                Menu.Visuals.Local.path.Style = ImMenu.Option(Menu.Visuals.Local.path.Style,
+                    Menu.Visuals.Local.path.Styles)
+                Menu.Visuals.Local.path.width = ImMenu.Slider("Width", Menu.Visuals.Local.path.width, 1, 20, 0.1)
             end
 
-            if Menu.tabs.Misc then
-                
+            if Menu.Visuals.Section == 2 then
+                Menu.Visuals.Target.path.enable = ImMenu.Checkbox("Target Path", Menu.Visuals.Target.path.enable)
+                Menu.Visuals.Target.path.Style = ImMenu.Option(Menu.Visuals.Target.path.Style,
+                    Menu.Visuals.Target.path.Styles)
+                Menu.Visuals.Target.path.width = ImMenu.Slider("Width", Menu.Visuals.Target.path.width, 1, 20, 0.1)
+            end
+
+            if Menu.Visuals.Section == 3 then
                 ImMenu.BeginFrame(1)
-                    Menu.Misc.strafePred = ImMenu.Checkbox("Local Strafe Pred", Menu.Misc.strafePred)
-                    Menu.Misc.ChargeReach = ImMenu.Checkbox("Charge Reach", Menu.Misc.ChargeReach)
-                ImMenu.EndFrame()
-
-                ImMenu.BeginFrame("Advanced")
-                    Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
-                    Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
-                    Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
-                ImMenu.EndFrame()
-
-                ImMenu.BeginFrame("Crit Bucket")
-                    Menu.Misc.CritRefill.Active = ImMenu.Checkbox("Auto Crit refill", Menu.Misc.CritRefill.Active)
-                    if Menu.Misc.CritRefill.Active then
-                        Menu.Misc.CritRefill.NumCrits = ImMenu.Slider("Crit Number", Menu.Misc.CritRefill.NumCrits, 1, 25)
-                    end
-                ImMenu.EndFrame()
-                ImMenu.BeginFrame("Charge")
-                    if Menu.Misc.CritRefill.Active then
-                        Menu.Misc.CritMode = ImMenu.Option(Menu.Misc.CritMode, Menu.Misc.CritModes)
-                    end
-                ImMenu.EndFrame()
-
-
-                ImMenu.BeginFrame(1)
-                    Menu.Misc.ChargeControl = ImMenu.Checkbox("Charge Control", Menu.Misc.ChargeControl)
-                    Menu.Misc.ChargeJump = ImMenu.Checkbox("Charge Jump", Menu.Misc.ChargeJump)
-                ImMenu.EndFrame()
-
-                ImMenu.BeginFrame(1)
-                    Menu.Misc.ChargeSensitivity = ImMenu.Slider("Control Sensetivity", Menu.Misc.ChargeSensitivity, 1, 100)
+                ImMenu.Text("Experimental")
+                Menu.Visuals.Sphere = ImMenu.Checkbox("Range Shield", Menu.Visuals.Sphere)
                 ImMenu.EndFrame()
             end
-            
-            if Menu.tabs.Visuals then
-                ImMenu.BeginFrame(1)
-                Menu.Visuals.EnableVisuals = ImMenu.Checkbox("Enable", Menu.Visuals.EnableVisuals)
-                ImMenu.EndFrame()
-        
-                ImMenu.BeginFrame(1)
-                    Menu.Visuals.Section = ImMenu.Option(Menu.Visuals.Section, Menu.Visuals.Sections)
-                ImMenu.EndFrame()
-
-                if Menu.Visuals.Section == 1 then
-                    Menu.Visuals.Local.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.Local.RangeCircle)
-                    Menu.Visuals.Local.path.enable = ImMenu.Checkbox("Local Path", Menu.Visuals.Local.path.enable)
-                    Menu.Visuals.Local.path.Style = ImMenu.Option(Menu.Visuals.Local.path.Style, Menu.Visuals.Local.path.Styles)
-                    Menu.Visuals.Local.path.width = ImMenu.Slider("Width", Menu.Visuals.Local.path.width, 1, 20, 0.1)
-                end
-
-                if Menu.Visuals.Section == 2 then
-                    Menu.Visuals.Target.path.enable = ImMenu.Checkbox("Target Path", Menu.Visuals.Target.path.enable)
-                    Menu.Visuals.Target.path.Style = ImMenu.Option(Menu.Visuals.Target.path.Style, Menu.Visuals.Target.path.Styles)
-                    Menu.Visuals.Target.path.width = ImMenu.Slider("Width", Menu.Visuals.Target.path.width, 1, 20, 0.1)
-                end
-
-                if Menu.Visuals.Section == 3 then
-                    ImMenu.BeginFrame(1)
-                    ImMenu.Text("Experimental")
-                    Menu.Visuals.Sphere = ImMenu.Checkbox("Range Shield", Menu.Visuals.Sphere)
-                    ImMenu.EndFrame()
-                end
-
-                --[[ImMenu.BeginFrame(1)
-                Menu.Visuals.Visualization = ImMenu.Checkbox("Visualization", Menu.Visuals.Visualization)
-                Menu.Visuals.RangeCircle = ImMenu.Checkbox("Range Circle", Menu.Visuals.RangeCircle)
-                ImMenu.EndFrame()]]
-
-
-            end
+        end
         ImMenu.End()
     end
 end
 
---[[ Remove the menu when unloaded ]]--
-local function OnUnload()                                -- Called when the script is unloaded
-    UnloadLib() --unloading lualib
+--[[ Remove the menu when unloaded ]]                         --
+local function OnUnload()                                     -- Called when the script is unloaded
+    UnloadLib()                                               --unloading lualib
     CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
-    client.Command('play "ui/buttonclickrelease"', true) -- Play the "buttonclickrelease" sound
+    client.Command('play "ui/buttonclickrelease"', true)      -- Play the "buttonclickrelease" sound
 end
 
 local function damageLogger(event)
-    if (event:GetName() == 'player_hurt' ) then
+    if (event:GetName() == 'player_hurt') then
         local victim = entities.GetByUserID(event:GetInt("userid"))
         local attacker = entities.GetByUserID(event:GetInt("attacker"))
         if (attacker == nil or pLocal:GetName() ~= attacker:GetName()) then
@@ -2018,25 +2155,133 @@ local function damageLogger(event)
         end
         local damage = event:GetInt("damageamount")
         if damage <= victim:GetHealth() then return end
-                -- Trigger recharge if warp ticks are less than 23
-                if Menu.Misc.InstantAttack and warp.GetChargedTicks() < 23
-                and not warp.IsWarping()
-                and not can_attack and not can_charge then
-                        warp.TriggerCharge()
-                        tickCounterrecharge = 0
-                end
+
+        -- Trigger recharge if instant attack is enabled, dash key is bound, and warp ticks are less than 13
+        local dashKeyBound = gui.GetValue("dash move key") ~= 0
+        if Menu.Misc.InstantAttack and dashKeyBound and warp.GetChargedTicks() < 13
+            and not warp.IsWarping() then
+            warp.TriggerCharge()
+            tickCounterrecharge = 0
+        end
     end
 end
 
---[[ Unregister previous callbacks ]]--
-callbacks.Unregister("CreateMove", "MCT_CreateMove")            -- Unregister the "CreateMove" callback
+--[[ Unregister previous callbacks ]]                            --
+callbacks.Unregister("CreateMove", "MCT_CreateMove")             -- Unregister the "CreateMove" callback
 callbacks.Unregister("FireGameEvent", "adaamaXDgeLogger")
-callbacks.Unregister("Unload", "MCT_Unload")                    -- Unregister the "Unload" callback
-callbacks.Unregister("Draw", "MCT_Draw")                        -- Unregister the "Draw" callback
---[[ Register callbacks ]]--
-callbacks.Register("CreateMove", "MCT_CreateMove", OnCreateMove)             -- Register the "CreateMove" callback
+callbacks.Unregister("Unload", "MCT_Unload")                     -- Unregister the "Unload" callback
+callbacks.Unregister("Draw", "MCT_Draw")                         -- Unregister the "Draw" callback
+--[[ Register callbacks ]]                                       --
+callbacks.Register("CreateMove", "MCT_CreateMove", OnCreateMove) -- Register the "CreateMove" callback
 callbacks.Register("FireGameEvent", "adaamaXDgeLogger", damageLogger)
-callbacks.Register("Unload", "MCT_Unload", OnUnload)                         -- Register the "Unload" callback
-callbacks.Register("Draw", "MCT_Draw", doDraw)                               -- Register the "Draw" callback
---[[ Play sound when loaded ]]--
-client.Command('play "ui/buttonclick"', true) -- Play the "buttonclick" sound when the script is loaded
+callbacks.Register("Unload", "MCT_Unload", OnUnload)             -- Register the "Unload" callback
+callbacks.Register("Draw", "MCT_Draw", doDraw)                   -- Register the "Draw" callback
+--[[ Play sound when loaded ]]                                   --
+client.Command('play "ui/buttonclick"', true)                    -- Play the "buttonclick" sound when the script is loaded
+
+--[[ Charge Control Module ]]
+
+-- Optional: Apply a small multiplier if you want slightly enhanced turning
+-- Set to 1.0 for exactly normal mouse behavior
+local TURN_MULTIPLIER = 1.0
+
+-- Maximum degrees to rotate in one frame (prevents disorientation from extreme flicks)
+local MAX_ROTATION_PER_FRAME = 73.04
+
+-- Side movement value for A/D simulation (Source engine uses ±450 for full side movement)
+local SIDE_MOVE_VALUE = 450
+
+-- Main function that processes player input during charge
+local function OnCreateMove_ChargeControl(cmd)
+    -- Check if charge control is enabled in menu
+    if not Menu.Misc.ChargeControl then
+        return
+    end
+
+    pLocal = entities.GetLocalPlayer()
+
+    -- Check if player exists and is the right class
+    if not pLocal or not pLocal:IsAlive() then
+        return
+    end
+
+    local currclass = pLocal:GetPropInt("m_iClass")
+    if currclass ~= 4 then -- Only process for Demoman (class 4)
+        return
+    end
+
+    -- Check if player is charging
+    local isCharging = pLocal:InCond(17) -- 17 is the charge condition ID
+
+    -- Skip if not charging
+    if not isCharging then
+        return
+    end
+
+    -- Find all demo shields by class name
+    local shields = entities.FindByClass("CTFWearableDemoShield")
+
+    -- Check if any shield belongs to player and is Tide Turner
+    for i, shield in pairs(shields) do --pairs not ipairs because shields is insequential
+        if shield and shield:IsValid() then
+            local owner = shield:GetPropEntity("m_hOwnerEntity")
+
+            if owner == pLocal then
+                local defIndex = shield:GetPropInt("m_iItemDefinitionIndex")
+
+                -- Check if it's Tide Turner (ID 1099)
+                if defIndex == 1099 then
+                    -- Skip charge control for Tide Turner
+                    return
+                end
+            end
+        end
+    end
+
+    -- Get mouse X movement (negative = left, positive = right)
+    local mouseDeltaX = -cmd.mousedx
+
+    -- Skip processing if no horizontal mouse movement
+    if mouseDeltaX == 0 then
+        return
+    end
+
+    -- Get current view angles and game settings
+    local currentAngles = engine.GetViewAngles()
+    local m_yaw = select(2, client.GetConVar("m_yaw")) -- Get m_yaw from game settings
+
+    -- Calculate turn amount using standard Source engine formula
+    local turnAmount = mouseDeltaX * m_yaw * TURN_MULTIPLIER
+
+    -- Determine turning direction for side movement
+    -- Apply side movement based on turning direction (simulate A/D keys)
+    if turnAmount > 0 then
+        -- Turning left, simulate pressing D (right strafe)
+        cmd.sidemove = SIDE_MOVE_VALUE
+    else
+        -- Turning right, simulate pressing A (left strafe)
+        cmd.sidemove = -SIDE_MOVE_VALUE
+    end
+
+    -- Limit maximum turn per frame to prevent disorientation
+    turnAmount = math.max(-MAX_ROTATION_PER_FRAME, math.min(MAX_ROTATION_PER_FRAME, turnAmount))
+
+    -- Calculate new yaw angle
+    local newYaw = currentAngles.yaw + turnAmount
+
+    -- Handle -180/180 degree boundary crossing
+    newYaw = newYaw % 360
+    if newYaw > 180 then
+        newYaw = newYaw - 360
+    elseif newYaw < -180 then
+        newYaw = newYaw + 360
+    end
+
+    -- Update view angles (both client-side visual and server-side movement)
+    local newAngles = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
+    engine.SetViewAngles(newAngles)
+    cmd:SetViewAngles(currentAngles.pitch, newYaw, currentAngles.roll) --for some reason necessary or else it stutters camera
+end
+
+-- Register the callback for charge control
+callbacks.Register("CreateMove", "ChargeControl", OnCreateMove_ChargeControl)
