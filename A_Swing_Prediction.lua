@@ -851,7 +851,25 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
                 inRange = true
                 point = vPlayerOrigin
                 tick_count = tick_count + 1
-                if tick_count >= (Menu.Aimbot.SwingTime - 1) then
+
+                -- Calculate predicted target position one tick ahead to compensate for engine delay
+                local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
+                local tickInterval = globals.TickInterval()
+                local predictedTargetPos = vPlayerOrigin + (vPlayerVelocity * tickInterval)
+
+                -- Only set can_charge to true when we've reached the exact final tick
+                if tick_count == (Menu.Aimbot.SwingTime - 1) then
+                    -- Create aim angles that compensate for the one-tick delay
+                    local aimAngles = Math.PositionAngles(pLocalOrigin, predictedTargetPos)
+
+                    -- Set the view angles to the predicted position
+                    if Menu.Aimbot.Silent then
+                        cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
+                    else
+                        -- Engine angles need the compensation
+                        engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
+                    end
+
                     tick_count = 0
                     can_charge = true
                 elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (Menu.Aimbot.SwingTime - 2) then
@@ -861,7 +879,25 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
                 inRange = true
                 point = vPlayerFuture
                 tick_count = tick_count + 1
-                if tick_count >= (Menu.Aimbot.SwingTime - 1) then
+
+                -- Calculate predicted future target position one tick ahead
+                local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
+                local tickInterval = globals.TickInterval()
+                local predictedTargetPos = vPlayerFuture + (vPlayerVelocity * tickInterval)
+
+                -- Only set can_charge to true when we've reached the exact final tick
+                if tick_count == (Menu.Aimbot.SwingTime - 1) then
+                    -- Create aim angles that compensate for the one-tick delay
+                    local aimAngles = Math.PositionAngles(pLocalFuture, predictedTargetPos)
+
+                    -- Set the view angles to the predicted position
+                    if Menu.Aimbot.Silent then
+                        cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
+                    else
+                        -- Engine angles need the compensation
+                        engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
+                    end
+
                     tick_count = 0
                     can_charge = true
                 elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (Menu.Aimbot.SwingTime - 2) then
@@ -877,7 +913,7 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
                 inRange = true
                 point = vPlayerOrigin
                 tick_count = tick_count + 1
-                if tick_count > (Menu.Aimbot.SwingTime - 1) then
+                if tick_count == (Menu.Aimbot.SwingTime - 1) then
                     tick_count = 0
                     can_charge = true
                 end
@@ -919,7 +955,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
                         inRange = true
                         point = vPlayerOrigin
                         tick_count = tick_count + 1
-                        if tick_count >= (Menu.Aimbot.SwingTime - 1) then
+                        -- Only set can_charge to true when we've reached the exact final tick
+                        if tick_count == (Menu.Aimbot.SwingTime - 1) then
                             tick_count = 0
                             can_charge = true
                         end
@@ -946,7 +983,8 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
                     inRange = true
                     point = vPlayerFuture
                     tick_count = tick_count + 1
-                    if tick_count >= (Menu.Aimbot.SwingTime - 1) then
+                    -- Only set can_charge to true when we've reached the exact final tick
+                    if tick_count == (Menu.Aimbot.SwingTime - 1) then
                         tick_count = 0
                         can_charge = true
                     end
@@ -973,8 +1011,10 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
 end
 
 -- Store the original Crit Hack Key value outside the main loop or function
-local originalCritHackKey = gui.GetValue("Crit Hack Key")
-local critkeyRestored = false
+local originalCritHackKey = 0
+local originalMeleeCritHack = 0
+local menuWasOpen = false
+local critRefillActive = false
 local dashKeyNotBoundNotified = false
 
 --[[ Code needed to run 66 times a second ]] --
@@ -1100,7 +1140,20 @@ local function OnCreateMove(pCmd)
     ---------------critHack------------------
     -- Main logic
 
-    if CurrentTarget == nil then
+    -- Check if menu is open to capture user settings
+    local menuIsOpen = gui.IsMenuOpen()
+
+    -- If menu just opened, update our stored values
+    if menuIsOpen and not menuWasOpen then
+        originalCritHackKey = gui.GetValue("Crit Hack Key")
+        originalMeleeCritHack = gui.GetValue("Melee Crit Hack")
+    end
+
+    -- Update menu state for next frame
+    menuWasOpen = menuIsOpen
+
+    -- Only proceed with crit refill logic when menu is closed
+    if not menuIsOpen and pWeapon then
         local CritValue = 39 -- Base value for crit token bucket calculation
         local CritBucket = pWeapon:GetCritTokenBucket()
         local NumCrits = CritValue * Menu.Misc.CritRefill.NumCrits
@@ -1108,37 +1161,34 @@ local function OnCreateMove(pCmd)
         -- Cap NumCrits to ensure CritBucket does not exceed 1000
         NumCrits = math.clamp(NumCrits, 27, 1000)
 
-        if Menu.Misc.CritRefill.Active then
+        if CurrentTarget == nil and Menu.Misc.CritRefill.Active then
+            -- Check if we need to refill the crit bucket
             if CritBucket < NumCrits then
-                -- Temporarily disable Crit Hack Key while refilling
-                if critkeyRestored then
-                    gui.SetValue("Crit Hack Key", 0) -- Set to 0 to disable
-                    critkeyRestored = false
+                -- Start crit refill mode if not already active
+                if not critRefillActive then
+                    gui.SetValue("Crit Hack Key", 0)   -- Disable crit hack key
+                    gui.SetValue("Melee Crit Hack", 2) -- Set to "Stop" mode to store crits
+                    critRefillActive = true
                 end
-                gui.SetValue("Melee Crit Hack", 2) -- Stop using crit bucket to stock up crits
+
+                -- Keep attacking to build crits
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
             else
-                -- Restore original Crit Hack Key value and enable crit hack
-                if not critkeyRestored then
+                -- Crit bucket is full, restore user settings
+                if critRefillActive then
                     gui.SetValue("Crit Hack Key", originalCritHackKey)
-                    critkeyRestored = true
+                    gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
+                    critRefillActive = false
                 end
-                gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
             end
         else
-            if not critkeyRestored then
+            -- We have a target or refill is disabled, restore settings if needed
+            if critRefillActive then
                 gui.SetValue("Crit Hack Key", originalCritHackKey)
-                critkeyRestored = true
+                gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
+                critRefillActive = false
             end
-            gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
         end
-    else
-        -- Restore original Crit Hack Key value and enable crit hack
-        if not critkeyRestored then
-            gui.SetValue("Crit Hack Key", originalCritHackKey)
-            critkeyRestored = true
-        end
-        gui.SetValue("Melee Crit Hack", Menu.Misc.CritMode)
     end
 
     local Target_ONGround
@@ -1292,11 +1342,7 @@ local function OnCreateMove(pCmd)
             else
                 engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
             end
-        elseif pLocalClass == 4 then
-            -- Remove ChargeControl call from here
         end
-    elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
-        -- Removed ChargeControl call from here
     end
 
     -- Check if instant attack is available
@@ -2408,10 +2454,36 @@ local function OnCreateMove_ChargeControl(cmd)
         newYaw = newYaw + 360
     end
 
-    -- Update view angles (both client-side visual and server-side movement)
-    local newAngles = EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll)
-    engine.SetViewAngles(newAngles)
-    cmd:SetViewAngles(currentAngles.pitch, newYaw, currentAngles.roll) --for some reason necessary or else it stutters camera
+    -- Compensate for engine view angles being one tick behind
+    -- Calculate the predicted angle one tick ahead
+    local playerVelocity = pLocal:EstimateAbsVelocity()
+    local tickInterval = globals.TickInterval()
+
+    -- Calculate the angular velocity based on current movement
+    local angularVelocity = 0
+    if playerVelocity:Length() > 0 then
+        -- Use the current turning rate as an estimate of angular velocity
+        angularVelocity = turnAmount / tickInterval
+    end
+
+    -- Predict the yaw angle one tick ahead
+    local predictedYaw = newYaw + (angularVelocity * tickInterval)
+
+    -- Normalize the predicted yaw
+    predictedYaw = predictedYaw % 360
+    if predictedYaw > 180 then
+        predictedYaw = predictedYaw - 360
+    elseif predictedYaw < -180 then
+        predictedYaw = predictedYaw + 360
+    end
+
+    -- Apply the current angle to cmd for current tick movement
+    cmd:SetViewAngles(currentAngles.pitch, newYaw, currentAngles.roll)
+
+    -- Apply the predicted angle to engine for visual representation
+    -- This compensates for the one-tick delay in engine view angles
+    local predictedAngles = EulerAngles(currentAngles.pitch, predictedYaw, currentAngles.roll)
+    engine.SetViewAngles(predictedAngles)
 end
 
 -- Register the callback for charge control
