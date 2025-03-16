@@ -460,7 +460,7 @@ local function PredictPlayer(player, t, d)
 
             -- Check the ground angle
             if angle < 45 then
-                if onGround1 and player:GetIndex() == pLocal:GetIndex() and gui.GetValue("Bunny Hop") == 1 and input.IsButtonDown(KEY_SPACE) then
+                if onGround1 and player:GetIndex() == pLocal:GetIndex() and gui.GetValue("Bunny Hop") == 1 and (input.IsButtonDown(KEY_SPACE) or Menu.Charge.ChargeJump) then
                     -- Jump
                     if gui.GetValue("Duck Jump") == 1 then
                         vel.z = 277
