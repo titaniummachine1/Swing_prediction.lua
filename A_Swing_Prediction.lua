@@ -233,6 +233,18 @@ local gravity = client.GetConVar("sv_gravity") or 800 -- Get the current gravity
 local stepSize = 18
 local tickCounteratack = 0
 
+-- Variables to track attack and charge state
+local attackStarted = false
+local attackTickCount = 0
+local lastChargeTime = 0
+
+-- Add this function to reset the attack tracking when needed
+local function resetAttackTracking()
+    attackStarted = false
+    attackTickCount = 0
+end
+
+
 if pLocal then
     stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
 else
@@ -826,94 +838,65 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, OnGround, isCharging)
+local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
     local inRange = false
     local point = nil
-    can_charge = false
     local Backtrack = gui.GetValue("Backtrack")
     local fakelatencyON = gui.GetValue("Fake Latency")
-
-    -- Check if instant attack is ready
-    local dashKeyBound = gui.GetValue("dash move key") ~= 0
-    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
-        warp.GetChargedTicks() >= Menu.Aimbot.SwingTime and
-        dashKeyBound
-
-    -- Don't attempt prediction when charging without jump charge
-    if isCharging and not Menu.Misc.ChargeJump then
-        return false, nil, false
-    end
+    local smackDelay = Menu.Aimbot.MaxSwingTime
 
     if Backtrack == 0 and fakelatencyON == 0 then
-        -- Check for charge range bug - only if instant attack is NOT ready
-        if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not instantAttackReady then -- charge meter is full
+        -- Check for charge range bug
+        if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 then -- charge meter is full
+            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
+                inRange = true
+                point = vPlayerOrigin
+                can_charge = false -- Don't set can_charge yet, we'll track it separately
+
+                -- Set the view angles to target
+                local aimAngles = Math.PositionAngles(pLocalOrigin, vPlayerOrigin)
+
+                -- Apply the aiming angles
+                if Menu.Aimbot.Silent then
+                    cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
+                else
+                    engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
+                end
+            elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
+                inRange = true
+                point = vPlayerFuture
+                can_charge = false -- Don't set can_charge yet, we'll track it separately
+
+                -- Set the view angles to target
+                local aimAngles = Math.PositionAngles(pLocalFuture, vPlayerFuture)
+
+                -- Apply the aiming angles
+                if Menu.Aimbot.Silent then
+                    cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
+                else
+                    engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
+                end
+            end
+
+            if inRange then
+                return inRange, point, false -- Return inRange but not can_charge yet
+            end
+        elseif chargeLeft < 100 then
+            can_charge = false
             if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
                 inRange = true
                 point = vPlayerOrigin
                 tick_count = tick_count + 1
 
-                -- Calculate predicted target position one tick ahead to compensate for engine delay
-                local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
+                -- Calculate the exact tick to charge at based on ping
+                local latOut = clientstate.GetLatencyOut() or 0
+                local latIn = clientstate.GetLatencyIn() or 0
                 local tickInterval = globals.TickInterval()
-                local predictedTargetPos = vPlayerOrigin + (vPlayerVelocity * tickInterval)
+                local pingTicks = math.floor(((latOut + latIn) / tickInterval) + 1) -- Ping in ticks + 1 for safety
+                local chargeAtTick = math.max(1, smackDelay - pingTicks)            -- Ensure we don't go negative
 
-                -- Only set can_charge to true when we've reached the exact final tick
-                if tick_count == (Menu.Aimbot.SwingTime - 1) then
-                    -- Create aim angles that compensate for the one-tick delay
-                    local aimAngles = Math.PositionAngles(pLocalOrigin, predictedTargetPos)
-
-                    -- Set the view angles to the predicted position
-                    if Menu.Aimbot.Silent then
-                        cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
-                    else
-                        -- Engine angles need the compensation
-                        engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
-                    end
-
-                    tick_count = 0
-                    can_charge = true
-                elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (Menu.Aimbot.SwingTime - 2) then
-                    cmd:SetButtons(cmd:GetButtons() | IN_JUMP) -- jump at 2 ticks before attack
-                end
-            elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
-                inRange = true
-                point = vPlayerFuture
-                tick_count = tick_count + 1
-
-                -- Calculate predicted future target position one tick ahead
-                local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
-                local tickInterval = globals.TickInterval()
-                local predictedTargetPos = vPlayerFuture + (vPlayerVelocity * tickInterval)
-
-                -- Only set can_charge to true when we've reached the exact final tick
-                if tick_count == (Menu.Aimbot.SwingTime - 1) then
-                    -- Create aim angles that compensate for the one-tick delay
-                    local aimAngles = Math.PositionAngles(pLocalFuture, predictedTargetPos)
-
-                    -- Set the view angles to the predicted position
-                    if Menu.Aimbot.Silent then
-                        cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
-                    else
-                        -- Engine angles need the compensation
-                        engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
-                    end
-
-                    tick_count = 0
-                    can_charge = true
-                elseif vdistance > TotalSwingRange and Menu.Misc.ChargeJump and tick_count >= (Menu.Aimbot.SwingTime - 2) then
-                    cmd:SetButtons(cmd:GetButtons() | IN_JUMP) -- jump at 2 ticks before attack
-                end
-            end
-            if inRange then
-                return inRange, point, can_charge
-            end
-        elseif chargeLeft < 100 then
-            can_charge = false
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then --or checkInRange(vPlayerFuture, pLocalFuture, swingRange) and not onGround then
-                inRange = true
-                point = vPlayerOrigin
-                tick_count = tick_count + 1
-                if tick_count == (Menu.Aimbot.SwingTime - 1) then
+                -- Use a small range around the target tick to increase reliability
+                if tick_count >= chargeAtTick and tick_count <= (chargeAtTick + 1) then
                     tick_count = 0
                     can_charge = true
                 end
@@ -955,8 +938,30 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
                         inRange = true
                         point = vPlayerOrigin
                         tick_count = tick_count + 1
-                        -- Only set can_charge to true when we've reached the exact final tick
-                        if tick_count == (Menu.Aimbot.SwingTime - 1) then
+
+                        -- Calculate the exact tick to charge at based on ping
+                        local latOut = clientstate.GetLatencyOut() or 0
+                        local latIn = clientstate.GetLatencyIn() or 0
+                        local tickInterval = globals.TickInterval()
+                        local pingTicks = math.floor(((latOut + latIn) / tickInterval) + 1) -- Ping in ticks + 1 for safety
+                        local chargeAtTick = math.max(1, smackDelay - pingTicks)            -- Ensure we don't go negative
+
+                        -- Use a small range around the target tick to increase reliability
+                        if tick_count >= chargeAtTick and tick_count <= (chargeAtTick + 1) then
+                            -- Compensate for engine view angles being one tick behind
+                            local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
+                            local predictedPos = vPlayerOrigin + (vPlayerVelocity * tickInterval)
+
+                            -- Set the view angles to anticipate where the target will be in the next tick
+                            local aimAngles = Math.PositionAngles(pLocalOrigin, predictedPos)
+
+                            -- Apply the compensated angles
+                            if Menu.Aimbot.Silent then
+                                cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
+                            else
+                                engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
+                            end
+
                             tick_count = 0
                             can_charge = true
                         end
@@ -976,15 +981,60 @@ local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd, On
                 inRange = true
                 point = vPlayerOrigin
                 tick_count = tick_count + 1
-                if tick_count >= (Menu.Aimbot.SwingTime - 1) then
+
+                -- Calculate the exact tick to charge at based on ping
+                local latOut = clientstate.GetLatencyOut() or 0
+                local latIn = clientstate.GetLatencyIn() or 0
+                local tickInterval = globals.TickInterval()
+                local pingTicks = math.floor(((latOut + latIn) / tickInterval) + 1) -- Ping in ticks + 1 for safety
+                local chargeAtTick = math.max(1, smackDelay - pingTicks)            -- Ensure we don't go negative
+
+                -- Use a small range around the target tick to increase reliability
+                if tick_count >= chargeAtTick and tick_count <= (chargeAtTick + 1) then
+                    -- Compensate for engine view angles being one tick behind
+                    local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
+                    local predictedPos = vPlayerOrigin + (vPlayerVelocity * tickInterval)
+
+                    -- Set the view angles to anticipate where the target will be in the next tick
+                    local aimAngles = Math.PositionAngles(pLocalOrigin, predictedPos)
+
+                    -- Apply the compensated angles
+                    if Menu.Aimbot.Silent then
+                        cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
+                    else
+                        engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
+                    end
+
                     tick_count = 0
                     can_charge = true
                 elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
                     inRange = true
                     point = vPlayerFuture
                     tick_count = tick_count + 1
-                    -- Only set can_charge to true when we've reached the exact final tick
-                    if tick_count == (Menu.Aimbot.SwingTime - 1) then
+
+                    -- Calculate the exact tick to charge at based on ping
+                    local latOut = clientstate.GetLatencyOut() or 0
+                    local latIn = clientstate.GetLatencyIn() or 0
+                    local tickInterval = globals.TickInterval()
+                    local pingTicks = math.floor(((latOut + latIn) / tickInterval) + 1) -- Ping in ticks + 1 for safety
+                    local chargeAtTick = math.max(1, smackDelay - pingTicks)            -- Ensure we don't go negative
+
+                    -- Use a small range around the target tick to increase reliability
+                    if tick_count >= chargeAtTick and tick_count <= (chargeAtTick + 1) then
+                        -- Compensate for engine view angles being one tick behind
+                        local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
+                        local predictedPos = vPlayerFuture + (vPlayerVelocity * tickInterval)
+
+                        -- Set the view angles to anticipate where the target will be in the next tick
+                        local aimAngles = Math.PositionAngles(pLocalFuture, predictedPos)
+
+                        -- Apply the compensated angles
+                        if Menu.Aimbot.Silent then
+                            cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
+                        else
+                            engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
+                        end
+
                         tick_count = 0
                         can_charge = true
                     end
@@ -1409,11 +1459,12 @@ local function OnCreateMove(pCmd)
             else
                 engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
             end
-        elseif pLocalClass == 4 then
-            -- Remove ChargeControl call from here
         end
-    elseif Menu.Misc.ChargeControl and pLocal:InCond(17) then
-        -- Removed ChargeControl call from here
+    end
+
+    -- Initialize tick_count if it hasn't been set yet
+    if tick_count == nil then
+        tick_count = 0
     end
 
     -- Only try instant attack when it's possible
@@ -1443,10 +1494,10 @@ local function OnCreateMove(pCmd)
                     Menu.Aimbot.MaxSwingTime = weaponSmackDelay
 
                     -- Display notification about the change with weapon name
-                    local pWeaponName = "Unknown"
+                    pWeaponName = "Unknown"
                     pcall(function()
-                        local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
-                        local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
+                        pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
+                        pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
                         pWeaponName = pWeaponDef and pWeaponDef:GetName() or "Unknown"
                     end)
 
@@ -1504,25 +1555,48 @@ local function OnCreateMove(pCmd)
         else
             -- Normal attack if instant attack is disabled or not enough ticks
             -- Use a higher value for normal attacks, but cap it for safety
-            local normalAttackTicks = math.min(math.ceil(weaponSmackDelay * 1.8), 24) -- 1.8x multiplier with safety cap
-            client.RemoveConVarProtection("sv_maxusrcmdprocessticks")                 --bypass security
+            local normalAttackTicks = math.min(math.floor(weaponSmackDelay), 24)
+            client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
             client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)                            -- attack
-        end
-        can_attack = false
-    end
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)            -- attack
 
-    -- No need to restore any ChargeReach setting as we're not temporarily changing it
+            -- Start tracking attack ticks if this is a Demoman with a full charge meter
+            -- AND attack tracking hasn't already started
+            if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not attackStarted then
+                attackStarted = true
+                attackTickCount = 0
+                -- Get exact weapon smack delay
+                weaponSmackDelay = Menu.Aimbot.MaxSwingTime
+                if pWeapon and pWeapon:GetWeaponData() and pWeapon:GetWeaponData().smackDelay then
+                    weaponSmackDelay = math.floor(pWeapon:GetWeaponData().smackDelay / globals.TickInterval())
+                end
+                --client.ChatPrintf("[Debug] Attack started! Will charge at end of swing (tick " ..(weaponSmackDelay - 1) .. ")")
+            end
 
-    if can_charge then
-        if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and OnGround then
-            pCmd:SetButtons(pCmd:GetButtons() & ~IN_JUMP)    -- stop jump for moment
-            pCmd:SetButtons(pCmd:GetButtons() & ~IN_ATTACK2) -- stop charge for moment
-            pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)     -- jump at 2 ticks before attack
-        else
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)  -- charge
+            can_attack = false
         end
-        can_charge = false
+
+        -- Track attack ticks and execute charge at right moment
+        if attackStarted then
+            attackTickCount = attackTickCount + 1
+
+            -- Get weapon smack delay (when the weapon will hit)
+            local weaponSmackDelay = Menu.Aimbot.MaxSwingTime
+            if pWeapon and pWeapon:GetWeaponData() and pWeapon:GetWeaponData().smackDelay then
+                weaponSmackDelay = math.floor(pWeapon:GetWeaponData().smackDelay / globals.TickInterval())
+            end
+
+            -- Execute charge exactly at the end of the swing animation (1 tick before the hit registers)
+            if attackTickCount >= (weaponSmackDelay - 2) then
+                --client.ChatPrintf("[Debug] Executing charge at end of swing, tick: " .. attackTickCount)
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2) -- charge
+
+                -- Reset attack tracking
+                attackStarted = false
+                attackTickCount = 0
+                can_charge = false
+            end
+        end
     end
 
     -- Update last variables
