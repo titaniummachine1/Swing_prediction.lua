@@ -3,6 +3,7 @@
 --[[           Terminator           ]] --
 --[[  (github.com/titaniummachine1  ]] --
 
+
 -- Unload the module if it's already loaded
 if package.loaded["ImMenu"] then
     package.loaded["ImMenu"] = nil
@@ -224,7 +225,12 @@ local tick_count = 0
 local can_attack = false
 local can_charge = false
 local Charge_Range = 128
-local defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
+
+-- Track normal weapon range (before charging gives extended range)
+local normalWeaponRange = 48
+local normalTotalSwingRange = 48
+-- Lag compensation is handled by TF2 automatically
+
 local pLocalPath = {}
 local vPlayerPath = {}
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
@@ -238,11 +244,16 @@ local attackStarted = false
 local attackTickCount = 0
 local lastChargeTime = 0
 
+-- Track the tick index of the last +attack press (user or script)
+local lastAttackTick = -1000 -- initialize far in the past
+
 -- Add this function to reset the attack tracking when needed
 local function resetAttackTracking()
     attackStarted = false
     attackTickCount = 0
 end
+
+
 
 
 if pLocal then
@@ -368,6 +379,19 @@ function Normalize(vec)
     return Vector3(vec.x / length, vec.y / length, vec.z / length)
 end
 
+-- Class max speeds (units per second)
+local CLASS_MAX_SPEEDS = {
+    [1] = 400, -- Scout
+    [2] = 240, -- Sniper
+    [3] = 240, -- Soldier
+    [4] = 280, -- Demoman
+    [5] = 230, -- Medic
+    [6] = 300, -- Heavy
+    [7] = 240, -- Pyro
+    [8] = 320, -- Spy
+    [9] = 320  -- Engineer
+}
+
 local function shouldHitEntityFun(entity, player, ignoreEntities)
     for _, ignoreEntity in ipairs(ignoreEntities) do --ignore custom
         if entity:GetClass() == ignoreEntity then
@@ -397,7 +421,16 @@ local function PredictPlayer(player, t, d)
     pLocal = entities.GetLocalPlayer()
     if not pLocal then return nil end
     local shouldHitEntity = function(entity) return shouldHitEntityFun(entity, player, ignoreEntities) end --trace ignore simulated player
-    local pFlags = player:GetPropInt("m_fFlags")
+
+    -- Get player class for speed capping
+    local playerClass = player:GetPropInt("m_iClass")
+    local maxSpeed = CLASS_MAX_SPEEDS[playerClass] or 240 -- Default to 240 if class not found
+
+    -- Check if this is charge reach exploit simulation
+    -- Only consider charging flag when doing charge reach exploit, not regular charging toward enemies
+    local isChargeReachExploit = Menu.Misc.ChargeReach and player == pLocal and
+        ((globals.TickCount() - lastAttackTick) <= 13) and player:InCond(17)
+
     -- Add the current record
     local _out = {
         pos = { [0] = player:GetAbsOrigin() },
@@ -409,9 +442,6 @@ local function PredictPlayer(player, t, d)
     for i = 1, t do
         local lastP, lastV, lastG = _out.pos[i - 1], _out.vel[i - 1], _out.onGround[i - 1]
 
-        --[[if chargeLeft < 100 and player:InCond(17) then
-
-            end]]
         local pos = lastP + lastV * globals.TickInterval()
         local vel = lastV
         local onGround1 = lastG
@@ -423,11 +453,32 @@ local function PredictPlayer(player, t, d)
             vel = ang:Forward() * vel:Length()
         end
 
+        -- Apply speed capping logic (simplified approach)
+        -- Speed cap is only applied on ground, and only when not charging
+        -- For regular charging toward enemies (not exploit), we assume swing stops charge immediately
+        if onGround1 then
+            -- Only bypass speed cap for charge reach exploit, not regular charging
+            local shouldBypassSpeedCap = isChargeReachExploit
+
+            if not shouldBypassSpeedCap then
+                -- Apply speed cap when on ground and not doing charge reach exploit
+                -- Regular charging toward enemies gets speed capped since swing stops charge
+                local currentSpeed = vel:Length2D() -- Get horizontal speed only
+                if currentSpeed > maxSpeed then
+                    local horizontalVel = Vector3(vel.x, vel.y, 0)
+                    if currentSpeed > 0 then
+                        horizontalVel = (horizontalVel / currentSpeed) * maxSpeed -- Normalize and scale
+                    end
+                    vel = Vector3(horizontalVel.x, horizontalVel.y, vel.z)        -- Preserve Z velocity
+                end
+            end
+        end
+        -- When in air, no speed cap is applied regardless of charging state
+
         --[[ Forward collision ]]
 
         local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID,
             shouldHitEntity)
-        --DrawLine(last.p + vStep, pos + vStep)
         if wallTrace.fraction < 1 then
             -- We'll collide
             local normal = wallTrace.plane
@@ -447,7 +498,6 @@ local function PredictPlayer(player, t, d)
 
         -- Don't step down if we're in-air
         local downStep = vStep
-        local simulateJump = false
         if not onGround1 then downStep = Vector3() end
 
         -- Ground collision
@@ -487,7 +537,6 @@ local function PredictPlayer(player, t, d)
         end
 
         -- Gravity
-        --local isSwimming, isWalking = checkPlayerState(player) -- todo: fix this
         if not onGround1 then
             vel.z = vel.z - gravity * globals.TickInterval()
         end
@@ -570,7 +619,8 @@ local function WalkTo(pCmd, pLocal, pDestination)
 end
 
 local playerTicks = {}
-local maxTick = math.floor(((defFakeLatency) / 1000) / 0.015)
+-- Removed: maxTick calculation no longer needed with NetChannel API
+local maxTick = 0
 
 -- Returns if the player is visible
 ---@param target Entity
@@ -615,6 +665,9 @@ local function GetBestTarget(me)
     local localPlayerOrigin = localPlayer:GetAbsOrigin()
     local localPlayerEyePos = localPlayerOrigin + Vector3(0, 0, 75)
 
+    -- Use configured FOV without restrictions
+    local effectiveFOV = Menu.Aimbot.AimbotFOV
+
     for _, player in pairs(players) do
         if player == nil
             or not player:IsValid()
@@ -635,7 +688,7 @@ local function GetBestTarget(me)
         -- Check if player is in FOV
         local angles = Math.PositionAngles(localPlayerOrigin, Pviewpos)
         local fov = Math.AngleFov(localPlayerViewAngles, angles)
-        if fov > Menu.Aimbot.AimbotFOV then
+        if fov > effectiveFOV then
             goto continue
         end
 
@@ -648,7 +701,7 @@ local function GetBestTarget(me)
             foundTargetInMeleeRange = true
 
             -- For targets in melee range, mostly consider visibility and a bit of FOV
-            local meleeFovFactor = Math.RemapValClamped(fov, 0, Menu.Aimbot.AimbotFOV, 1, 0.7)
+            local meleeFovFactor = Math.RemapValClamped(fov, 0, effectiveFOV, 1, 0.7)
             local meleeFactor = meleeFovFactor * visibilityFactor
 
             if meleeFactor > bestMeleeFactor then
@@ -658,7 +711,7 @@ local function GetBestTarget(me)
         elseif distance <= 770 then
             -- For targets outside melee range but within max distance, use standard targeting
             local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.9)
-            local fovFactor = Math.RemapValClamped(fov, 0, Menu.Aimbot.AimbotFOV, 1, 0.1)
+            local fovFactor = Math.RemapValClamped(fov, 0, effectiveFOV, 1, 0.1)
 
             local factor = distanceFactor * fovFactor * visibilityFactor
             if factor > bestFactor then
@@ -775,30 +828,71 @@ local function ChargeControl(pCmd)
         return
     end
 
-    -- Get the current view angles and sensitivity
-    local sensitivity = Menu.Misc.ChargeSensitivity
+    -- Skip if not charging
+    if not pLocal:InCond(17) then
+        return
+    end
+
+    -- Find all demo shields by class name
+    local shields = entities.FindByClass("CTFWearableDemoShield")
+
+    -- Check if any shield belongs to player and is Tide Turner
+    for i, shield in pairs(shields) do
+        if shield and shield:IsValid() then
+            local owner = shield:GetPropEntity("m_hOwnerEntity")
+
+            if owner == pLocal then
+                local defIndex = shield:GetPropInt("m_iItemDefinitionIndex")
+
+                -- Check if it's Tide Turner (ID 1099)
+                if defIndex == 1099 then
+                    -- Skip charge control for Tide Turner
+                    return
+                end
+            end
+        end
+    end
+
+    -- Get mouse X movement (negative = left, positive = right)
+    local mouseDeltaX = -pCmd.mousedx
+
+    -- Skip processing if no horizontal mouse movement
+    if mouseDeltaX == 0 then
+        return
+    end
+
+    -- Get current view angles and game settings
     local currentAngles = engine.GetViewAngles()
+    local m_yaw = select(2, client.GetConVar("m_yaw")) -- Get m_yaw from game settings
 
-    -- Get the mouse motion
-    local mouseDeltaX = -(pCmd.mousedx * sensitivity)
+    -- Calculate turn amount using standard Source engine formula
+    local turnAmount = mouseDeltaX * m_yaw * CHARGE_CONSTANTS.TURN_MULTIPLIER
 
-    -- Calculate the new yaw angle
-    local newYaw = currentAngles.yaw + mouseDeltaX
+    -- Apply side movement based on turning direction (simulate A/D keys)
+    if turnAmount > 0 then
+        -- Turning left, simulate pressing D (right strafe)
+        pCmd.sidemove = CHARGE_CONSTANTS.SIDE_MOVE_VALUE
+    else
+        -- Turning right, simulate pressing A (left strafe)
+        pCmd.sidemove = -CHARGE_CONSTANTS.SIDE_MOVE_VALUE
+    end
 
-    -- Calculate the maximum allowed angle change to maintain a minimum velocity of 350
-    local maxAngleChange = calculateMaxAngleChange(pLocal:EstimateAbsVelocity():Length(), 350, 55) -- Define this function based on your game mechanics
+    -- CRITICAL: Limit maximum turn per frame to 73.04 degrees
+    turnAmount = math.max(-CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, math.min(CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, turnAmount))
 
-    -- Clamp the angle change to the maximum allowed
-    local angleChange = newYaw - currentAngles.yaw
-    angleChange = math.max(math.min(angleChange, maxAngleChange), -maxAngleChange)
+    -- Calculate new yaw angle
+    local newYaw = currentAngles.yaw + turnAmount
 
-    -- Interpolate between the current yaw and the new yaw
-    local interpolationTime = 0.1515                           -- Time in seconds for a full transition
-    local interpolationFraction = 1 / (66 * interpolationTime) -- Adjusted for smoother transition
-    local interpolatedYaw = currentAngles.yaw + angleChange * interpolationFraction
+    -- Handle -180/180 degree boundary crossing
+    newYaw = newYaw % 360
+    if newYaw > 180 then
+        newYaw = newYaw - 360
+    elseif newYaw < -180 then
+        newYaw = newYaw + 360
+    end
 
     -- Set the new view angles
-    engine.SetViewAngles(EulerAngles(engine:GetViewAngles().pitch, interpolatedYaw, 0))
+    engine.SetViewAngles(EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll))
 end
 
 local acceleration = 750
@@ -838,226 +932,30 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeWithLatency(playerIndex, swingRange, pWeapon, cmd)
+local function checkInRangeSimple(playerIndex, swingRange, pWeapon, cmd)
     local inRange = false
     local point = nil
-    local Backtrack = gui.GetValue("Backtrack")
-    local fakelatencyON = gui.GetValue("Fake Latency")
-    local smackDelay = Menu.Aimbot.MaxSwingTime
 
-    if Backtrack == 0 and fakelatencyON == 0 then
-        -- Check for charge range bug
-        if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 then -- charge meter is full
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
-                inRange = true
-                point = vPlayerOrigin
-                can_charge = false -- Don't set can_charge yet, we'll track it separately
-
-                -- Set the view angles to target
-                local aimAngles = Math.PositionAngles(pLocalOrigin, vPlayerOrigin)
-
-                -- Apply the aiming angles
-                if Menu.Aimbot.Silent then
-                    cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
-                else
-                    engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
-                end
-            elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
-                inRange = true
-                point = vPlayerFuture
-                can_charge = false -- Don't set can_charge yet, we'll track it separately
-
-                -- Set the view angles to target
-                local aimAngles = Math.PositionAngles(pLocalFuture, vPlayerFuture)
-
-                -- Apply the aiming angles
-                if Menu.Aimbot.Silent then
-                    cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
-                else
-                    engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
-                end
-            end
-
-            if inRange then
-                return inRange, point, false -- Return inRange but not can_charge yet
-            end
-        elseif chargeLeft < 100 then
-            can_charge = false
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
-                inRange = true
-                point = vPlayerOrigin
-                tick_count = tick_count + 1
-
-                -- Calculate the exact tick to charge at based on ping
-                local latOut = clientstate.GetLatencyOut() or 0
-                local latIn = clientstate.GetLatencyIn() or 0
-                local tickInterval = globals.TickInterval()
-                local pingTicks = math.floor(((latOut + latIn) / tickInterval) + 1) -- Ping in ticks + 1 for safety
-                local chargeAtTick = math.max(1, smackDelay - pingTicks)            -- Ensure we don't go negative
-
-                -- Use a small range around the target tick to increase reliability
-                if tick_count >= chargeAtTick and tick_count <= (chargeAtTick + 1) then
-                    tick_count = 0
-                    can_charge = true
-                end
-            else
-                inRange = false
-                can_charge = false
-                tick_count = 0
-            end
-            return inRange, point, can_charge
-        end
-
-        -- Adjust hitbox for current position
-        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange - 18, pWeapon, cmd)
-        if inRange then
-            return inRange, point
-        end
-
-
-        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange, pWeapon, cmd)
-        if inRange then
-            return inRange, point, can_charge
-        end
-    elseif fakelatencyON == 1 and playerTicks and playerTicks[playerIndex] then
-        if not hasNotified then
-            Notify.Simple("Fake Latency is enabled", " this may cause issues with the script", 7)
-            hasNotified = true
-        end
-
-        local minTick = 1
-        maxTick = #playerTicks[playerIndex]
-
-        for tick = minTick, maxTick do
-            if playerTicks[playerIndex] then
-                local pastOrigin = playerTicks[playerIndex][tick]
-
-                -- Check for charge range bug - only if instant attack is NOT ready
-                if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not instantAttackReady then -- charge meter is full
-                    if checkInRange(pastOrigin, pLocalOrigin, Charge_Range) then
-                        inRange = true
-                        point = vPlayerOrigin
-                        tick_count = tick_count + 1
-
-                        -- Calculate the exact tick to charge at based on ping
-                        local latOut = clientstate.GetLatencyOut() or 0
-                        local latIn = clientstate.GetLatencyIn() or 0
-                        local tickInterval = globals.TickInterval()
-                        local pingTicks = math.floor(((latOut + latIn) / tickInterval) + 1) -- Ping in ticks + 1 for safety
-                        local chargeAtTick = math.max(1, smackDelay - pingTicks)            -- Ensure we don't go negative
-
-                        -- Use a small range around the target tick to increase reliability
-                        if tick_count >= chargeAtTick and tick_count <= (chargeAtTick + 1) then
-                            -- Compensate for engine view angles being one tick behind
-                            local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
-                            local predictedPos = vPlayerOrigin + (vPlayerVelocity * tickInterval)
-
-                            -- Set the view angles to anticipate where the target will be in the next tick
-                            local aimAngles = Math.PositionAngles(pLocalOrigin, predictedPos)
-
-                            -- Apply the compensated angles
-                            if Menu.Aimbot.Silent then
-                                cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
-                            else
-                                engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
-                            end
-
-                            tick_count = 0
-                            can_charge = true
-                        end
-                    end
-                end
-
-                inRange, point = checkInRange(pastOrigin, pLocalOrigin, swingRange, pWeapon, cmd)
-                if inRange then
-                    return inRange, point
-                end
-            end
-        end
-    elseif Backtrack == 1 then
-        -- Check for charge range bug - only if instant attack is NOT ready
-        if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not instantAttackReady then -- charge meter is full
-            if checkInRange(vPlayerOrigin, pLocalOrigin, Charge_Range) then
-                inRange = true
-                point = vPlayerOrigin
-                tick_count = tick_count + 1
-
-                -- Calculate the exact tick to charge at based on ping
-                local latOut = clientstate.GetLatencyOut() or 0
-                local latIn = clientstate.GetLatencyIn() or 0
-                local tickInterval = globals.TickInterval()
-                local pingTicks = math.floor(((latOut + latIn) / tickInterval) + 1) -- Ping in ticks + 1 for safety
-                local chargeAtTick = math.max(1, smackDelay - pingTicks)            -- Ensure we don't go negative
-
-                -- Use a small range around the target tick to increase reliability
-                if tick_count >= chargeAtTick and tick_count <= (chargeAtTick + 1) then
-                    -- Compensate for engine view angles being one tick behind
-                    local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
-                    local predictedPos = vPlayerOrigin + (vPlayerVelocity * tickInterval)
-
-                    -- Set the view angles to anticipate where the target will be in the next tick
-                    local aimAngles = Math.PositionAngles(pLocalOrigin, predictedPos)
-
-                    -- Apply the compensated angles
-                    if Menu.Aimbot.Silent then
-                        cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
-                    else
-                        engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
-                    end
-
-                    tick_count = 0
-                    can_charge = true
-                elseif checkInRange(vPlayerFuture, pLocalFuture, Charge_Range) then
-                    inRange = true
-                    point = vPlayerFuture
-                    tick_count = tick_count + 1
-
-                    -- Calculate the exact tick to charge at based on ping
-                    local latOut = clientstate.GetLatencyOut() or 0
-                    local latIn = clientstate.GetLatencyIn() or 0
-                    local tickInterval = globals.TickInterval()
-                    local pingTicks = math.floor(((latOut + latIn) / tickInterval) + 1) -- Ping in ticks + 1 for safety
-                    local chargeAtTick = math.max(1, smackDelay - pingTicks)            -- Ensure we don't go negative
-
-                    -- Use a small range around the target tick to increase reliability
-                    if tick_count >= chargeAtTick and tick_count <= (chargeAtTick + 1) then
-                        -- Compensate for engine view angles being one tick behind
-                        local vPlayerVelocity = CurrentTarget:EstimateAbsVelocity()
-                        local predictedPos = vPlayerFuture + (vPlayerVelocity * tickInterval)
-
-                        -- Set the view angles to anticipate where the target will be in the next tick
-                        local aimAngles = Math.PositionAngles(pLocalFuture, predictedPos)
-
-                        -- Apply the compensated angles
-                        if Menu.Aimbot.Silent then
-                            cmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
-                        else
-                            engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
-                        end
-
-                        tick_count = 0
-                        can_charge = true
-                    end
-                end
-                if inRange then
-                    return inRange, point, can_charge
-                end
-            end
-        end
-
-        -- Adjust hitbox for current position
-        inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange, pWeapon, cmd)
-        if inRange then
-            return inRange, point
-        end
-
-        inRange = checkInRange(vPlayerFuture, pLocalFuture, swingRange, pWeapon, cmd)
-        if inRange then
-            return inRange, point
-        end
+    -- Simple range check with current positions
+    inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
+    if inRange then
+        return inRange, point, false
     end
 
-    return false, nil
+    -- If instant attack (warp) is ready, skip future prediction checks.
+    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
+        (warp.GetChargedTicks() or 0) >= Menu.Aimbot.SwingTime
+    if instantAttackReady then
+        return false, nil, false
+    end
+
+    -- Simple range check with predicted positions
+    inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+    if inRange then
+        return inRange, point, false
+    end
+
+    return false, nil, false
 end
 
 -- Store the original Crit Hack Key value outside the main loop or function
@@ -1071,11 +969,33 @@ local dashKeyNotBoundNotified = false
 -- Predicts player position after set amount of ticks
 ---@param strafeAngle number
 local function OnCreateMove(pCmd)
+    -- Clear all visual globals at start of every tick to prevent ghost visuals
+    pLocalPath = {}
+    pLocalFuture = nil
+    vPlayerPath = {}
+    vPlayerFuture = nil
+    CurrentTarget = nil
+    vPlayer = nil
+    vPlayerOrigin = nil
+    aimposVis = nil
+    drawVhitbox = {}
+    can_attack = false
+    can_charge = false
+
     -- Get the local player entity
     pLocal = entities.GetLocalPlayer()
     if not pLocal or not pLocal:IsAlive() then
         goto continue -- Return if the local player entity doesn't exist or is dead
     end
+
+    -- Track latest +attack input (from user or script) for charge-reach logic
+    if (pCmd:GetButtons() & IN_ATTACK) ~= 0 then
+        lastAttackTick = globals.TickCount()
+    end
+
+    -- Quick reference values used multiple times
+    pLocalClass = pLocal:GetPropInt("m_iClass")
+    chargeLeft  = pLocal:GetPropFloat("m_flChargeMeter")
 
     -- Show notification if instant attack is enabled but dash key is not bound
     if Menu.Misc.InstantAttack and gui.GetValue("dash move key") == 0 and not dashKeyNotBoundNotified then
@@ -1101,10 +1021,7 @@ local function OnCreateMove(pCmd)
     local nextPrimaryAttack = pWeapon:GetPropFloat("LocalActiveWeaponData", "m_flNextPrimaryAttack")
     --print(Conversion.Time_to_Ticks(nextPrimaryAttack) .. "LastShoot", globals.TickCount())
 
-    local lerp = client.GetConVar("cl_interp") or 0
-    Latency = (lerp)                                                  -- Calculate the reaction time in seconds
-    Latency = math.floor(Latency * (globals.TickInterval() * 66) + 1) -- Convert the delay to ticks
-    defFakeLatency = gui.GetValue("Fake Latency Value (MS)")
+    -- Latency compensation removed - TF2 handles this automatically
 
     -- Get the local player's flags and charge meter
     local flags = pLocal:GetPropInt("m_fFlags")
@@ -1139,8 +1056,10 @@ local function OnCreateMove(pCmd)
 
     --[-Don`t run script below when not usign melee--]
 
-    isMelee = pWeapon:IsMeleeWeapon()     -- check if using melee weapon
-    if not isMelee then goto continue end -- if not melee then skip code
+    isMelee = pWeapon:IsMeleeWeapon() -- check if using melee weapon
+    if not isMelee then
+        goto continue
+    end -- if not melee then skip code
 
     --[-------Get pLocalOrigin--------]
 
@@ -1163,7 +1082,43 @@ local function OnCreateMove(pCmd)
         SwingHullSize = 55.8
         swingrange = 81.6
     end
-    TotalSwingRange = swingrange + (SwingHullSize / 2)
+
+    -- Store normal weapon range when NOT charging (this is the true weapon range)
+    local isCurrentlyCharging = pLocal:InCond(17)
+    if not isCurrentlyCharging then
+        normalWeaponRange = swingrange
+        normalTotalSwingRange = swingrange + (SwingHullSize / 2)
+    end
+
+    -- Simple charge reach logic
+    local hasFullCharge = chargeLeft == 100
+    local isDemoman = pLocalClass == 4
+    local isExploitReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
+
+    if isCurrentlyCharging then
+        -- When charging: check if we swung within last 13 ticks
+        local isDoingExploit = Menu.Misc.ChargeReach and withinAttackWindow
+
+        if isDoingExploit then
+            -- Use charge reach range (128) + hull size for total range
+            TotalSwingRange = Charge_Range + (SwingHullSize / 2)
+            --client.ChatPrintf("[Debug] Charge reach exploit active! TotalSwingRange = " .. TotalSwingRange)
+        else
+            -- Force back to normal weapon range
+            swingrange = normalWeaponRange
+            TotalSwingRange = normalTotalSwingRange
+            --client.ChatPrintf("[Debug] Charging without exploit, TotalSwingRange = " .. TotalSwingRange)
+        end
+    else
+        -- Not charging: check if ready for exploit
+        if isExploitReady then
+            -- Use charge reach range (128) + hull size when ready
+            TotalSwingRange = Charge_Range + (SwingHullSize / 2)
+        else
+            -- Normal weapon range
+            TotalSwingRange = swingrange + (SwingHullSize / 2)
+        end
+    end
     --[--Manual charge control--]
 
     if Menu.Misc.ChargeControl and pLocal:InCond(17) then
@@ -1279,12 +1234,10 @@ local function OnCreateMove(pCmd)
             simTicks = Menu.Aimbot.SwingTime
         end
 
+        -- IMPORTANT: For local player prediction, don't assume charging preserves speed unless charge reach exploit
+        -- Regular charging toward enemies will be stopped by swing, so predict with speed caps
         local predData = PredictPlayer(player, simTicks, strafeAngle)
         if not predData then return end
-
-        if inaccuracyValue then
-            TotalSwingRange = TotalSwingRange - math.abs(inaccuracyValue)
-        end
 
         pLocalPath = predData.pos
         pLocalFuture = predData.pos[simTicks] + viewOffset
@@ -1292,7 +1245,11 @@ local function OnCreateMove(pCmd)
 
     -- stop if no target
     if CurrentTarget == nil then
-        vPlayerFuture = nil
+        return
+    end
+
+    -- Validate target is still valid (alive, not dormant, etc.)
+    if not CurrentTarget:IsValid() or not CurrentTarget:IsAlive() or CurrentTarget:IsDormant() then
         return
     end
 
@@ -1306,13 +1263,10 @@ local function OnCreateMove(pCmd)
         vHitbox[2].z = 82
     end
 
-    --vHitbox[2].z = pViewheight + 7
-
-    -- Check if instant attack is ready
-    local dashKeyBound = gui.GetValue("dash move key") ~= 0
+    -- Check if instant attack is ready (no dash-key dependency)
     local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
-        warp.GetChargedTicks() >= Menu.Aimbot.SwingTime and
-        dashKeyBound
+        warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
+    local canInstantAttack = instantAttackReady
 
     if not instantAttackReady then
         -- Only predict enemy movement when NOT using instant attack
@@ -1337,7 +1291,7 @@ local function OnCreateMove(pCmd)
         drawVhitbox[2] = vPlayerFuture + vHitbox[2]
     end
 
-    --[--------------Distance check-------------------]
+    --[--------------Distance check using TotalSwingRange-------------------]
     -- Get current distance between local player and closest player
     vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
@@ -1346,14 +1300,13 @@ local function OnCreateMove(pCmd)
     local inRange = false
     local inRangePoint = Vector3(0, 0, 0)
 
-    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd,
-        OnGround, pLocal:InCond(17))
+    -- Use TotalSwingRange for range checking (already calculated with charge reach logic)
+    inRange, InRangePoint, can_charge = checkInRangeSimple(CurrentTarget:GetIndex(), TotalSwingRange, pWeapon, pCmd)
     -- Use inRange to decide if can attack
     can_attack = inRange
 
-    --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
-    local aimpos = CurrentTarget:GetAbsOrigin() +
-        Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
+    --[--------------AimBot-------------------]
+    local aimpos = CurrentTarget:GetAbsOrigin() + Vheight
 
     -- Inside your game loop
     if Menu.Aimbot.Aimbot then
@@ -1386,7 +1339,7 @@ local function OnCreateMove(pCmd)
                 engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
             end
         elseif can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
-            -- Set view angles based on whether silent aim is enabled
+            -- Use normal aimbot behavior regardless of charging state
             if Menu.Aimbot.Silent then
                 pCmd:SetViewAngles(aim_angles.pitch, aim_angles.yaw, 0)
             else
@@ -1395,77 +1348,7 @@ local function OnCreateMove(pCmd)
         end
     end
 
-    -- Check if instant attack is available
-    dashKeyBound = gui.GetValue("dash move key") ~= 0
-    local canInstantAttack = Menu.Misc.InstantAttack and warp.CanWarp() and warp.GetChargedTicks() >= 13 and dashKeyBound
 
-    -- No need to temporarily store ChargeReach - directly check it when needed
-    -- Get distance check and target range check
-    -- Get current distance between local player and closest player
-    Vdistance = (vPlayerOrigin - pLocalOrigin):Length()
-
-    -- Get distance between local player and closest player after swing
-    FDistance = (vPlayerFuture - pLocalFuture):Length()
-    local inRange = false
-    local inRangePoint = Vector3(0, 0, 0)
-
-    inRange, InRangePoint, can_charge = checkInRangeWithLatency(CurrentTarget:GetIndex(), swingrange, pWeapon, pCmd,
-        OnGround, pLocal:InCond(17))
-    -- Use inRange to decide if can attack
-    can_attack = inRange
-
-    --[--------------AimBot-------------------]                --get hitbox of ennmy pelwis(jittery but works)
-
-    aimpos = nil
-    --else
-    aimpos = CurrentTarget:GetAbsOrigin() +
-        Vheight --aimpos = (hitbox[1] + hitbox[2]) * 0.5 --if no InRange point accesable then aim at defualt hitbox
-    --end
-
-    -- Inside your game loop
-    if Menu.Aimbot.Aimbot then
-        local aim_angles
-        if InRangePoint then
-            aimpos = InRangePoint
-            aimposVis = aimpos -- transfer aim point to visuals
-
-            -- Calculate aim position only once
-            aimpos = Math.PositionAngles(pLocalOrigin, aimpos)
-            aim_angles = aimpos
-        end
-
-        if Menu.Aimbot.ChargeBot and pLocal:InCond(17) and not can_attack then
-            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
-                MASK_PLAYERSOLID_BRUSHONLY)
-            if trace.fraction == 1 or trace.entity == CurrentTarget then
-                -- If the trace hit something, set the view angles to the position of the hit
-                aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
-                -- Set view angles based on the future position of the local player
-                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
-            end
-        elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
-            local trace = engine.TraceHull(pLocalFuture, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
-                MASK_PLAYERSOLID_BRUSHONLY)
-            if trace.fraction == 1 or trace.entity == CurrentTarget then
-                -- If the trace hit something, set the view angles to the position of the hit
-                aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
-                -- Set view angles based on the future position of the local player
-                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
-            end
-        elseif can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
-            -- Set view angles based on whether silent aim is enabled
-            if Menu.Aimbot.Silent then
-                pCmd:SetViewAngles(aim_angles.pitch, aim_angles.yaw, 0)
-            else
-                engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
-            end
-        end
-    end
-
-    -- Initialize tick_count if it hasn't been set yet
-    if tick_count == nil then
-        tick_count = 0
-    end
 
     -- Only try instant attack when it's possible
     if can_attack then
@@ -1565,12 +1448,12 @@ local function OnCreateMove(pCmd)
             if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not attackStarted then
                 attackStarted = true
                 attackTickCount = 0
+
                 -- Get exact weapon smack delay
                 weaponSmackDelay = Menu.Aimbot.MaxSwingTime
                 if pWeapon and pWeapon:GetWeaponData() and pWeapon:GetWeaponData().smackDelay then
                     weaponSmackDelay = math.floor(pWeapon:GetWeaponData().smackDelay / globals.TickInterval())
                 end
-                --client.ChatPrintf("[Debug] Attack started! Will charge at end of swing (tick " ..(weaponSmackDelay - 1) .. ")")
             end
 
             can_attack = false
@@ -1597,6 +1480,8 @@ local function OnCreateMove(pCmd)
                 can_charge = false
             end
         end
+
+        -- No need to track exploit flag anymore; logic is purely timing-based
     end
 
     -- Update last variables
@@ -1841,12 +1726,11 @@ local function doDraw()
             if Menu.Visuals.Local.RangeCircle and pLocalFuture then
                 draw.Color(255, 255, 255, 255)
 
-                local center = pLocalFuture -
-                    Vheight         -- Center of the circle at the player's feet
-                local viewPos =
-                    pLocalOrigin    -- View position to shoot traces from
-                local radius = Menu.Misc.ChargeReach and pLocalClass == 4 and chargeLeft == 100 and Charge_Range or
-                    TotalSwingRange -- Radius of the circle
+                -- Create a cone: traces start from view position (eye level) to ground level circle
+                local viewPos = pLocalOrigin          -- Trace start from eye level (origin + viewOffset)
+                local center = pLocalFuture - Vheight -- Circle center at predicted ground level (feet)
+                -- Use TotalSwingRange directly (it's already calculated correctly)
+                local radius = TotalSwingRange
                 local segments = 32 -- Number of segments to draw the circle
                 local angleStep = (2 * math.pi) / segments
 
@@ -2066,8 +1950,9 @@ local function doDraw()
                 end
 
                 -- Example draw call
-                sphere_cache.center = pLocalOrigin    -- Replace with actual player origin
-                sphere_cache.radius = TotalSwingRange -- Replace with actual swing range value
+                sphere_cache.center = pLocalOrigin -- Replace with actual player origin
+                -- Use TotalSwingRange directly (it's already calculated correctly)
+                sphere_cache.radius = TotalSwingRange
                 draw_sphere()
             end
 
@@ -2252,7 +2137,7 @@ local function doDraw()
         end
     end
 
-    if gui.IsMenuOpen() and ImMenu and ImMenu.Begin("Swing Prediction", true) then
+    if gui.IsMenuOpen() and ImMenu and ImMenu.Begin("Swing Prediction") then
         ImMenu.BeginFrame(1) -- tabs
         Menu.currentTab = ImMenu.TabControl(Menu.tabs, Menu.currentTab)
         ImMenu.EndFrame()
@@ -2430,135 +2315,4 @@ callbacks.Register("Draw", "MCT_Draw", doDraw)                   -- Register the
 --[[ Play sound when loaded ]]                                   --
 client.Command('play "ui/buttonclick"', true)                    -- Play the "buttonclick" sound when the script is loaded
 
---[[ Charge Control Module ]]
 
--- Optional: Apply a small multiplier if you want slightly enhanced turning
--- Set to 1.0 for exactly normal mouse behavior
-local TURN_MULTIPLIER = 1.0
-
--- Maximum degrees to rotate in one frame (prevents disorientation from extreme flicks)
-local MAX_ROTATION_PER_FRAME = 73.04
-
--- Side movement value for A/D simulation (Source engine uses ±450 for full side movement)
-local SIDE_MOVE_VALUE = 450
-
--- Main function that processes player input during charge
-local function OnCreateMove_ChargeControl(cmd)
-    -- Check if charge control is enabled in menu
-    if not Menu.Misc.ChargeControl then
-        return
-    end
-
-    pLocal = entities.GetLocalPlayer()
-
-    -- Check if player exists and is the right class
-    if not pLocal or not pLocal:IsAlive() then
-        return
-    end
-
-    local currclass = pLocal:GetPropInt("m_iClass")
-    if currclass ~= 4 then -- Only process for Demoman (class 4)
-        return
-    end
-
-    -- Check if player is charging
-    local isCharging = pLocal:InCond(17) -- 17 is the charge condition ID
-
-    -- Skip if not charging
-    if not isCharging then
-        return
-    end
-
-    -- Find all demo shields by class name
-    local shields = entities.FindByClass("CTFWearableDemoShield")
-
-    -- Check if any shield belongs to player and is Tide Turner
-    for i, shield in pairs(shields) do --pairs not ipairs because shields is insequential
-        if shield and shield:IsValid() then
-            local owner = shield:GetPropEntity("m_hOwnerEntity")
-
-            if owner == pLocal then
-                local defIndex = shield:GetPropInt("m_iItemDefinitionIndex")
-
-                -- Check if it's Tide Turner (ID 1099)
-                if defIndex == 1099 then
-                    -- Skip charge control for Tide Turner
-                    return
-                end
-            end
-        end
-    end
-
-    -- Get mouse X movement (negative = left, positive = right)
-    local mouseDeltaX = -cmd.mousedx
-
-    -- Skip processing if no horizontal mouse movement
-    if mouseDeltaX == 0 then
-        return
-    end
-
-    -- Get current view angles and game settings
-    local currentAngles = engine.GetViewAngles()
-    local m_yaw = select(2, client.GetConVar("m_yaw")) -- Get m_yaw from game settings
-
-    -- Calculate turn amount using standard Source engine formula
-    local turnAmount = mouseDeltaX * m_yaw * TURN_MULTIPLIER
-
-    -- Determine turning direction for side movement
-    -- Apply side movement based on turning direction (simulate A/D keys)
-    if turnAmount > 0 then
-        -- Turning left, simulate pressing D (right strafe)
-        cmd.sidemove = SIDE_MOVE_VALUE
-    else
-        -- Turning right, simulate pressing A (left strafe)
-        cmd.sidemove = -SIDE_MOVE_VALUE
-    end
-
-    -- Limit maximum turn per frame to prevent disorientation
-    turnAmount = math.max(-MAX_ROTATION_PER_FRAME, math.min(MAX_ROTATION_PER_FRAME, turnAmount))
-
-    -- Calculate new yaw angle
-    local newYaw = currentAngles.yaw + turnAmount
-
-    -- Handle -180/180 degree boundary crossing
-    newYaw = newYaw % 360
-    if newYaw > 180 then
-        newYaw = newYaw - 360
-    elseif newYaw < -180 then
-        newYaw = newYaw + 360
-    end
-
-    -- Compensate for engine view angles being one tick behind
-    -- Calculate the predicted angle one tick ahead
-    local playerVelocity = pLocal:EstimateAbsVelocity()
-    local tickInterval = globals.TickInterval()
-
-    -- Calculate the angular velocity based on current movement
-    local angularVelocity = 0
-    if playerVelocity:Length() > 0 then
-        -- Use the current turning rate as an estimate of angular velocity
-        angularVelocity = turnAmount / tickInterval
-    end
-
-    -- Predict the yaw angle one tick ahead
-    local predictedYaw = newYaw + (angularVelocity * tickInterval)
-
-    -- Normalize the predicted yaw
-    predictedYaw = predictedYaw % 360
-    if predictedYaw > 180 then
-        predictedYaw = predictedYaw - 360
-    elseif predictedYaw < -180 then
-        predictedYaw = predictedYaw + 360
-    end
-
-    -- Apply the current angle to cmd for current tick movement
-    cmd:SetViewAngles(currentAngles.pitch, newYaw, currentAngles.roll)
-
-    -- Apply the predicted angle to engine for visual representation
-    -- This compensates for the one-tick delay in engine view angles
-    local predictedAngles = EulerAngles(currentAngles.pitch, predictedYaw, currentAngles.roll)
-    engine.SetViewAngles(predictedAngles)
-end
-
--- Register the callback for charge control
-callbacks.Register("CreateMove", "ChargeControl", OnCreateMove_ChargeControl)
