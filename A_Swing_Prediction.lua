@@ -439,8 +439,9 @@ end
 ---@param t      integer                          -- number of ticks to simulate
 ---@param d      number?                          -- strafe deviation angle (optional)
 ---@param simulateCharge boolean?                -- simulate shield charge starting now
+---@param fixedAngles EulerAngles?               -- if provided, use this view-angle for charge direction
 ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
-local function PredictPlayer(player, t, d, simulateCharge)
+local function PredictPlayer(player, t, d, simulateCharge, fixedAngles)
     if not gravity or not stepSize then return nil end
     local vUp = Vector3(0, 0, 1)
     local vStep = Vector3(0, 0, stepSize)
@@ -487,7 +488,8 @@ local function PredictPlayer(player, t, d, simulateCharge)
         -- =========================================================================
         if simulateCharge then
             -- Forward direction based on current view angles (horizontal only)
-            local forward = engine.GetViewAngles():Forward()
+            local useAngles = fixedAngles or engine.GetViewAngles()
+            local forward = useAngles:Forward()
             forward.z = 0                     -- ignore vertical component
             forward   = Normalize(forward)
 
@@ -1290,7 +1292,13 @@ local function OnCreateMove(pCmd)
         -- If charge-reach exploit is READY (full meter, demo, exploit enabled) but we're **not yet charging**,
         -- run a secondary prediction that simulates starting a charge right now.
         local simulateCharge = (not isCurrentlyCharging) and isExploitReady
-        local predData = PredictPlayer(player, simTicks, strafeAngle, simulateCharge)
+        local fixedAngles = nil
+        if simulateCharge and CurrentTarget then
+            -- Use current target's position to define intended charge heading for prediction
+            fixedAngles = Math.PositionAngles(pLocalOrigin, CurrentTarget:GetAbsOrigin())
+        end
+
+        local predData = PredictPlayer(player, simTicks, strafeAngle, simulateCharge, fixedAngles)
         if not predData then return end
 
         pLocalPath = predData.pos
@@ -1339,7 +1347,7 @@ local function OnCreateMove(pCmd)
         -- Default to Menu.Aimbot.SwingTime since we're not using instant attack
         local simTicks = Menu.Aimbot.SwingTime
 
-        local predData = PredictPlayer(player, simTicks, strafeAngle)
+        local predData = PredictPlayer(player, simTicks, strafeAngle, false, nil)
         if not predData then return end
 
         vPlayerPath = predData.pos
