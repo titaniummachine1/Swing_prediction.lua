@@ -665,46 +665,7 @@ end
 
 -- Function to get the best target
 -- Function to calculate the appropriate swing range based on current situation
-local function CalculateEffectiveSwingRange()
-    local baseRange = swingrange + (SwingHullSize / 2)
 
-    -- Check if charge reach is available
-    local hasFullCharge = chargeLeft == 100
-    local isDemoman = pLocalClass == 4
-    local isExploitReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
-    local withinAttackWindow = (globals.TickCount() - lastAttackTick) <= 13
-    local isCurrentlyCharging = pLocal and pLocal:InCond(17)
-
-    if isCurrentlyCharging then
-        -- When charging: check if we swung within last 13 ticks for exploit
-        local isDoingExploit = Menu.Misc.ChargeReach and withinAttackWindow
-        if isDoingExploit then
-            return Charge_Range + (SwingHullSize / 2)
-        else
-            return normalTotalSwingRange
-        end
-    else
-        -- Not charging: determine if we should show charge reach or normal range
-        if isExploitReady and CurrentTarget then
-            local currentDistance = (CurrentTarget:GetAbsOrigin() - pLocalOrigin):Length()
-            local normalRange = normalTotalSwingRange
-
-            -- Show charge reach range if target is beyond normal range
-            if currentDistance > normalRange then
-                local chargeReachRange = Charge_Range + (SwingHullSize / 2)
-                if currentDistance <= chargeReachRange then
-                    return chargeReachRange
-                end
-            end
-        elseif isExploitReady and not CurrentTarget then
-            -- No target but charge reach is ready - show charge reach range as potential
-            return Charge_Range + (SwingHullSize / 2)
-        end
-
-        -- Default to normal range
-        return baseRange
-    end
-end
 
 local function GetBestTarget(me)
     local localPlayer = entities.GetLocalPlayer()
@@ -994,30 +955,60 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeSimple(playerIndex, swingRange, pWeapon, cmd)
+local function checkInRangeSimple(playerIndex, pWeapon, cmd)
     local inRange = false
     local point = nil
+    local usedChargeReach = false
 
-    -- Simple range check with current positions
-    inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
+    -- Always start with normal weapon range
+    local normalRange = normalTotalSwingRange
+
+    -- First check: Can we hit with normal range? (current positions)
+    inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, normalRange)
     if inRange then
-        return inRange, point, false
+        return inRange, point, false -- Hit with normal range, no charge reach used
     end
 
     -- If instant attack (warp) is ready, skip future prediction checks.
     local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
         warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
     if instantAttackReady then
+        -- For instant attack, we only need to check current positions, not future
+        -- Check if charge reach can help
+        local hasFullCharge = chargeLeft == 100
+        local isDemoman = pLocalClass == 4
+        local isChargeReachReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
+
+        if isChargeReachReady then
+            local chargeReachRange = Charge_Range + (SwingHullSize / 2)
+            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, chargeReachRange)
+            if inRange then
+                return inRange, point, true -- Hit with charge reach
+            end
+        end
         return false, nil, false
     end
 
-    -- Simple range check with predicted positions
-    inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
+    -- Second check: Can we hit with normal range? (predicted positions)
+    inRange, point = checkInRange(vPlayerFuture, pLocalFuture, normalRange)
     if inRange then
-        return inRange, point, false
+        return inRange, point, false -- Hit with normal range, no charge reach used
     end
 
-    return false, nil, false
+    -- Third check: Can we hit with charge reach? (only if normal range failed)
+    local hasFullCharge = chargeLeft == 100
+    local isDemoman = pLocalClass == 4
+    local isChargeReachReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
+
+    if isChargeReachReady then
+        local chargeReachRange = Charge_Range + (SwingHullSize / 2)
+        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, chargeReachRange)
+        if inRange then
+            return inRange, point, true -- Hit with charge reach
+        end
+    end
+
+    return false, nil, false -- Cannot hit at all
 end
 
 -- Store the original Crit Hack Key value outside the main loop or function
@@ -1175,8 +1166,7 @@ local function OnCreateMove(pCmd)
         vPlayer = nil
     end
 
-    -- Calculate swing range after getting target
-    TotalSwingRange = CalculateEffectiveSwingRange()
+
 
     ---------------critHack------------------
     -- Main logic
@@ -1350,10 +1340,31 @@ local function OnCreateMove(pCmd)
     local inRange = false
     local inRangePoint = Vector3(0, 0, 0)
 
-    -- Use TotalSwingRange for range checking (already calculated with charge reach logic)
-    inRange, InRangePoint, can_charge = checkInRangeSimple(CurrentTarget:GetIndex(), TotalSwingRange, pWeapon, pCmd)
+    -- Check if we can hit the target (tries normal range first, then charge reach)
+    local usedChargeReach = false
+    inRange, InRangePoint, usedChargeReach = checkInRangeSimple(CurrentTarget:GetIndex(), pWeapon, pCmd)
     -- Use inRange to decide if can attack
     can_attack = inRange
+
+    -- Update TotalSwingRange to reflect what was actually used for visuals
+    if inRange then
+        if usedChargeReach then
+            TotalSwingRange = Charge_Range + (SwingHullSize / 2)
+        else
+            TotalSwingRange = normalTotalSwingRange
+        end
+    else
+        -- No target in range, show potential range
+        local hasFullCharge = chargeLeft == 100
+        local isDemoman = pLocalClass == 4
+        local isChargeReachReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
+
+        if isChargeReachReady then
+            TotalSwingRange = Charge_Range + (SwingHullSize / 2)
+        else
+            TotalSwingRange = normalTotalSwingRange
+        end
+    end
 
     --[--------------AimBot-------------------]
     local aimpos = CurrentTarget:GetAbsOrigin() + Vheight
