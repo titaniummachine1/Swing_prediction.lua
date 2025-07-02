@@ -262,6 +262,7 @@ local stepSize = 18
 local attackStarted = false
 local attackTickCount = 0
 local lastChargeTime = 0
+local chargeAimAngles = nil -- yaw/pitch to look at when triggering charge reach exploit
 
 -- Track the tick index of the last +attack press (user or script)
 local lastAttackTick = -1000 -- initialize far in the past
@@ -1515,6 +1516,12 @@ local function OnCreateMove(pCmd)
             if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not attackStarted then
                 attackStarted = true
                 attackTickCount = 0
+                -- Store aim direction to target future position so charge travels correctly
+                if InRangePoint then
+                    chargeAimAngles = Math.PositionAngles(pLocalOrigin, InRangePoint)
+                else
+                    chargeAimAngles = Math.PositionAngles(pLocalOrigin, vPlayerFuture)
+                end
             end
 
             can_attack = false
@@ -1533,12 +1540,20 @@ local function OnCreateMove(pCmd)
             -- Execute charge exactly at the end of the swing animation (1 tick before the hit registers)
             if attackTickCount >= (weaponSmackDelay - 2) then
                 --client.ChatPrintf("[Debug] Executing charge at end of swing, tick: " .. attackTickCount)
+                -- Ensure we are facing stored aim direction before initiating charge
+                if chargeAimAngles then
+                    -- Apply instantly so movement vector aligns with shield charge
+                    engine.SetViewAngles(EulerAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0))
+                    pCmd:SetViewAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0)
+                end
+
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2) -- charge
 
                 -- Reset attack tracking
                 attackStarted = false
                 attackTickCount = 0
                 can_charge = false
+                chargeAimAngles = nil
             end
         end
 
