@@ -9,9 +9,23 @@ if package.loaded["ImMenu"] then
     package.loaded["ImMenu"] = nil
 end
 
+-- Force reload warp module to get latest version
+if package.loaded["warp"] then
+    package.loaded["warp"] = nil
+end
+
 -- Initialize libraries
 local lnxLib = require("lnxlib")
 local ImMenu = require("immenu")
+local warp = require("warp")
+
+-- Debug: Check warp module status
+if warp then
+    client.ChatPrintf("[Debug] Warp module loaded successfully")
+    client.ChatPrintf("[Debug] Initial warp status: " .. (warp.GetChargedTicks() or 0) .. " ticks")
+else
+    client.ChatPrintf("[Error] Failed to load warp module!")
+end
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
@@ -114,6 +128,7 @@ local Menu = {
         CritMode = 1,
         CritModes = { "Rage", "On Button" },
         InstantAttack = false,
+        WarpOnAttack = true, -- New option to control warp during instant attack
         TroldierAssist = false,
         advancedHitreg = false,
 
@@ -206,6 +221,11 @@ local function SafeInitMenu()
     Menu.Aimbot.MaxSwingTime = SafeValue(Menu.Aimbot.MaxSwingTime, 13)
     Menu.Aimbot.ChargeBot = SafeValue(Menu.Aimbot.ChargeBot, true)
 
+    -- Initialize Misc settings
+    Menu.Misc = Menu.Misc or {}
+    Menu.Misc.InstantAttack = SafeValue(Menu.Misc.InstantAttack, false)
+    Menu.Misc.WarpOnAttack = SafeValue(Menu.Misc.WarpOnAttack, true)
+
     -- Initialize other sections if needed
     -- (We can add more sections here if they also have nil issues)
 end
@@ -237,7 +257,6 @@ local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local drawVhitbox = {}
 local gravity = client.GetConVar("sv_gravity") or 800 -- Get the current gravity
 local stepSize = 18
-local tickCounteratack = 0
 
 -- Variables to track attack and charge state
 local attackStarted = false
@@ -407,13 +426,20 @@ local function shouldHitEntityFun(entity, player, ignoreEntities)
     return true
 end
 
--- [WIP] Predict the position of a player
+--[[
+    Extended PredictPlayer
+    Added:   simulateCharge (boolean) – when true we pretend the local player starts a shield charge **right now**.
+             The function will:
+               • Each tick add forward acceleration of 750 uu/s (scaled by tick interval) to the horizontal velocity
+               • Force horizontal velocity to align with the view-angle forward direction (so walking backwards flips)
+               • Skip ground speed-cap logic while the fake charge is simulated
+]]
 ---@param player WPlayer
----@param t integer
----@param d number?
----@param shouldHitEntity fun(entity: WEntity, contentsMask: integer): boolean?
+---@param t      integer                          -- number of ticks to simulate
+---@param d      number?                          -- strafe deviation angle (optional)
+---@param simulateCharge boolean?                -- simulate shield charge starting now
 ---@return { pos : Vector3[], vel: Vector3[], onGround: boolean[] }?
-local function PredictPlayer(player, t, d)
+local function PredictPlayer(player, t, d, simulateCharge)
     if not gravity or not stepSize then return nil end
     local vUp = Vector3(0, 0, 1)
     local vStep = Vector3(0, 0, stepSize)
@@ -446,11 +472,32 @@ local function PredictPlayer(player, t, d)
         local vel = lastV
         local onGround1 = lastG
 
-        -- Apply deviation
+        --------------------------------------------------------------------------
+        -- Apply deviation requested by strafe predictor
         if d then
             local ang = vel:Angles()
             ang.y = ang.y + d
-            vel = ang:Forward() * vel:Length()
+            vel   = ang:Forward() * vel:Length()
+        end
+
+        -- =========================================================================
+        --  Charge-reach simulation: add forward acceleration each tick so we can
+        --  evaluate hits that would connect **if we pressed charge now**.
+        -- =========================================================================
+        if simulateCharge then
+            -- Forward direction based on current view angles (horizontal only)
+            local forward = engine.GetViewAngles():Forward()
+            forward.z = 0                     -- ignore vertical component
+            forward   = Normalize(forward)
+
+            -- If we are currently moving "backwards" (dot < 0) wipe horizontal vel
+            local horizontal = Vector3(vel.x, vel.y, 0)
+            if horizontal:Dot(forward) < 0 then
+                vel.x, vel.y = 0, 0
+            end
+
+            -- Add acceleration (750 uu/s) scaled by tick interval
+            vel = vel + forward * (750 * globals.TickInterval())
         end
 
         -- Apply speed capping logic (simplified approach)
@@ -458,7 +505,7 @@ local function PredictPlayer(player, t, d)
         -- For regular charging toward enemies (not exploit), we assume swing stops charge immediately
         if onGround1 then
             -- Only bypass speed cap for charge reach exploit, not regular charging
-            local shouldBypassSpeedCap = isChargeReachExploit
+            local shouldBypassSpeedCap = isChargeReachExploit or simulateCharge
 
             if not shouldBypassSpeedCap then
                 -- Apply speed cap when on ground and not doing charge reach exploit
@@ -878,8 +925,7 @@ local function ChargeControl(pCmd)
     end
 
     -- CRITICAL: Limit maximum turn per frame to 73.04 degrees
-    turnAmount = math.max(-CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME,
-        math.min(CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, turnAmount))
+    turnAmount = math.max(-CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, math.min(CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, turnAmount))
 
     -- Calculate new yaw angle
     local newYaw = currentAngles.yaw + turnAmount
@@ -933,59 +979,30 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeSimple(playerIndex, pWeapon, cmd)
+local function checkInRangeSimple(playerIndex, swingRange, pWeapon, cmd)
     local inRange = false
     local point = nil
-    local usedChargeReach = false
 
-    -- Calculate normal range
-    local normalRange = normalTotalSwingRange
-
-    -- First check: Can we hit with normal range? (current positions)
-    inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, normalRange)
+    -- Simple range check with current positions
+    inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
     if inRange then
-        return inRange, point, false -- Hit with normal range
+        return inRange, point, false
     end
 
     -- If instant attack (warp) is ready, skip future prediction checks.
     local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
-        (warp.GetChargedTicks() or 0) >= Menu.Aimbot.SwingTime
+        warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
     if instantAttackReady then
-        -- For instant attack, check if charge reach can help
-        local hasFullCharge = chargeLeft == 100
-        local isDemoman = pLocalClass == 4
-        local isChargeReachReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
-
-        if isChargeReachReady then
-            local chargeReachRange = Charge_Range + (SwingHullSize / 2)
-            inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, chargeReachRange)
-            if inRange then
-                return inRange, point, true -- Hit with charge reach
-            end
-        end
         return false, nil, false
     end
 
-    -- Second check: Can we hit with normal range? (predicted positions)
-    inRange, point = checkInRange(vPlayerFuture, pLocalFuture, normalRange)
+    -- Simple range check with predicted positions
+    inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
     if inRange then
-        return inRange, point, false -- Hit with normal range
+        return inRange, point, false
     end
 
-    -- Third check: Can we hit with charge reach? (only if normal range failed)
-    local hasFullCharge = chargeLeft == 100
-    local isDemoman = pLocalClass == 4
-    local isChargeReachReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
-
-    if isChargeReachReady then
-        local chargeReachRange = Charge_Range + (SwingHullSize / 2)
-        inRange, point = checkInRange(vPlayerFuture, pLocalFuture, chargeReachRange)
-        if inRange then
-            return inRange, point, true -- Hit with charge reach
-        end
-    end
-
-    return false, nil, false -- Cannot hit at all
+    return false, nil, false
 end
 
 -- Store the original Crit Hack Key value outside the main loop or function
@@ -993,7 +1010,7 @@ local originalCritHackKey = 0
 local originalMeleeCritHack = 0
 local menuWasOpen = false
 local critRefillActive = false
-local dashKeyNotBoundNotified = false
+local dashKeyNotBoundNotified = true
 
 --[[ Code needed to run 66 times a second ]] --
 -- Predicts player position after set amount of ticks
@@ -1120,24 +1137,35 @@ local function OnCreateMove(pCmd)
         normalTotalSwingRange = swingrange + (SwingHullSize / 2)
     end
 
-    -- Initialize with normal weapon range
-    TotalSwingRange = swingrange + (SwingHullSize / 2)
-
-    -- Check if charge reach exploit is currently active
+    -- Simple charge reach logic
     local hasFullCharge = chargeLeft == 100
     local isDemoman = pLocalClass == 4
-    local isCurrentlyCharging = pLocal:InCond(17)
+    local isExploitReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
     local withinAttackWindow = (globals.TickCount() - lastAttackTick) <= 13
-    local isChargeReachExploitActive = Menu.Misc.ChargeReach and isCurrentlyCharging and withinAttackWindow
 
-    if isChargeReachExploitActive then
-        -- Currently doing charge reach exploit - force extended range
-        TotalSwingRange = Charge_Range + (SwingHullSize / 2)
-        swingrange = Charge_Range
+    if isCurrentlyCharging then
+        -- When charging: check if we swung within last 13 ticks
+        local isDoingExploit = Menu.Misc.ChargeReach and withinAttackWindow
+
+        if isDoingExploit then
+            -- Use charge reach range (128) + hull size for total range
+            TotalSwingRange = Charge_Range + (SwingHullSize / 2)
+            --client.ChatPrintf("[Debug] Charge reach exploit active! TotalSwingRange = " .. TotalSwingRange)
+        else
+            -- Force back to normal weapon range
+            swingrange = normalWeaponRange
+            TotalSwingRange = normalTotalSwingRange
+            --client.ChatPrintf("[Debug] Charging without exploit, TotalSwingRange = " .. TotalSwingRange)
+        end
     else
-        -- Reset to normal weapon range when not exploiting
-        swingrange = normalWeaponRange
-        TotalSwingRange = normalTotalSwingRange
+        -- Not charging: check if ready for exploit
+        if isExploitReady then
+            -- Use charge reach range (128) + hull size when ready
+            TotalSwingRange = Charge_Range + (SwingHullSize / 2)
+        else
+            -- Normal weapon range
+            TotalSwingRange = swingrange + (SwingHullSize / 2)
+        end
     end
     --[--Manual charge control--]
 
@@ -1243,20 +1271,25 @@ local function OnCreateMove(pCmd)
     else
         -- Always predict local player movement regardless of instant attack state
         local player = WPlayer.FromEntity(pLocal)
-        strafeAngle = Menu.Misc.strafePred and strafeAngles[pLocal:GetIndex()] or 0
+        
+        -- Check if we're doing instant attack with warp
+        local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
+            warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
+        
+        -- Don't use strafe prediction when warping (time is frozen for us too)
+        local useStrafePred = Menu.Misc.strafePred and not (instantAttackReady and Menu.Misc.WarpOnAttack)
+        strafeAngle = useStrafePred and strafeAngles[pLocal:GetIndex()] or 0
 
         -- Always use weapon-specific ticks for simulation with instant attack
-        local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
-            warp.GetChargedTicks() >= Menu.Aimbot.SwingTime and
-            gui.GetValue("dash move key") ~= 0
         local simTicks = Menu.Aimbot.SwingTime
         if not instantAttackReady then
             simTicks = Menu.Aimbot.SwingTime
         end
 
-        -- IMPORTANT: For local player prediction, don't assume charging preserves speed unless charge reach exploit
-        -- Regular charging toward enemies will be stopped by swing, so predict with speed caps
-        local predData = PredictPlayer(player, simTicks, strafeAngle)
+        -- If charge-reach exploit is READY (full meter, demo, exploit enabled) but we're **not yet charging**,
+        -- run a secondary prediction that simulates starting a charge right now.
+        local simulateCharge = (not isCurrentlyCharging) and isExploitReady
+        local predData = PredictPlayer(player, simTicks, strafeAngle, simulateCharge)
         if not predData then return end
 
         pLocalPath = predData.pos
@@ -1287,6 +1320,15 @@ local function OnCreateMove(pCmd)
     local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
         warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
     local canInstantAttack = instantAttackReady
+
+    -- Debug output for instant attack status (only when instant attack is enabled)
+    if Menu.Misc.InstantAttack and can_attack then
+        local chargedTicks = warp.GetChargedTicks() or 0
+        local canWarp = warp.CanWarp()
+        local swingTime = Menu.Aimbot.SwingTime
+        client.ChatPrintf(string.format("[Debug] InstantAttack Check: CanWarp=%s, ChargedTicks=%d, SwingTime=%d, Ready=%s", 
+            tostring(canWarp), chargedTicks, swingTime, tostring(instantAttackReady)))
+    end
 
     if not instantAttackReady then
         -- Only predict enemy movement when NOT using instant attack
@@ -1320,31 +1362,10 @@ local function OnCreateMove(pCmd)
     local inRange = false
     local inRangePoint = Vector3(0, 0, 0)
 
-    -- Check if we can hit the target (tries normal range first, then charge reach)
-    local usedChargeReach = false
-    inRange, InRangePoint, usedChargeReach = checkInRangeSimple(CurrentTarget:GetIndex(), pWeapon, pCmd)
+    -- Use TotalSwingRange for range checking (already calculated with charge reach logic)
+    inRange, InRangePoint, can_charge = checkInRangeSimple(CurrentTarget:GetIndex(), TotalSwingRange, pWeapon, pCmd)
     -- Use inRange to decide if can attack
     can_attack = inRange
-
-    -- Update TotalSwingRange to reflect what was actually used for visuals
-    if inRange then
-        if usedChargeReach then
-            TotalSwingRange = Charge_Range + (SwingHullSize / 2)
-        else
-            TotalSwingRange = normalTotalSwingRange
-        end
-    else
-        -- No target in range, show potential range
-        local hasFullCharge = chargeLeft == 100
-        local isDemoman = pLocalClass == 4
-        local isChargeReachReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
-
-        if isChargeReachReady then
-            TotalSwingRange = Charge_Range + (SwingHullSize / 2)
-        else
-            TotalSwingRange = normalTotalSwingRange
-        end
-    end
 
     --[--------------AimBot-------------------]
     local aimpos = CurrentTarget:GetAbsOrigin() + Vheight
@@ -1437,64 +1458,63 @@ local function OnCreateMove(pCmd)
             end
         end
 
-        if Menu.Misc.InstantAttack and canInstantAttack then
-            -- Remove cooldown code and directly proceed to instant attack logic
+        if Menu.Misc.InstantAttack and canInstantAttack and Menu.Misc.WarpOnAttack then
+            -- Instant attack with warp is enabled and ready
             local velocity = pLocal:EstimateAbsVelocity()
-            -- Safety check: only calculate oppositePoint if we have actual velocity
             local oppositePoint
-            if velocity:Length() > 10 then -- Only use if we have meaningful velocity
+            
+            -- Calculate opposite point for movement
+            if velocity:Length() > 10 then
                 oppositePoint = pLocal:GetAbsOrigin() - velocity
             else
-                -- If no significant velocity, use a point slightly in front based on view angles
                 local angles = engine.GetViewAngles()
                 local forward = angles:Forward()
                 oppositePoint = pLocal:GetAbsOrigin() + forward * 20
             end
 
-            if tickCounteratack % 2 == 0 then
-                -- IMPORTANT: First initiate the attack, THEN trigger warp
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- First initiate attack
-            else
-                -- Safety check to prevent empty vectors or extreme values
-                if oppositePoint and (oppositePoint - pLocal:GetAbsOrigin()):Length() < 300 then
-                    WalkTo(pCmd, pLocal, oppositePoint)
-                end
-                client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
-
-                -- Add safety cap to prevent freezes - never allow more than 20 ticks
-                local safeTickValue = math.min(weaponSmackDelay, 20)
-                client.SetConVar("sv_maxusrcmdprocessticks", safeTickValue)
-
-                -- Safety check before triggering warp
-                local chargedTicks = warp.GetChargedTicks() or 0
-                if chargedTicks >= safeTickValue then
-                    warp.TriggerWarp() -- Then trigger warp
-                    -- We've removed the cooldown, so no need to track the last attack time
-                else
-                    -- Fall back to normal attack when we don't have enough ticks
-                    pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-                end
+            -- Move to opposite point for better warp positioning
+            if oppositePoint and (oppositePoint - pLocal:GetAbsOrigin()):Length() < 300 then
+                WalkTo(pCmd, pLocal, oppositePoint)
             end
-            tickCounteratack = tickCounteratack + 1
-        else
-            -- Normal attack if instant attack is disabled or not enough ticks
-            -- Use a higher value for normal attacks, but cap it for safety
-            local normalAttackTicks = math.min(math.floor(weaponSmackDelay), 24)
-            client.RemoveConVarProtection("sv_maxusrcmdprocessticks") --bypass security
-            client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)            -- attack
 
-            -- Start tracking attack ticks if this is a Demoman with a full charge meter
-            -- AND attack tracking hasn't already started
+            -- Set up the attack and warp
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- Initiate attack
+            
+            client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
+            local safeTickValue = math.min(weaponSmackDelay, 20)
+            client.SetConVar("sv_maxusrcmdprocessticks", safeTickValue)
+
+            -- Trigger the warp
+            local chargedTicks = warp.GetChargedTicks() or 0
+            if chargedTicks >= safeTickValue then
+                warp.TriggerWarp(safeTickValue)
+                -- Debug output
+                client.ChatPrintf("[Debug] Instant Attack: Warping with " .. chargedTicks .. " ticks")
+            else
+                -- Not enough ticks for warp, but still do instant attack without warp
+                client.ChatPrintf("[Debug] Instant Attack: Not enough ticks (" .. chargedTicks .. "/" .. safeTickValue .. "), normal attack")
+            end
+            
+            can_attack = false
+        elseif Menu.Misc.InstantAttack and canInstantAttack and not Menu.Misc.WarpOnAttack then
+            -- Instant attack enabled but warp disabled - just do normal attack
+            client.ChatPrintf("[Debug] Instant Attack: Warp disabled, using normal attack")
+            local normalAttackTicks = math.min(math.floor(weaponSmackDelay), 24)
+            client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
+            client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            can_attack = false
+        else
+            -- Normal attack (instant attack disabled or not ready)
+            local normalAttackTicks = math.min(math.floor(weaponSmackDelay), 24)
+            client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
+            client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+
+            -- Start tracking attack ticks for charge reach exploit
             if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not attackStarted then
                 attackStarted = true
                 attackTickCount = 0
-
-                -- Get exact weapon smack delay
-                weaponSmackDelay = Menu.Aimbot.MaxSwingTime
-                if pWeapon and pWeapon:GetWeaponData() and pWeapon:GetWeaponData().smackDelay then
-                    weaponSmackDelay = math.floor(pWeapon:GetWeaponData().smackDelay / globals.TickInterval())
-                end
             end
 
             can_attack = false
@@ -1764,6 +1784,44 @@ local function doDraw()
         if Menu.Visuals.EnableVisuals or pWeapon:IsMeleeWeapon() and pLocal and pLocal:IsAlive() then
             draw.Color(255, 255, 255, 255)
             local w, h = draw.GetScreenSize()
+            
+            -- Display warp status when instant attack is enabled
+            if Menu.Misc.InstantAttack then
+                -- Simple fallback approach using basic functions
+                local charged = warp and warp.GetChargedTicks() or 0
+                local maxTicks = 24 -- Default max
+                local isWarping = warp and warp.IsWarping() or false
+                local canWarp = warp and warp.CanWarp() or false
+                
+                local warpText = string.format("Warp: %d/%d", charged, maxTicks)
+                local statusText = string.format("CanWarp: %s | Warping: %s", tostring(canWarp), tostring(isWarping))
+                local warpOnAttackText = string.format("WarpOnAttack: %s", tostring(Menu.Misc.WarpOnAttack))
+                
+                -- Set color based on status
+                if isWarping then
+                    draw.Color(255, 100, 100, 255) -- Red when warping
+                elseif canWarp and charged >= 13 then
+                    draw.Color(100, 255, 100, 255) -- Green when ready
+                elseif canWarp then
+                    draw.Color(255, 255, 100, 255) -- Yellow when can warp but not enough ticks
+                else
+                    draw.Color(255, 255, 255, 255) -- White when not ready
+                end
+                
+                draw.SetFont(Verdana)
+                local textW, textH = draw.GetTextSize(warpText)
+                draw.Text(w - textW - 10, 100, warpText)
+                
+                -- Additional status info
+                draw.Color(255, 255, 255, 255)
+                local statusW, statusH = draw.GetTextSize(statusText)
+                draw.Text(w - statusW - 10, 120, statusText)
+                
+                local warpOnAttackW, warpOnAttackH = draw.GetTextSize(warpOnAttackText)
+                draw.Text(w - warpOnAttackW - 10, 140, warpOnAttackText)
+            end
+            
+            draw.Color(255, 255, 255, 255) -- Reset color for other visuals
             if Menu.Visuals.Local.RangeCircle and pLocalFuture then
                 draw.Color(255, 255, 255, 255)
 
@@ -1775,24 +1833,9 @@ local function doDraw()
                 local segments = 32 -- Number of segments to draw the circle
                 local angleStep = (2 * math.pi) / segments
 
-                -- Determine the color of the circle based on range type and target status
-                local circleColor
-                local normalRange = normalTotalSwingRange
-                local isUsingChargeReach = radius > normalRange
-
-                if CurrentTarget then
-                    if isUsingChargeReach then
-                        circleColor = { 255, 165, 0, 255 } -- Orange when using charge reach on target
-                    else
-                        circleColor = { 0, 255, 0, 255 }   -- Green when using normal range on target
-                    end
-                else
-                    if isUsingChargeReach then
-                        circleColor = { 255, 255, 0, 255 }   -- Yellow when charge reach is ready but no target
-                    else
-                        circleColor = { 255, 255, 255, 255 } -- White for normal range, no target
-                    end
-                end
+                -- Determine the color of the circle based on TargetPlayer
+                local circleColor = TargetPlayer and { 0, 255, 0, 255 } or
+                    { 255, 255, 255, 255 } -- Green if TargetPlayer exists, otherwise white
 
                 -- Set the drawing color
                 draw.Color(table.unpack(circleColor))
@@ -2274,6 +2317,10 @@ local function doDraw()
         if Menu.currentTab == 4 then -- Misc tab
             ImMenu.BeginFrame()
             Menu.Misc.InstantAttack = ImMenu.Checkbox("Instant Attack", Menu.Misc.InstantAttack)
+            -- Add warp on attack button when instant attack is enabled
+            if Menu.Misc.InstantAttack then
+                Menu.Misc.WarpOnAttack = ImMenu.Checkbox("Warp On Attack", Menu.Misc.WarpOnAttack)
+            end
             Menu.Misc.advancedHitreg = ImMenu.Checkbox("Advanced Hitreg", Menu.Misc.advancedHitreg)
             Menu.Misc.TroldierAssist = ImMenu.Checkbox("Troldier Assist", Menu.Misc.TroldierAssist)
             ImMenu.EndFrame()
@@ -2348,11 +2395,10 @@ local function damageLogger(event)
         local damage = event:GetInt("damageamount")
         if damage <= victim:GetHealth() then return end
 
-        -- Trigger recharge if instant attack is enabled, dash key is bound, and warp ticks are less than 13
-        local dashKeyBound = gui.GetValue("dash move key") ~= 0
-        if Menu.Misc.InstantAttack and dashKeyBound and warp.GetChargedTicks() < 13
+        -- Trigger recharge if instant attack is enabled and warp ticks are below threshold
+        if Menu.Misc.InstantAttack and warp.GetChargedTicks() < 13
             and not warp.IsWarping() then
-            warp.TriggerCharge()
+            warp.TriggerCharge(24) -- Trigger charge to max ticks
             tickCounterrecharge = 0
         end
     end
@@ -2370,3 +2416,5 @@ callbacks.Register("Unload", "MCT_Unload", OnUnload)             -- Register the
 callbacks.Register("Draw", "MCT_Draw", doDraw)                   -- Register the "Draw" callback
 --[[ Play sound when loaded ]]                                   --
 client.Command('play "ui/buttonclick"', true)                    -- Play the "buttonclick" sound when the script is loaded
+
+
