@@ -263,6 +263,7 @@ local attackStarted = false
 local attackTickCount = 0
 local lastChargeTime = 0
 local chargeAimAngles = nil -- yaw/pitch to look at when triggering charge reach exploit
+-- chargeJumpDone no longer needed (simplified)
 
 -- Track the tick index of the last +attack press (user or script)
 local lastAttackTick = -1000 -- initialize far in the past
@@ -1253,11 +1254,12 @@ local function OnCreateMove(pCmd)
     local stop = false
     local OnGround = flags & FL_ONGROUND == 1
 
-    --[[--------------Charge Jump-------------------]]
-    if Menu.Misc.ChargeJump and input.IsButtonPressed(MOUSE_RIGHT) and chargeLeft == 100 and OnGround then
-        pCmd:SetButtons(pCmd:GetButtons() & ~IN_JUMP)    -- stop jump for moment
-        pCmd:SetButtons(pCmd:GetButtons() & ~IN_ATTACK2) -- stop charge for moment
-        pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)     -- jump at 2 ticks before attack
+    --[[--------------Modular Charge-Jump (manual) -------------------]]
+    if Menu.Misc.ChargeJump and pLocalClass == 4 then
+        if (pCmd:GetButtons() & IN_ATTACK2) ~= 0 and chargeLeft == 100 and OnGround then
+            -- Add jump along with existing charge command
+            pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
+        end
     end
 
     --[--------------Prediction-------------------]
@@ -1543,6 +1545,11 @@ local function OnCreateMove(pCmd)
             local weaponSmackDelay = Menu.Aimbot.MaxSwingTime
             if pWeapon and pWeapon:GetWeaponData() and pWeapon:GetWeaponData().smackDelay then
                 weaponSmackDelay = math.floor(pWeapon:GetWeaponData().smackDelay / globals.TickInterval())
+            end
+
+            -- If charge-jump enabled issue jump together with charge
+            if Menu.Misc.ChargeJump and OnGround then
+                pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
             end
 
             -- Execute charge exactly at the end of the swing animation (1 tick before the hit registers)
