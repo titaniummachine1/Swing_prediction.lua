@@ -9,23 +9,9 @@ if package.loaded["ImMenu"] then
     package.loaded["ImMenu"] = nil
 end
 
--- Force reload warp module to get latest version
-if package.loaded["warp"] then
-    package.loaded["warp"] = nil
-end
-
 -- Initialize libraries
 local lnxLib = require("lnxlib")
 local ImMenu = require("immenu")
-local warp = require("warp")
-
--- Debug: Check warp module status
-if warp then
-    client.ChatPrintf("[Debug] Warp module loaded successfully")
-    client.ChatPrintf("[Debug] Initial warp status: " .. (warp.GetChargedTicks() or 0) .. " ticks")
-else
-    client.ChatPrintf("[Error] Failed to load warp module!")
-end
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
@@ -34,14 +20,6 @@ local Helpers = lnxLib.TF2.Helpers
 --local Fonts = lnxLib.UI.Fonts
 local Input = lnxLib.Utils.Input
 local Notify = lnxLib.UI.Notify
-
--- Function to safely ensure a value is set, using a default if nil
-local function SafeValue(value, default)
-    if value == nil then
-        return default
-    end
-    return value
-end
 
 local function GetPressedkey()
     local pressedKey = Input.GetPressedKey()
@@ -87,10 +65,10 @@ local Menu = {
 
     -- Charge settings (moved from mixed locations to a dedicated section)
     Charge = {
-        ChargeBot = true,
-        ChargeControl = true,
+        ChargeBot = false,
+        ChargeControl = false,
         ChargeSensitivity = 1.0,
-        ChargeReach = false,
+        ChargeReach = true,
         ChargeJump = true,
     },
 
@@ -130,13 +108,7 @@ local Menu = {
         InstantAttack = false,
         WarpOnAttack = true, -- New option to control warp during instant attack
         TroldierAssist = false,
-        advancedHitreg = false,
-
-        -- These are moved to Charge tab in UI but kept here for backward compatibility
-        ChargeControl = true,
-        ChargeReach = false,
-        ChargeJump = true,
-        ChargeSensitivity = 1.0,
+        advancedHitreg = true,
     },
 
     -- Global settings
@@ -213,50 +185,57 @@ end
 local function SafeInitMenu()
     -- Initialize Aimbot settings
     Menu.Aimbot = Menu.Aimbot or {}
-    Menu.Aimbot.Aimbot = SafeValue(Menu.Aimbot.Aimbot, true)
-    Menu.Aimbot.Silent = SafeValue(Menu.Aimbot.Silent, true)
-    Menu.Aimbot.AimbotFOV = SafeValue(Menu.Aimbot.AimbotFOV, 360)
-    Menu.Aimbot.SwingTime = SafeValue(Menu.Aimbot.SwingTime, 13)
-    Menu.Aimbot.AlwaysUseMaxSwingTime = SafeValue(Menu.Aimbot.AlwaysUseMaxSwingTime, true)
-    Menu.Aimbot.MaxSwingTime = SafeValue(Menu.Aimbot.MaxSwingTime, 13)
-    Menu.Aimbot.ChargeBot = SafeValue(Menu.Aimbot.ChargeBot, true)
+    Menu.Aimbot.Aimbot = Menu.Aimbot.Aimbot ~= nil and Menu.Aimbot.Aimbot or true
+    Menu.Aimbot.Silent = Menu.Aimbot.Silent ~= nil and Menu.Aimbot.Silent or true
+    Menu.Aimbot.AimbotFOV = Menu.Aimbot.AimbotFOV or 360
+    Menu.Aimbot.SwingTime = Menu.Aimbot.SwingTime or 13
+    Menu.Aimbot.AlwaysUseMaxSwingTime = Menu.Aimbot.AlwaysUseMaxSwingTime ~= nil and Menu.Aimbot.AlwaysUseMaxSwingTime or
+    true
+    Menu.Aimbot.MaxSwingTime = Menu.Aimbot.MaxSwingTime or 13
+    Menu.Aimbot.ChargeBot = Menu.Aimbot.ChargeBot ~= nil and Menu.Aimbot.ChargeBot or true
 
     -- Initialize Misc settings
     Menu.Misc = Menu.Misc or {}
-    Menu.Misc.InstantAttack = SafeValue(Menu.Misc.InstantAttack, false)
-    Menu.Misc.WarpOnAttack = SafeValue(Menu.Misc.WarpOnAttack, true)
+    Menu.Misc.InstantAttack = Menu.Misc.InstantAttack ~= nil and Menu.Misc.InstantAttack or false
+    Menu.Misc.WarpOnAttack = Menu.Misc.WarpOnAttack ~= nil and Menu.Misc.WarpOnAttack or true
 
     -- Initialize other sections if needed
-    -- (We can add more sections here if they also have nil issues)
+    Menu.Charge = Menu.Charge or {}
+    Menu.Visuals = Menu.Visuals or {}
 end
 
 -- Call the initialization function to ensure no nil values
--- This ensures settings are properly initialized even after loading the config
 SafeInitMenu()
 
-local isMelee = false
-local pLocal = nil
-local players = entities.FindByClass("CTFPlayer")
+-- Entity-independent constants
 local swingrange = 48
 local TotalSwingRange = 48
 local SwingHullSize = 38
 local SwingHalfhullSize = SwingHullSize / 2
+local Charge_Range = 128
+local normalWeaponRange = 48
+local normalTotalSwingRange = 48
+local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+local gravity = client.GetConVar("sv_gravity") or 800
+local stepSize = 18
+
+-- Function to update server cvars only on events
+local function UpdateServerCvars()
+    gravity = client.GetConVar("sv_gravity") or 800
+end
+
+UpdateServerCvars() -- Initialize on script load
+
+-- Per-tick variables (reset each tick)
+local isMelee = false
+local pLocal = nil
+local players = nil
 local tick_count = 0
 local can_attack = false
 local can_charge = false
-local Charge_Range = 128
-
--- Track normal weapon range (before charging gives extended range)
-local normalWeaponRange = 48
-local normalTotalSwingRange = 48
--- Lag compensation is handled by TF2 automatically
-
 local pLocalPath = {}
 local vPlayerPath = {}
-local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local drawVhitbox = {}
-local gravity = client.GetConVar("sv_gravity") or 800 -- Get the current gravity
-local stepSize = 18
 
 -- Variables to track attack and charge state
 local attackStarted = false
@@ -277,12 +256,7 @@ end
 
 
 
-if pLocal then
-    stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
-else
-    stepSize = 18
-end
-
+-- Per-tick entity variables (will be reset each tick)
 local pLocalClass = nil
 local pLocalFuture = nil
 local pLocalOrigin = nil
@@ -479,8 +453,8 @@ local function PredictPlayer(player, t, d, simulateCharge, fixedAngles)
         -- Apply deviation requested by strafe predictor
         if d then
             local ang = vel:Angles()
-            ang.y = ang.y + d
-            vel   = ang:Forward() * vel:Length()
+            ang.y     = ang.y + d
+            vel       = ang:Forward() * vel:Length()
         end
 
         -- =========================================================================
@@ -489,10 +463,10 @@ local function PredictPlayer(player, t, d, simulateCharge, fixedAngles)
         -- =========================================================================
         if simulateCharge then
             -- Forward direction based on current view angles (horizontal only)
-            local useAngles = fixedAngles or engine.GetViewAngles()
-            local forward = useAngles:Forward()
-            forward.z = 0                     -- ignore vertical component
-            forward   = Normalize(forward)
+            local useAngles  = fixedAngles or engine.GetViewAngles()
+            local forward    = useAngles:Forward()
+            forward.z        = 0 -- ignore vertical component
+            forward          = Normalize(forward)
 
             -- If we are currently moving "backwards" (dot < 0) wipe horizontal vel
             local horizontal = Vector3(vel.x, vel.y, 0)
@@ -929,7 +903,8 @@ local function ChargeControl(pCmd)
     end
 
     -- CRITICAL: Limit maximum turn per frame to 73.04 degrees
-    turnAmount = math.max(-CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, math.min(CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, turnAmount))
+    turnAmount = math.max(-CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME,
+        math.min(CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, turnAmount))
 
     -- Calculate new yaw angle
     local newYaw = currentAngles.yaw + turnAmount
@@ -1020,24 +995,55 @@ local dashKeyNotBoundNotified = true
 -- Predicts player position after set amount of ticks
 ---@param strafeAngle number
 local function OnCreateMove(pCmd)
-    -- Clear all visual globals at start of every tick to prevent ghost visuals
-    pLocalPath = {}
-    pLocalFuture = nil
-    vPlayerPath = {}
-    vPlayerFuture = nil
+    -- Clear ALL entity variables at start of every tick to prevent stale references
+    pLocal = nil
+    pWeapon = nil
+    players = nil
     CurrentTarget = nil
     vPlayer = nil
+    pLocalClass = nil
+    pLocalFuture = nil
+    pLocalOrigin = nil
+    vPlayerFuture = nil
     vPlayerOrigin = nil
+    chargeLeft = nil
+    onGround = nil
     aimposVis = nil
+    Latency = nil
+    viewheight = nil
+    Vheight = nil
+
+    -- Clear visual data
+    pLocalPath = {}
+    vPlayerPath = {}
     drawVhitbox = {}
+
+    -- Reset state flags
+    isMelee = false
     can_attack = false
     can_charge = false
 
+    -- ===== Charge Reach State Machine =====
+    if chargeState == "aim" then
+        if chargeAimAngles then
+            engine.SetViewAngles(EulerAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0))
+        end
+        chargeState = "charge" -- next tick will trigger charge
+    elseif chargeState == "charge" then
+        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)
+        chargeState = "idle"
+        chargeAimAngles = nil
+    end
+    -- =====================================
+    
     -- Get the local player entity
     pLocal = entities.GetLocalPlayer()
     if not pLocal or not pLocal:IsAlive() then
         goto continue -- Return if the local player entity doesn't exist or is dead
     end
+
+    -- Update stepSize per-tick based on current player
+    stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
 
     -- Track latest +attack input (from user or script) for charge-reach logic
     if (pCmd:GetButtons() & IN_ATTACK) ~= 0 then
@@ -1180,7 +1186,9 @@ local function OnCreateMove(pCmd)
     --[-----Get best target------------------]
     local keybind = Menu.Keybind
 
+    -- Get fresh player list each tick
     players = entities.FindByClass("CTFPlayer")
+
     if keybind == 0 then
         -- Check if player has no key bound
         CurrentTarget = GetBestTarget(pLocal)
@@ -1276,11 +1284,11 @@ local function OnCreateMove(pCmd)
     else
         -- Always predict local player movement regardless of instant attack state
         local player = WPlayer.FromEntity(pLocal)
-        
+
         -- Check if we're doing instant attack with warp
         local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
             warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
-        
+
         -- Don't use strafe prediction when warping (time is frozen for us too)
         local useStrafePred = Menu.Misc.strafePred and not (instantAttackReady and Menu.Misc.WarpOnAttack)
         strafeAngle = useStrafePred and strafeAngles[pLocal:GetIndex()] or 0
@@ -1337,7 +1345,8 @@ local function OnCreateMove(pCmd)
         local chargedTicks = warp.GetChargedTicks() or 0
         local canWarp = warp.CanWarp()
         local swingTime = Menu.Aimbot.SwingTime
-        client.ChatPrintf(string.format("[Debug] InstantAttack Check: CanWarp=%s, ChargedTicks=%d, SwingTime=%d, Ready=%s", 
+        client.ChatPrintf(string.format(
+            "[Debug] InstantAttack Check: CanWarp=%s, ChargedTicks=%d, SwingTime=%d, Ready=%s",
             tostring(canWarp), chargedTicks, swingTime, tostring(instantAttackReady)))
     end
 
@@ -1473,7 +1482,7 @@ local function OnCreateMove(pCmd)
             -- Instant attack with warp is enabled and ready
             local velocity = pLocal:EstimateAbsVelocity()
             local oppositePoint
-            
+
             -- Calculate opposite point for movement
             if velocity:Length() > 10 then
                 oppositePoint = pLocal:GetAbsOrigin() - velocity
@@ -1490,7 +1499,7 @@ local function OnCreateMove(pCmd)
 
             -- Set up the attack and warp
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- Initiate attack
-            
+
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             local safeTickValue = math.min(weaponSmackDelay, 20)
             client.SetConVar("sv_maxusrcmdprocessticks", safeTickValue)
@@ -1503,9 +1512,10 @@ local function OnCreateMove(pCmd)
                 client.ChatPrintf("[Debug] Instant Attack: Warping with " .. chargedTicks .. " ticks")
             else
                 -- Not enough ticks for warp, but still do instant attack without warp
-                client.ChatPrintf("[Debug] Instant Attack: Not enough ticks (" .. chargedTicks .. "/" .. safeTickValue .. "), normal attack")
+                client.ChatPrintf("[Debug] Instant Attack: Not enough ticks (" ..
+                chargedTicks .. "/" .. safeTickValue .. "), normal attack")
             end
-            
+
             can_attack = false
         elseif Menu.Misc.InstantAttack and canInstantAttack and not Menu.Misc.WarpOnAttack then
             -- Instant attack enabled but warp disabled - just do normal attack
@@ -1554,21 +1564,11 @@ local function OnCreateMove(pCmd)
 
             -- Execute charge exactly at the end of the swing animation (1 tick before the hit registers)
             if attackTickCount >= (weaponSmackDelay - 2) then
-                --client.ChatPrintf("[Debug] Executing charge at end of swing, tick: " .. attackTickCount)
-                -- Ensure we are facing stored aim direction before initiating charge
-                if chargeAimAngles then
-                    -- Apply instantly so movement vector aligns with shield charge
-                    engine.SetViewAngles(EulerAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0))
-                    pCmd:SetViewAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0)
-                end
-
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2) -- charge
-
+                -- Schedule aim then charge via state machine
+                chargeState = "aim" -- on this tick we aim; next tick we charge
                 -- Reset attack tracking
                 attackStarted = false
                 attackTickCount = 0
-                can_charge = false
-                chargeAimAngles = nil
             end
         end
 
@@ -1809,12 +1809,16 @@ draw.SetFont(Verdana)
 --[[ Code called every frame ]]                     --
 local function doDraw()
     if not (engine.Con_IsVisible() or engine.IsGameUIVisible()) and Menu.Visuals.EnableVisuals then
-        pLocal = entities.GetLocalPlayer()
-        pWeapon = pLocal:GetPropEntity("m_hActiveWeapon") -- Set "pWeapon" to the local player's active weapon
-        if Menu.Visuals.EnableVisuals or pWeapon:IsMeleeWeapon() and pLocal and pLocal:IsAlive() then
+        local drawPLocal = entities.GetLocalPlayer()
+        if not drawPLocal or not drawPLocal:IsAlive() then return end
+
+        local drawPWeapon = drawPLocal:GetPropEntity("m_hActiveWeapon")
+        if not drawPWeapon then return end
+
+        if Menu.Visuals.EnableVisuals and drawPWeapon:IsMeleeWeapon() then
             draw.Color(255, 255, 255, 255)
             local w, h = draw.GetScreenSize()
-            
+
             -- Display warp status when instant attack is enabled
             if Menu.Misc.InstantAttack then
                 -- Simple fallback approach using basic functions
@@ -1822,11 +1826,11 @@ local function doDraw()
                 local maxTicks = 24 -- Default max
                 local isWarping = warp and warp.IsWarping() or false
                 local canWarp = warp and warp.CanWarp() or false
-                
+
                 local warpText = string.format("Warp: %d/%d", charged, maxTicks)
                 local statusText = string.format("CanWarp: %s | Warping: %s", tostring(canWarp), tostring(isWarping))
                 local warpOnAttackText = string.format("WarpOnAttack: %s", tostring(Menu.Misc.WarpOnAttack))
-                
+
                 -- Set color based on status
                 if isWarping then
                     draw.Color(255, 100, 100, 255) -- Red when warping
@@ -1837,20 +1841,20 @@ local function doDraw()
                 else
                     draw.Color(255, 255, 255, 255) -- White when not ready
                 end
-                
+
                 draw.SetFont(Verdana)
                 local textW, textH = draw.GetTextSize(warpText)
                 draw.Text(w - textW - 10, 100, warpText)
-                
+
                 -- Additional status info
                 draw.Color(255, 255, 255, 255)
                 local statusW, statusH = draw.GetTextSize(statusText)
                 draw.Text(w - statusW - 10, 120, statusText)
-                
+
                 local warpOnAttackW, warpOnAttackH = draw.GetTextSize(warpOnAttackText)
                 draw.Text(w - warpOnAttackW - 10, 140, warpOnAttackText)
             end
-            
+
             draw.Color(255, 255, 255, 255) -- Reset color for other visuals
             if Menu.Visuals.Local.RangeCircle and pLocalFuture then
                 draw.Color(255, 255, 255, 255)
@@ -2416,10 +2420,13 @@ local function OnUnload()                                     -- Called when the
 end
 
 local function damageLogger(event)
+    UpdateServerCvars() -- Update cvars on event
     if (event:GetName() == 'player_hurt') then
         local victim = entities.GetByUserID(event:GetInt("userid"))
         local attacker = entities.GetByUserID(event:GetInt("attacker"))
-        if (attacker == nil or pLocal:GetName() ~= attacker:GetName()) then
+        local localPlayer = entities.GetLocalPlayer()
+
+        if (attacker == nil or not localPlayer or localPlayer:GetName() ~= attacker:GetName()) then
             return
         end
         local damage = event:GetInt("damageamount")
@@ -2446,5 +2453,3 @@ callbacks.Register("Unload", "MCT_Unload", OnUnload)             -- Register the
 callbacks.Register("Draw", "MCT_Draw", doDraw)                   -- Register the "Draw" callback
 --[[ Play sound when loaded ]]                                   --
 client.Command('play "ui/buttonclick"', true)                    -- Play the "buttonclick" sound when the script is loaded
-
-
