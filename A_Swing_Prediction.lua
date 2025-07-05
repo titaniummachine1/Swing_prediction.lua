@@ -691,13 +691,10 @@ local function GetBestTarget(me)
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
 
-    -- Variables to track best target among all players
-    local bestTarget = nil
-    local bestFactor = 0
+    -- Collect candidates
+    local normalCandidates = {} -- { {player=Entity, factor=number} }
 
-    -- Variables to track best target within melee range
-    local bestMeleeTarget = nil
-    local bestMeleeFactor = 0
+    local meleeCandidates = {}
 
     -- Range threshold - use TotalSwingRange plus a buffer of 50 units
     local meleeRangeThreshold = TotalSwingRange + 50
@@ -741,34 +738,45 @@ local function GetBestTarget(me)
         -- First priority: targets within melee range
         if distance <= meleeRangeThreshold then
             foundTargetInMeleeRange = true
-
-            -- For targets in melee range, mostly consider visibility and a bit of FOV
+            -- Base factor for melee targets
             local meleeFovFactor = Math.RemapValClamped(fov, 0, effectiveFOV, 1, 0.7)
-            local meleeFactor = meleeFovFactor * visibilityFactor
-
-            if meleeFactor > bestMeleeFactor then
-                bestMeleeTarget = player
-                bestMeleeFactor = meleeFactor
-            end
+            local factor = meleeFovFactor * visibilityFactor
+            table.insert(meleeCandidates, { player = player, factor = factor })
         elseif distance <= 770 then
-            -- For targets outside melee range but within max distance, use standard targeting
+            -- Standard targets
             local distanceFactor = Math.RemapValClamped(distance, settings.MinDistance, settings.MaxDistance, 1, 0.9)
             local fovFactor = Math.RemapValClamped(fov, 0, effectiveFOV, 1, 0.1)
-
             local factor = distanceFactor * fovFactor * visibilityFactor
-            if factor > bestFactor then
-                bestTarget = player
-                bestFactor = factor
-            end
+            table.insert(normalCandidates, { player = player, factor = factor })
         end
         ::continue::
     end
 
-    -- Return the best target in melee range if found, otherwise return best target by other factors
-    if foundTargetInMeleeRange and bestMeleeTarget then
-        return bestMeleeTarget
+    -- Helper: choose best from candidates, applying health weighting if multiple
+    local function chooseBest(cands)
+        if #cands == 0 then return nil end
+        -- If more than one, apply health weight
+        if #cands > 1 then
+            for _, c in ipairs(cands) do
+                local p = c.player
+                local hp = p:GetHealth() or 0
+                local maxhp = p:GetPropInt("m_iMaxHealth") or hp
+                local missing = (maxhp > 0) and ((maxhp - hp) / maxhp) or 0
+                c.factor = c.factor * (1 + missing)
+            end
+        end
+        -- Pick max
+        local best = cands[1]
+        for i = 2, #cands do
+            if cands[i].factor > best.factor then best = cands[i] end
+        end
+        return best.player
+    end
+
+    if foundTargetInMeleeRange then
+        return chooseBest(meleeCandidates)
     else
-        return bestTarget
+        return chooseBest(normalCandidates)
     end
 end
 
@@ -1419,11 +1427,14 @@ local function OnCreateMove(pCmd)
         end
 
         if Menu.Aimbot.ChargeBot and pLocal:InCond(17) and not can_attack then
-            local trace = engine.TraceHull(pLocalOrigin, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
+            local trace = engine.TraceHull(pLocalOrigin, InRangePoint or vPlayerFuture, vHitbox[1], vHitbox[2],
                 MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
-                aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
+                local aimPosTarget = InRangePoint or vPlayerFuture
+                if aimPosTarget then
+                    aim_angles = Math.PositionAngles(pLocalOrigin, aimPosTarget)
+                end
                 -- Limit yaw change to MAX_CHARGE_BOT_TURN per tick
                 local currentAng = engine.GetViewAngles()
                 local yawDiff = NormalizeYaw(aim_angles.yaw - currentAng.yaw)
@@ -1431,11 +1442,14 @@ local function OnCreateMove(pCmd)
                 engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
             end
         elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
-            local trace = engine.TraceHull(pLocalFuture, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
+            local trace = engine.TraceHull(pLocalFuture, InRangePoint or vPlayerFuture, vHitbox[1], vHitbox[2],
                 MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
-                aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
+                local aimPosTarget = InRangePoint or vPlayerFuture
+                if aimPosTarget then
+                    aim_angles = Math.PositionAngles(pLocalOrigin, aimPosTarget)
+                end
                 -- Limit yaw change to MAX_CHARGE_BOT_TURN per tick
                 local currentAng = engine.GetViewAngles()
                 local yawDiff = NormalizeYaw(aim_angles.yaw - currentAng.yaw)
