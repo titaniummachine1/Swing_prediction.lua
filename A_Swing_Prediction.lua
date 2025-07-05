@@ -58,8 +58,8 @@ local Menu = {
         Silent = true,
         AimbotFOV = 360,
         SwingTime = 13,
-        AlwaysUseMaxSwingTime = true, -- Default to always use max for best experience
-        MaxSwingTime = 13,            -- Starting value, will be updated based on weapon
+        AlwaysUseMaxSwingTime = false, -- Default to always use max for best experience
+        MaxSwingTime = 11,            -- Starting value, will be updated based on weapon
         ChargeBot = true,             -- Moved to Charge tab in UI but kept here for backward compatibility
     },
 
@@ -70,6 +70,7 @@ local Menu = {
         ChargeSensitivity = 1.0,
         ChargeReach = true,
         ChargeJump = true,
+        LateCharge = true,
     },
 
     -- Visuals settings
@@ -202,6 +203,8 @@ local function SafeInitMenu()
     -- Initialize other sections if needed
     Menu.Charge = Menu.Charge or {}
     Menu.Visuals = Menu.Visuals or {}
+    -- LateCharge default
+    Menu.Charge.LateCharge = Menu.Charge.LateCharge ~= nil and Menu.Charge.LateCharge or true
 end
 
 -- Call the initialization function to ensure no nil values
@@ -236,6 +239,20 @@ local can_charge = false
 local pLocalPath = {}
 local vPlayerPath = {}
 local drawVhitbox = {}
+
+-- Track swing ticks after +attack is sent
+local swingTickCounter = 0
+
+-- Helpers for charge-bot yaw clamping
+local function NormalizeYaw(y)
+    return ((y + 180) % 360) - 180
+end
+local function Clamp(val, min, max)
+    if val < min then return min
+    elseif val > max then return max end
+    return val
+end
+local MAX_CHARGE_BOT_TURN = 17
 
 -- Variables to track attack and charge state
 local attackStarted = false
@@ -903,8 +920,7 @@ local function ChargeControl(pCmd)
     end
 
     -- CRITICAL: Limit maximum turn per frame to 73.04 degrees
-    turnAmount = math.max(-CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME,
-        math.min(CHARGE_CONSTANTS.MAX_ROTATION_PER_FRAME, turnAmount))
+    turnAmount = Clamp(turnAmount, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
 
     -- Calculate new yaw angle
     local newYaw = currentAngles.yaw + turnAmount
@@ -1301,7 +1317,7 @@ local function OnCreateMove(pCmd)
 
         -- If charge-reach exploit is READY (full meter, demo, exploit enabled) but we're **not yet charging**,
         -- run a secondary prediction that simulates starting a charge right now.
-        local simulateCharge = (not isCurrentlyCharging) and isExploitReady
+        local simulateCharge = (not isCurrentlyCharging) and isExploitReady and (not Menu.Charge.LateCharge)
         local fixedAngles = nil
         if simulateCharge and CurrentTarget then
             -- Use current target's position to define intended charge heading for prediction
@@ -1408,8 +1424,11 @@ local function OnCreateMove(pCmd)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
                 aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
-                -- Set view angles based on the future position of the local player
-                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
+                -- Limit yaw change to MAX_CHARGE_BOT_TURN per tick
+                local currentAng = engine.GetViewAngles()
+                local yawDiff = NormalizeYaw(aim_angles.yaw - currentAng.yaw)
+                local limitedYaw = currentAng.yaw + Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+                engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
             end
         elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
             local trace = engine.TraceHull(pLocalFuture, UpdateHomingMissile(), vHitbox[1], vHitbox[2],
@@ -1417,8 +1436,11 @@ local function OnCreateMove(pCmd)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
                 aim_angles = Math.PositionAngles(pLocalOrigin, UpdateHomingMissile())
-                -- Set view angles based on the future position of the local player
-                engine.SetViewAngles(EulerAngles(engine.GetViewAngles().pitch, aim_angles.yaw, 0))
+                -- Limit yaw change to MAX_CHARGE_BOT_TURN per tick
+                local currentAng = engine.GetViewAngles()
+                local yawDiff = NormalizeYaw(aim_angles.yaw - currentAng.yaw)
+                local limitedYaw = currentAng.yaw + Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+                engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
             end
         elseif can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
             -- Use normal aimbot behavior regardless of charging state
@@ -2335,6 +2357,10 @@ local function doDraw()
             -- If the value changed, synchronize with the Misc setting
             if oldChargeReach ~= Menu.Charge.ChargeReach then
                 Menu.Misc.ChargeReach = Menu.Charge.ChargeReach
+            end
+            -- Late Charge option appears only if Charge Reach enabled
+            if Menu.Charge.ChargeReach then
+                Menu.Charge.LateCharge = ImMenu.Checkbox("Late Charge", Menu.Charge.LateCharge)
             end
             ImMenu.EndFrame()
 
