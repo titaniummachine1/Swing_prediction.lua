@@ -1079,25 +1079,6 @@ local function OnCreateMove(pCmd)
     can_attack = false
     can_charge = false
 
-    -- ===== Charge Reach State Machine (Demoman only) =====
-    if pLocal and pLocal:GetPropInt("m_iClass") == 4 then
-        if chargeState == "aim" then
-            if chargeAimAngles then
-                engine.SetViewAngles(EulerAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0))
-            end
-            chargeState = "charge" -- next tick will trigger charge
-        elseif chargeState == "charge" then
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)
-            chargeState = "idle"
-            chargeAimAngles = nil
-        end
-    else
-        -- Not Demoman: never drive charge reach state machine
-        chargeState = "idle"
-        chargeAimAngles = nil
-    end
-    -- =====================================
-    
     -- Get the local player entity
     pLocal = entities.GetLocalPlayer()
     if not pLocal or not pLocal:IsAlive() then
@@ -1115,6 +1096,25 @@ local function OnCreateMove(pCmd)
     -- Quick reference values used multiple times
     pLocalClass = pLocal:GetPropInt("m_iClass")
     chargeLeft  = pLocal:GetPropFloat("m_flChargeMeter")
+
+    -- ===== Charge Reach State Machine (Demoman only) =====
+    if pLocalClass == 4 then
+        if chargeState == "aim" then
+            if chargeAimAngles then
+                engine.SetViewAngles(EulerAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0))
+            end
+            chargeState = "charge" -- next tick will trigger charge
+        elseif chargeState == "charge" then
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)
+            chargeState = "idle"
+            chargeAimAngles = nil
+        end
+    else
+        -- Not Demoman: never drive charge reach state machine
+        chargeState = "idle"
+        chargeAimAngles = nil
+    end
+    -- =====================================
 
     -- Show notification if instant attack is enabled but dash key is not bound
     if Menu.Misc.InstantAttack and gui.GetValue("dash move key") == 0 and not dashKeyNotBoundNotified then
