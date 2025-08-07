@@ -59,8 +59,8 @@ local Menu = {
         AimbotFOV = 360,
         SwingTime = 13,
         AlwaysUseMaxSwingTime = false, -- Default to always use max for best experience
-        MaxSwingTime = 11,             -- Starting value, will be updated based on weapon
-        ChargeBot = true,              -- Moved to Charge tab in UI but kept here for backward compatibility
+        MaxSwingTime = 11,            -- Starting value, will be updated based on weapon
+        ChargeBot = true,             -- Moved to Charge tab in UI but kept here for backward compatibility
     },
 
     -- Charge settings (moved from mixed locations to a dedicated section)
@@ -222,7 +222,7 @@ local function SafeInitMenu()
     Menu.Aimbot.AimbotFOV = Menu.Aimbot.AimbotFOV or 360
     Menu.Aimbot.SwingTime = Menu.Aimbot.SwingTime or 13
     Menu.Aimbot.AlwaysUseMaxSwingTime = Menu.Aimbot.AlwaysUseMaxSwingTime ~= nil and Menu.Aimbot.AlwaysUseMaxSwingTime or
-        true
+    true
     Menu.Aimbot.MaxSwingTime = Menu.Aimbot.MaxSwingTime or 13
     Menu.Aimbot.ChargeBot = Menu.Aimbot.ChargeBot ~= nil and Menu.Aimbot.ChargeBot or true
 
@@ -244,9 +244,12 @@ SafeInitMenu()
 -- Entity-independent constants
 local swingrange = 48
 local TotalSwingRange = 48
+local SwingHullSize = 38
+local SwingHalfhullSize = SwingHullSize / 2
 local Charge_Range = 128
 local normalWeaponRange = 48
 local normalTotalSwingRange = 48
+local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local gravity = client.GetConVar("sv_gravity") or 800
 local stepSize = 18
 
@@ -276,11 +279,8 @@ local function NormalizeYaw(y)
     return ((y + 180) % 360) - 180
 end
 local function Clamp(val, min, max)
-    if val < min then
-        return min
-    elseif val > max then
-        return max
-    end
+    if val < min then return min
+    elseif val > max then return max end
     return val
 end
 local MAX_CHARGE_BOT_TURN = 17
@@ -339,7 +339,7 @@ local maxPositions = 4   -- Number of past positions to consider
 local function CalcStrafe()
     local autostrafe = gui.GetValue("Auto Strafe")
     local flags = entities.GetLocalPlayer():GetPropInt("m_fFlags")
-    local OnGround = flags & FL_ONGROUND == 1
+    local OnGround = (flags & FL_ONGROUND) ~= 0
 
     for idx, entity in pairs(players) do
         local entityIndex = entity:GetIndex()
@@ -360,7 +360,7 @@ local function CalcStrafe()
                 table.remove(pastPositions)
             end
 
-            if not onGround and autostrafe == 2 and #pastPositions >= maxPositions then
+            if not OnGround and autostrafe == 2 and #pastPositions >= maxPositions then
                 v = Vector3(0, 0, 0)
                 for i = 1, #pastPositions - 1 do
                     v = v + (pastPositions[i] - pastPositions[i + 1])
@@ -445,8 +445,9 @@ local function shouldHitEntityFun(entity, player, ignoreEntities)
     local pos = entity:GetAbsOrigin() + Vector3(0, 0, 1)
     local contents = engine.GetPointContents(pos)
     if contents ~= 0 then return true end
-    if entity:GetName() == player:GetName() then return false end             --ignore self
-    if entity:GetTeamNumber() ~= player:GetTeamNumber() then return false end --ignore teammates
+    if entity:GetName() == player:GetName() then return false end             -- ignore self
+    -- Ignore all players except world/props; we only need brushes for movement prediction
+    if entity:IsPlayer() then return false end
     return true
 end
 
@@ -550,8 +551,7 @@ local function PredictPlayer(player, t, d, simulateCharge, fixedAngles)
 
         --[[ Forward collision ]]
 
-        local mins, maxs = player:GetMins(), player:GetMaxs()
-        local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, mins, maxs, MASK_PLAYERSOLID,
+        local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID,
             shouldHitEntity)
         if wallTrace.fraction < 1 then
             -- We'll collide
@@ -575,7 +575,7 @@ local function PredictPlayer(player, t, d, simulateCharge, fixedAngles)
         if not onGround1 then downStep = Vector3() end
 
         -- Ground collision
-        local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, mins, maxs, MASK_PLAYERSOLID,
+        local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID,
             shouldHitEntity)
         if groundTrace.fraction < 1 then
             -- We'll hit the ground
@@ -626,9 +626,9 @@ local MIN_SPEED = 10                     -- Minimum speed to avoid jittery movem
 local MAX_SPEED = 650                    -- Maximum speed the player can move
 
 local MoveDir = Vector3(0, 0, 0)         -- Variable to store the movement direction
-local pLocal = entities.GetLocalPlayer() -- Variable to store the local player
+-- Using tick-scoped pLocal defined in OnCreateMove; avoid shadowing here
 
-local function NormalizeVector(vector)   --todo: remove this use vec/vec:Lenght()
+local function NormalizeVector(vector)
     local length = math.sqrt(vector.x * vector.x + vector.y * vector.y + vector.z * vector.z)
     if length == 0 then
         return Vector3(0, 0, 0)
@@ -813,10 +813,9 @@ local function GetBestTarget(me)
 end
 
 -- Function to check if target is in range
-local function checkInRange(targetPlayer, spherePos, sphereRadius)
-    local mins, maxs = targetPlayer:GetMins(), targetPlayer:GetMaxs()
-    local hitbox_min_trigger = targetPlayer:GetAbsOrigin() + mins
-    local hitbox_max_trigger = targetPlayer:GetAbsOrigin() + maxs
+local function checkInRange(targetPos, spherePos, sphereRadius)
+    local hitbox_min_trigger = targetPos + vHitbox[1]
+    local hitbox_max_trigger = targetPos + vHitbox[2]
 
     -- Calculate the closest point on the hitbox to the sphere
     local closestPoint = Vector3(
@@ -834,9 +833,9 @@ local function checkInRange(targetPlayer, spherePos, sphereRadius)
         local direction = Normalize(closestPoint - spherePos)
         local SwingtraceEnd = spherePos + direction * sphereRadius
 
-        if Menu.Misc.AdvancedHitreg then
+        if Menu.Misc.advancedHitreg then
             local trace = engine.TraceLine(spherePos, SwingtraceEnd, MASK_SHOT_HULL)
-            if trace.fraction < 1 and trace.entity == TargetEntity then
+            if trace.fraction < 1 and trace.entity == CurrentTarget then
                 return true, closestPoint
             else
                 local SwingHull = {
@@ -845,7 +844,7 @@ local function checkInRange(targetPlayer, spherePos, sphereRadius)
                         Vector3(SwingHalfhullSize, SwingHalfhullSize, SwingHalfhullSize)
                 }
                 trace = engine.TraceHull(spherePos, SwingtraceEnd, SwingHull.Min, SwingHull.Max, MASK_SHOT_HULL)
-                if trace.fraction < 1 and trace.entity == TargetEntity then
+                if trace.fraction < 1 and trace.entity == CurrentTarget then
                     return true, closestPoint
                 else
                     return false, nil
@@ -1015,12 +1014,12 @@ local function UpdateHomingMissile()
 end
 
 local hasNotified = false
-local function checkInRangeSimple(targetPlayer, swingRange, pWeapon, cmd)
+local function checkInRangeSimple(playerIndex, swingRange, pWeapon, cmd)
     local inRange = false
     local point = nil
 
     -- Simple range check with current positions
-    inRange, point = checkInRange(CurrentTarget, pLocalOrigin, swingRange)
+    inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
     if inRange then
         return inRange, point, false
     end
@@ -1033,7 +1032,7 @@ local function checkInRangeSimple(targetPlayer, swingRange, pWeapon, cmd)
     end
 
     -- Simple range check with predicted positions
-    inRange, point = checkInRange(CurrentTarget, pLocalFuture, swingRange)
+    inRange, point = checkInRange(vPlayerFuture, pLocalFuture, swingRange)
     if inRange then
         return inRange, point, false
     end
@@ -1092,7 +1091,7 @@ local function OnCreateMove(pCmd)
         chargeAimAngles = nil
     end
     -- =====================================
-
+    
     -- Get the local player entity
     pLocal = entities.GetLocalPlayer()
     if not pLocal or not pLocal:IsAlive() then
@@ -1189,9 +1188,7 @@ local function OnCreateMove(pCmd)
     --[-------- Get SwingRange --------]
     swingrange = pWeapon:GetSwingRange()
 
-    -- Derive SwingHullSize from local player's real hull
-    local mins, maxs = pLocal:GetMins(), pLocal:GetMaxs()
-    SwingHullSize = (maxs.x - mins.x) -- Use x dimension as primary hull size
+    SwingHullSize = 35.6
     SwingHalfhullSize = SwingHullSize / 2
 
     if pWeaponDef:GetName() == "The Disciplinary Action" then
@@ -1319,7 +1316,7 @@ local function OnCreateMove(pCmd)
     local strafeAngle = 0
     can_attack = false
     local stop = false
-    local OnGround = flags & FL_ONGROUND == 1
+    local OnGround = (flags & FL_ONGROUND) ~= 0
 
     --[[--------------Modular Charge-Jump (manual) -------------------]]
     if Menu.Misc.ChargeJump and pLocalClass == 4 then
@@ -1332,8 +1329,12 @@ local function OnCreateMove(pCmd)
     --[--------------Prediction-------------------]
     -- Predict both players' positions after swing
     gravity = client.GetConVar("sv_gravity")
-    stepSize = pLocal:GetPropFloat("m_flStepSize")
+    stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or stepSize
 
+    -- Ensure players list is populated before using in CalcStrafe
+    if not players then
+        players = entities.FindByClass("CTFPlayer")
+    end
     CalcStrafe()
 
     -- Local player prediction
@@ -1386,6 +1387,14 @@ local function OnCreateMove(pCmd)
 
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
 
+    local VpFlags = CurrentTarget:GetPropInt("m_fFlags")
+    local DUCKING = (VpFlags & FL_DUCKING) ~= 0
+    if DUCKING then
+        vHitbox[2].z = 62
+    else
+        vHitbox[2].z = 82
+    end
+
     -- Check if instant attack is ready (no dash-key dependency)
     local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
         warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
@@ -1415,28 +1424,26 @@ local function OnCreateMove(pCmd)
         vPlayerPath = predData.pos
         vPlayerFuture = predData.pos[simTicks]
 
-        local mins, maxs = CurrentTarget:GetMins(), CurrentTarget:GetMaxs()
-        drawVhitbox[1] = vPlayerFuture + mins
-        drawVhitbox[2] = vPlayerFuture + maxs
+        drawVhitbox[1] = vPlayerFuture + vHitbox[1]
+        drawVhitbox[2] = vPlayerFuture + vHitbox[2]
     else
         -- When using instant attack, enemy doesn't move (time is frozen for them)
         vPlayerFuture = CurrentTarget:GetAbsOrigin()
-        local mins, maxs = CurrentTarget:GetMins(), CurrentTarget:GetMaxs()
-        drawVhitbox[1] = vPlayerFuture + mins
-        drawVhitbox[2] = vPlayerFuture + maxs
+        drawVhitbox[1] = vPlayerFuture + vHitbox[1]
+        drawVhitbox[2] = vPlayerFuture + vHitbox[2]
     end
 
     --[--------------Distance check using TotalSwingRange-------------------]
     -- Get current distance between local player and closest player
-    vdistance = (vPlayerOrigin - pLocalOrigin):Length()
+    local vdistance = (vPlayerOrigin - pLocalOrigin):Length()
 
     -- Get distance between local player and closest player after swing
-    fDistance = (vPlayerFuture - pLocalFuture):Length()
+    local fDistance = (vPlayerFuture - pLocalFuture):Length()
     local inRange = false
     local inRangePoint = Vector3(0, 0, 0)
 
     -- Use TotalSwingRange for range checking (already calculated with charge reach logic)
-    inRange, InRangePoint, can_charge = checkInRangeSimple(CurrentTarget, TotalSwingRange, pWeapon, pCmd)
+    inRange, inRangePoint, can_charge = checkInRangeSimple(CurrentTarget:GetIndex(), TotalSwingRange, pWeapon, pCmd)
     -- Use inRange to decide if can attack
     can_attack = inRange
 
@@ -1446,8 +1453,8 @@ local function OnCreateMove(pCmd)
     -- Inside your game loop
     if Menu.Aimbot.Aimbot then
         local aim_angles
-        if InRangePoint then
-            aimpos = InRangePoint
+        if inRangePoint then
+            aimpos = inRangePoint
             aimposVis = aimpos -- transfer aim point to visuals
 
             -- Calculate aim position only once
@@ -1456,12 +1463,11 @@ local function OnCreateMove(pCmd)
         end
 
         if Menu.Aimbot.ChargeBot and pLocal:InCond(17) and not can_attack then
-            local mins, maxs = pLocal:GetMins(), pLocal:GetMaxs()
-            local trace = engine.TraceHull(pLocalOrigin, InRangePoint or vPlayerFuture, mins, maxs,
+            local trace = engine.TraceHull(pLocalOrigin, inRangePoint or vPlayerFuture, vHitbox[1], vHitbox[2],
                 MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
-                local aimPosTarget = InRangePoint or vPlayerFuture
+                local aimPosTarget = inRangePoint or vPlayerFuture
                 if aimPosTarget then
                     aim_angles = Math.PositionAngles(pLocalOrigin, aimPosTarget)
                 end
@@ -1472,12 +1478,11 @@ local function OnCreateMove(pCmd)
                 engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
             end
         elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
-            local mins, maxs = pLocal:GetMins(), pLocal:GetMaxs()
-            local trace = engine.TraceHull(pLocalFuture, InRangePoint or vPlayerFuture, mins, maxs,
+            local trace = engine.TraceHull(pLocalFuture, inRangePoint or vPlayerFuture, vHitbox[1], vHitbox[2],
                 MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
                 -- If the trace hit something, set the view angles to the position of the hit
-                local aimPosTarget = InRangePoint or vPlayerFuture
+                local aimPosTarget = inRangePoint or vPlayerFuture
                 if aimPosTarget then
                     aim_angles = Math.PositionAngles(pLocalOrigin, aimPosTarget)
                 end
@@ -1580,7 +1585,7 @@ local function OnCreateMove(pCmd)
             else
                 -- Not enough ticks for warp, but still do instant attack without warp
                 client.ChatPrintf("[Debug] Instant Attack: Not enough ticks (" ..
-                    chargedTicks .. "/" .. safeTickValue .. "), normal attack")
+                chargedTicks .. "/" .. safeTickValue .. "), normal attack")
             end
 
             can_attack = false
@@ -1604,8 +1609,8 @@ local function OnCreateMove(pCmd)
                 attackStarted = true
                 attackTickCount = 0
                 -- Store aim direction to target future position so charge travels correctly
-                if InRangePoint then
-                    chargeAimAngles = Math.PositionAngles(pLocalOrigin, InRangePoint)
+                if inRangePoint then
+                    chargeAimAngles = Math.PositionAngles(pLocalOrigin, inRangePoint)
                 else
                     chargeAimAngles = Math.PositionAngles(pLocalOrigin, vPlayerFuture)
                 end
@@ -1643,6 +1648,7 @@ local function OnCreateMove(pCmd)
     end
 
     -- Update last variables
+    vHitbox[2].z = 82
     ::continue::
 end
 
@@ -1808,27 +1814,27 @@ local bindTimer = 0
 local bindDelay = 0.25 -- Delay of 0.25 seconds
 
 local function handleKeybind(noKeyText, keybind, keybindName)
-    if KeybindName ~= "Press The Key" and ImMenu.Button(KeybindName or noKeyText) then
+    if keybindName ~= "Press The Key" and ImMenu.Button(keybindName or noKeyText) then
         bindTimer = os.clock() + bindDelay
-        KeybindName = "Press The Key"
-    elseif KeybindName == "Press The Key" then
+        keybindName = "Press The Key"
+    elseif keybindName == "Press The Key" then
         ImMenu.Text("Press the key")
     end
 
-    if KeybindName == "Press The Key" then
+    if keybindName == "Press The Key" then
         if os.clock() >= bindTimer then
             local pressedKey = GetPressedkey()
             if pressedKey then
                 if pressedKey == KEY_ESCAPE then
                     -- Reset keybind if the Escape key is pressed
                     keybind = 0
-                    KeybindName = "Always On"
-                    Notify.Simple("Keybind Success", "Bound Key: " .. KeybindName, 2)
+                    keybindName = "Always On"
+                    Notify.Simple("Keybind Success", "Bound Key: " .. keybindName, 2)
                 else
                     -- Update keybind with the pressed key
                     keybind = pressedKey
-                    KeybindName = Input.GetKeyName(pressedKey)
-                    Notify.Simple("Keybind Success", "Bound Key: " .. KeybindName, 2)
+                    keybindName = Input.GetKeyName(pressedKey)
+                    Notify.Simple("Keybind Success", "Bound Key: " .. keybindName, 2)
                 end
             end
         end
@@ -2077,8 +2083,8 @@ local function doDraw()
                     local segments = 32 -- Number of segments to draw the circle
                     local angleStep = (2 * math.pi) / segments
 
-                    -- Determine the color of the circle based on TargetPlayer
-                    local circleColor = TargetPlayer and { 0, 255, 0, 255 } or
+                    -- Determine the color of the circle based on CurrentTarget
+                    local circleColor = CurrentTarget and { 0, 255, 0, 255 } or
                         { 255, 255, 255, 255 } -- Green if TargetPlayer exists, otherwise white
 
                     -- Set the drawing color
@@ -2143,8 +2149,7 @@ local function doDraw()
                             local screenFinalPos = client.WorldToScreen(finalPos)
 
                             if screenFinalPos then
-                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1],
-                                    screenFinalPos[2])
+                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
                                 draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenFinalPos[1],
                                     screenFinalPos[2])
                             end
@@ -2323,11 +2328,9 @@ local function doDraw()
 
                                         if screenLeftBase and screenRightBase then
                                             if lastLeftBaseScreen and lastRightBaseScreen then
-                                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase
-                                                    [1],
+                                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1],
                                                     screenLeftBase[2])
-                                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2],
-                                                    screenRightBase[1],
+                                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1],
                                                     screenRightBase[2])
                                             end
 
@@ -2367,11 +2370,9 @@ local function doDraw()
 
                                         if screenLeftBase and screenRightBase then
                                             if lastLeftBaseScreen and lastRightBaseScreen then
-                                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase
-                                                    [1],
+                                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1],
                                                     screenLeftBase[2])
-                                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2],
-                                                    screenRightBase[1],
+                                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1],
                                                     screenRightBase[2])
                                             end
 
