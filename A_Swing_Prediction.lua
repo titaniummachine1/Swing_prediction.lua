@@ -1079,14 +1079,20 @@ local function OnCreateMove(pCmd)
     can_attack = false
     can_charge = false
 
-    -- ===== Charge Reach State Machine =====
-    if chargeState == "aim" then
-        if chargeAimAngles then
-            engine.SetViewAngles(EulerAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0))
+    -- ===== Charge Reach State Machine (Demoman only) =====
+    if pLocal and pLocal:GetPropInt("m_iClass") == 4 then
+        if chargeState == "aim" then
+            if chargeAimAngles then
+                engine.SetViewAngles(EulerAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0))
+            end
+            chargeState = "charge" -- next tick will trigger charge
+        elseif chargeState == "charge" then
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)
+            chargeState = "idle"
+            chargeAimAngles = nil
         end
-        chargeState = "charge" -- next tick will trigger charge
-    elseif chargeState == "charge" then
-        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)
+    else
+        -- Not Demoman: never drive charge reach state machine
         chargeState = "idle"
         chargeAimAngles = nil
     end
@@ -1462,7 +1468,8 @@ local function OnCreateMove(pCmd)
             aim_angles = aimpos
         end
 
-        if Menu.Aimbot.ChargeBot and pLocal:InCond(17) and not can_attack then
+        -- Charge-bot steering only relevant to Demoman shield charge (class 4)
+        if Menu.Aimbot.ChargeBot and pLocalClass == 4 and pLocal:InCond(17) and not can_attack then
             local trace = engine.TraceHull(pLocalOrigin, inRangePoint or vPlayerFuture, vHitbox[1], vHitbox[2],
                 MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
@@ -1477,7 +1484,7 @@ local function OnCreateMove(pCmd)
                 local limitedYaw = currentAng.yaw + Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
                 engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
             end
-        elseif Menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
+        elseif Menu.Aimbot.ChargeBot and pLocalClass == 4 and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
             local trace = engine.TraceHull(pLocalFuture, inRangePoint or vPlayerFuture, vHitbox[1], vHitbox[2],
                 MASK_PLAYERSOLID_BRUSHONLY)
             if trace.fraction == 1 or trace.entity == CurrentTarget then
