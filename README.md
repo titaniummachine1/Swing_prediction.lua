@@ -23,7 +23,7 @@ Click on the buttons below to download the requirements. V
 [![ImMenu](https://img.shields.io/badge/Download-ImMenu.lua_lnx00-blue?style=for-the-badge&logo=github)](https://github.com/lnx00/Lmaobox-ImMenu/blob/main/src/ImMenu.lua) and copy the `ImMenu.lua` file to your `%localappdata%` folder.
 
 ## Download
-[![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/A_Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/Swing_prediction.lua)
+[![Download Latest](https://img.shields.io/github/downloads/titaniummachine1/Swing_prediction.lua/total.svg?style=for-the-badge&logo=download&label=Download%20Latest)](https://github.com/titaniummachine1/Swing_prediction.lua/releases/latest/download/A_Swing_prediction.lua)
 
 https://github.com/titaniummachine1/Swing_prediction.lua/assets/78664175/f76d8545-6d1f-40dd-9d56-95b7dbd05b71
 
