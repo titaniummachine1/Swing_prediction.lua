@@ -1,3 +1,4 @@
+-- File: src\Main.lua
 --[[ Swing prediction for  Lmaobox  ]] --
 --[[          --Authors--           ]] --
 --[[           Terminator           ]] --
@@ -17,12 +18,637 @@ local lnxLib = require("lnxlib")
 local ImMenu = require("immenu")
 
 -- Import custom modules
-local Config = require("Config")
-local InputModule = require("Input")
-local MathUtils = require("MathUtils")
-local Prediction = require("Prediction")
-local Combat = require("Combat")
-local Constants = require("Constants")
+-- Including module: Config
+-- File: src\Config.lua
+--[[ Config module for Swing prediction ]]
+--
+--[[ Handles configuration loading and saving ]]
+--
+
+local Config = {}
+
+-- Build full path once from script name or supplied folder
+local function GetConfigPath(folder_name)
+    local Lua__fullPath = GetScriptName()
+    local Lua__fileName = Lua__fullPath:match("\\([^\\]-)$"):gsub("%.lua$", "")
+    folder_name = folder_name or string.format([[Lua %s]], Lua__fileName)
+    local _, fullPath = filesystem.CreateDirectory(folder_name)
+    local sep = package.config:sub(1, 1)
+    return fullPath .. sep .. "config.cfg"
+end
+
+-- Serialize a Lua table (simple, ordered by iteration)
+local function serializeTable(tbl, level)
+    level = level or 0
+    local indent = string.rep("    ", level)
+    local out = indent .. "{\n"
+    for k, v in pairs(tbl) do
+        local keyRepr = (type(k) == "string") and string.format('["%s"]', k) or string.format("[%s]", k)
+        out = out .. indent .. "    " .. keyRepr .. " = "
+        if type(v) == "table" then
+            out = out .. serializeTable(v, level + 1) .. ",\n"
+        elseif type(v) == "string" then
+            out = out .. string.format('"%s",\n', v)
+        else
+            out = out .. tostring(v) .. ",\n"
+        end
+    end
+    out = out .. indent .. "}"
+    return out
+end
+
+-- Shallow-key presence check (recurses into subtables)
+local function keysMatch(template, loaded)
+    for k, v in pairs(template) do
+        if loaded[k] == nil then
+            return false
+        end
+        if type(v) == "table" and type(loaded[k]) == "table" then
+            if not keysMatch(v, loaded[k]) then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+-- Save current (or supplied) menu
+function Config.Save(folder_name, cfg)
+    cfg = cfg or {}
+    local path = GetConfigPath(folder_name)
+    local f = io.open(path, "w")
+    if not f then
+        printc(255, 0, 0, 255, "[Config] Failed to write: " .. path)
+        return
+    end
+    f:write(serializeTable(cfg))
+    f:close()
+    printc(100, 183, 0, 255, "[Config] Saved: " .. path)
+end
+
+-- Load config; regenerate if invalid/outdated/SHIFT bypass
+function Config.Load(folder_name, default_config)
+    local path = GetConfigPath(folder_name)
+    local f = io.open(path, "r")
+    if not f then
+        -- First run – make directory & default cfg
+        Config.Save(folder_name, default_config)
+        return default_config
+    end
+    local content = f:read("*a")
+    f:close()
+
+    local chunk, err = load("return " .. content)
+    if not chunk then
+        print("[Config] Compile error, regenerating: " .. tostring(err))
+        Config.Save(folder_name, default_config)
+        return default_config
+    end
+
+    local ok, cfg = pcall(chunk)
+    if not ok or type(cfg) ~= "table" or not keysMatch(default_config, cfg) or input.IsButtonDown(KEY_LSHIFT) then
+        print("[Config] Invalid or outdated cfg – regenerating …")
+        Config.Save(folder_name, default_config)
+        return default_config
+    end
+
+    printc(0, 255, 140, 255, "[Config] Loaded: " .. path)
+    return cfg
+end
+
+return Config
+
+
+local Config = Config
+-- Including module: Input
+-- File: src\Input.lua
+--[[ Input module for Swing prediction ]]
+--
+--[[ Handles key detection and input utilities ]]
+--
+
+local lnxLib = require("lnxlib")
+local Input = lnxLib.Utils.Input
+
+local InputModule = {}
+
+-- Get pressed key with fallback to standard mouse buttons
+function InputModule.GetPressedKey()
+    local pressedKey = Input.GetPressedKey()
+    if not pressedKey then
+        -- Check for standard mouse buttons
+        if input.IsButtonDown(MOUSE_LEFT) then
+            return MOUSE_LEFT
+        end
+        if input.IsButtonDown(MOUSE_RIGHT) then
+            return MOUSE_RIGHT
+        end
+        if input.IsButtonDown(MOUSE_MIDDLE) then
+            return MOUSE_MIDDLE
+        end
+
+        -- Check for additional mouse buttons
+        for i = 1, 10 do
+            if input.IsButtonDown(MOUSE_FIRST + i - 1) then
+                return MOUSE_FIRST + i - 1
+            end
+        end
+    end
+    return pressedKey
+end
+
+return InputModule
+
+
+local InputModule = Input
+-- Including module: MathUtils
+-- File: src\MathUtils.lua
+--[[ MathUtils module for Swing prediction ]]
+--
+--[[ Common mathematical functions and utilities ]]
+--
+
+local MathUtils = {}
+
+-- Normalize yaw to -180 to 180 range
+function MathUtils.NormalizeYaw(y)
+    return ((y + 180) % 360) - 180
+end
+
+-- Clamp value between min and max
+function MathUtils.Clamp(val, min, max)
+    if val < min then
+        return min
+    elseif val > max then
+        return max
+    end
+    return val
+end
+
+return MathUtils
+
+
+local MathUtils = MathUtils
+-- Including module: Prediction
+-- File: src\Prediction.lua
+--[[ Prediction module for Swing prediction ]]
+--
+--[[ Handles player movement prediction logic ]]
+--
+
+local lnxLib = require("lnxlib")
+local Math = lnxLib.Utils.Math
+-- Including module: MathUtils
+local MathUtils = MathUtils
+
+local Prediction = {}
+
+-- Game constants
+local CLASS_MAX_SPEEDS = {
+    [1] = 400, -- Scout
+    [2] = 300, -- Sniper
+    [3] = 240, -- Soldier
+    [4] = 280, -- Demoman
+    [5] = 320, -- Medic
+    [6] = 240, -- Heavy
+    [7] = 300, -- Pyro
+    [8] = 280, -- Spy
+    [9] = 240, -- Engineer
+}
+
+-- Helper function to determine if we should hit an entity
+local function shouldHitEntityFun(entity, player, ignoreEntities)
+    if entity == player then
+        return false
+    end
+    if not entity or not entity:IsValid() then
+        return false
+    end
+
+    for _, className in ipairs(ignoreEntities) do
+        if entity:GetClass() == className then
+            return false
+        end
+    end
+
+    return true
+end
+
+-- Main prediction function
+function Prediction.PredictPlayer(player, t, d, simulateCharge, fixedAngles, Menu, lastAttackTick, vHitbox)
+    local gravity = client.GetConVar("sv_gravity") or 800
+    local stepSize = 18
+    if not gravity or not stepSize then
+        return nil
+    end
+
+    local vUp = Vector3(0, 0, 1)
+    local vStep = Vector3(0, 0, stepSize)
+    local ignoreEntities = { "CTFAmmoPack", "CTFDroppedWeapon" }
+    local pLocal = entities.GetLocalPlayer()
+    if not pLocal then
+        return nil
+    end
+    local shouldHitEntity = function(entity)
+        return shouldHitEntityFun(entity, player, ignoreEntities)
+    end
+
+    -- Get player class for speed capping
+    local playerClass = player:GetPropInt("m_iClass")
+    local maxSpeed = CLASS_MAX_SPEEDS[playerClass] or 240
+
+    -- Check if this is charge reach exploit simulation
+    local isChargeReachExploit = Menu.Misc.ChargeReach
+        and player == pLocal
+        and ((globals.TickCount() - lastAttackTick) <= 13)
+        and player:InCond(17)
+
+    -- Add the current record
+    local _out = {
+        pos = { [0] = player:GetAbsOrigin() },
+        vel = { [0] = player:EstimateAbsVelocity() },
+        onGround = { [0] = player:IsOnGround() },
+    }
+
+    -- Perform the prediction
+    for i = 1, t do
+        local lastP, lastV, lastG = _out.pos[i - 1], _out.vel[i - 1], _out.onGround[i - 1]
+
+        local pos = lastP + lastV * globals.TickInterval()
+        local vel = lastV
+        local onGround1 = lastG
+
+        -- Apply deviation requested by strafe predictor
+        if d then
+            local ang = vel:Angles()
+            ang.y = ang.y + d
+            vel = ang:Forward() * vel:Length()
+        end
+
+        -- Charge-reach simulation: add forward acceleration each tick
+        if simulateCharge then
+            local useAngles = fixedAngles or engine.GetViewAngles()
+            local forward = useAngles:Forward()
+            forward.z = 0 -- ignore vertical component
+            forward = MathUtils.Normalize(forward)
+
+            -- If we are currently moving "backwards" (dot < 0) wipe horizontal vel
+            local horizontal = Vector3(vel.x, vel.y, 0)
+            if horizontal:Dot(forward) < 0 then
+                vel.x, vel.y = 0, 0
+            end
+
+            -- Add acceleration (750 uu/s) scaled by tick interval
+            vel = vel + forward * (750 * globals.TickInterval())
+        end
+
+        -- Apply speed capping logic
+        if onGround1 then
+            local shouldBypassSpeedCap = isChargeReachExploit or simulateCharge
+
+            if not shouldBypassSpeedCap then
+                local currentSpeed = vel:Length2D()
+                if currentSpeed > maxSpeed then
+                    local horizontalVel = Vector3(vel.x, vel.y, 0)
+                    if currentSpeed > 0 then
+                        horizontalVel = (horizontalVel / currentSpeed) * maxSpeed
+                    end
+                    vel = Vector3(horizontalVel.x, horizontalVel.y, vel.z)
+                end
+            end
+        end
+
+        -- Forward collision detection
+        local wallTrace =
+            engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+        if wallTrace.fraction < 1 then
+            local normal = wallTrace.plane
+            local angle = math.deg(math.acos(normal:Dot(vUp)))
+
+            if angle > 55 then
+                local dot = vel:Dot(normal)
+                vel = vel - normal * dot
+            end
+
+            pos = lastP + vel * globals.TickInterval()
+        end
+
+        -- Ground collision detection
+        local groundTrace =
+            engine.TraceHull(pos, pos - vStep * 2, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+        if groundTrace.fraction < 1 then
+            pos = groundTrace.endpos
+
+            if vel.z < 0 then
+                vel.z = 0
+            end
+
+            onGround1 = true
+        else
+            onGround1 = false
+            vel.z = vel.z - gravity * globals.TickInterval()
+        end
+
+        _out.pos[i] = pos
+        _out.vel[i] = vel
+        _out.onGround[i] = onGround1
+    end
+
+    return _out
+end
+
+return Prediction
+
+
+local Prediction = Prediction
+-- Including module: Combat
+-- File: src\Combat.lua
+--[[ Combat module for Swing prediction ]]
+--
+--[[ Handles attack and charge logic ]]
+--
+
+local lnxLib = require("lnxlib")
+local Math = lnxLib.Utils.Math
+-- Including module: MathUtils
+local MathUtils = MathUtils
+
+local Combat = {}
+
+-- Constants for charge movement
+local CHARGE_CONSTANTS = {
+    SIDE_MOVE_VALUE = 450, -- A/D key movement speed
+    MAX_TURN_RATE = 73.04, -- Maximum turn per frame in degrees
+    ACCELERATION = 750, -- Charge acceleration
+}
+
+-- Walk to position helper
+local function WalkTo(pCmd, pLocal, targetPos)
+    if not targetPos then
+        return
+    end
+
+    local currentPos = pLocal:GetAbsOrigin()
+    local direction = (targetPos - currentPos)
+    direction.z = 0 -- Keep horizontal movement only
+
+    if direction:Length() > 0 then
+        direction = MathUtils.Normalize(direction)
+        local angles = direction:Angles()
+
+        -- Set forward movement
+        pCmd.forwardmove = 450
+
+        -- Set view angles to face target
+        if not Menu.Aimbot.Silent then
+            engine.SetViewAngles(EulerAngles(angles.pitch, angles.yaw, 0))
+        else
+            pCmd:SetViewAngles(angles.pitch, angles.yaw, 0)
+        end
+    end
+end
+
+-- Handle charge bot turning logic
+function Combat.HandleChargeBot(pCmd, pLocal, aim_angles, Menu)
+    local MAX_CHARGE_BOT_TURN = 17
+
+    if not aim_angles or not aim_angles.pitch or not aim_angles.yaw then
+        return
+    end
+
+    local currentAngles = engine.GetViewAngles()
+    local yawDiff = MathUtils.NormalizeYaw(aim_angles.yaw - currentAngles.yaw)
+    local turnAmount = yawDiff
+
+    -- Apply side movement based on turning direction
+    if turnAmount > 0 then
+        -- Turning left, simulate pressing D (right strafe)
+        pCmd.sidemove = CHARGE_CONSTANTS.SIDE_MOVE_VALUE
+    else
+        -- Turning right, simulate pressing A (left strafe)
+        pCmd.sidemove = -CHARGE_CONSTANTS.SIDE_MOVE_VALUE
+    end
+
+    -- Limit maximum turn per frame
+    turnAmount = MathUtils.Clamp(turnAmount, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+
+    -- Calculate new yaw angle
+    local newYaw = currentAngles.yaw + turnAmount
+
+    -- Handle -180/180 degree boundary crossing
+    newYaw = newYaw % 360
+    if newYaw > 180 then
+        newYaw = newYaw - 360
+    elseif newYaw < -180 then
+        newYaw = newYaw + 360
+    end
+
+    -- Set the new view angles
+    if Menu.Aimbot.Silent then
+        pCmd:SetViewAngles(currentAngles.pitch, newYaw, 0)
+    else
+        engine.SetViewAngles(EulerAngles(currentAngles.pitch, newYaw, 0))
+    end
+end
+
+-- Handle instant attack with warp
+function Combat.HandleInstantAttack(pCmd, pLocal, weaponSmackDelay, Menu)
+    if not Menu.Misc.WarpOnAttack then
+        pCmd:SetButtons(pCmd:GetButtons() + IN_ATTACK)
+        return
+    end
+
+    local velocity = pLocal:EstimateAbsVelocity()
+    local oppositePoint
+
+    -- Calculate opposite point for movement
+    if velocity:Length() > 10 then
+        oppositePoint = pLocal:GetAbsOrigin() - velocity
+    else
+        local angles = engine.GetViewAngles()
+        local forward = angles:Forward()
+        oppositePoint = pLocal:GetAbsOrigin() + forward * 20
+    end
+
+    -- Move to opposite point for better warp positioning
+    if oppositePoint and (oppositePoint - pLocal:GetAbsOrigin()):Length() < 300 then
+        WalkTo(pCmd, pLocal, oppositePoint)
+    end
+
+    -- Set up the attack and warp
+    pCmd:SetButtons(pCmd:GetButtons() + IN_ATTACK)
+
+    client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
+    local safeTickValue = math.min(weaponSmackDelay, 20)
+    client.SetConVar("sv_maxusrcmdprocessticks", safeTickValue)
+
+    -- Trigger the warp
+    local chargedTicks = warp.GetChargedTicks() or 0
+    if chargedTicks >= safeTickValue then
+        warp.TriggerWarp(safeTickValue)
+        client.ChatPrintf("[Debug] Instant Attack: Warping with " .. chargedTicks .. " ticks")
+    else
+        client.ChatPrintf(
+            "[Debug] Instant Attack: Not enough ticks (" .. chargedTicks .. "/" .. safeTickValue .. "), normal attack"
+        )
+    end
+end
+
+-- Handle charge jump exploit
+function Combat.HandleChargeJump(pCmd, pLocal, targetPos, Menu)
+    if not Menu.Charge.ChargeJump then
+        return
+    end
+
+    -- Calculate jump trajectory
+    local currentPos = pLocal:GetAbsOrigin()
+    local direction = (targetPos - currentPos)
+    direction.z = 0 -- Keep horizontal for now
+
+    local distance = direction:Length()
+    if distance > 0 then
+        direction = MathUtils.Normalize(direction)
+
+        -- Add upward component for jump
+        direction.z = 0.5 -- Adjust jump angle
+        direction = MathUtils.Normalize(direction)
+
+        -- Set jump and forward movement
+        pCmd:SetButtons(pCmd:GetButtons() + IN_JUMP + IN_ATTACK)
+        pCmd.forwardmove = 450
+
+        -- Aim slightly upward for jump
+        local angles = direction:Angles()
+        if Menu.Aimbot.Silent then
+            pCmd:SetViewAngles(angles.pitch, angles.yaw, 0)
+        else
+            engine.SetViewAngles(EulerAngles(angles.pitch, angles.yaw, 0))
+        end
+    end
+end
+
+
+-- Update weapon swing time based on current weapon
+function Combat.UpdateWeaponSwingTime(Menu, pWeapon)
+    if not pWeapon or not pWeapon:GetWeaponData() then
+        return
+    end
+
+    local weaponData = pWeapon:GetWeaponData()
+    if not weaponData or not weaponData.smackDelay then
+        return
+    end
+
+    -- Convert smackDelay time to ticks (rounded up)
+    local weaponSmackDelay = math.floor(weaponData.smackDelay / globals.TickInterval())
+    weaponSmackDelay = math.max(weaponSmackDelay, 5) -- Ensure minimum viable value
+
+    -- Update the menu's SwingTime setting
+    if Menu.Aimbot.SwingTime ~= weaponSmackDelay then
+        local oldValue = Menu.Aimbot.SwingTime or 13
+
+        if Menu.Aimbot.AlwaysUseMaxSwingTime or oldValue >= (Menu.Aimbot.MaxSwingTime or 13) then
+            Menu.Aimbot.SwingTime = weaponSmackDelay
+        end
+
+        -- Update the maximum swing time value
+        Menu.Aimbot.MaxSwingTime = weaponSmackDelay
+
+        -- Get weapon name for notification
+        local pWeaponName = "Unknown"
+        pcall(function()
+            local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
+            local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
+            pWeaponName = pWeaponDef and pWeaponDef:GetName() or "Unknown"
+        end)
+
+        -- Display notification
+        local Notify = require("immenu").Notify or lnxLib.UI.Notify
+        Notify.Simple(
+            string.format(
+                "Updated SwingTime for %s:\n - Old value: %d ticks\n - New value: %d ticks\n - Actual delay: %.2f seconds",
+                pWeaponName,
+                oldValue,
+                Menu.Aimbot.SwingTime or weaponSmackDelay,
+                weaponData.smackDelay
+            )
+        )
+    end
+
+    return weaponSmackDelay
+end
+
+return Combat
+
+
+local Combat = Combat
+-- Including module: Constants
+-- File: src\Constants.lua
+--[[ Constants module for Swing prediction ]]
+--
+--[[ Game constants and definitions ]]
+--
+
+local Constants = {}
+
+-- Entity-independent constants
+Constants.SWING_RANGE = 48
+Constants.TOTAL_SWING_RANGE = 48
+Constants.SWING_HULL_SIZE = 38
+Constants.SWING_HALF_HULL_SIZE = Constants.SWING_HULL_SIZE / 2
+Constants.CHARGE_RANGE = 128
+Constants.NORMAL_WEAPON_RANGE = 48
+Constants.NORMAL_TOTAL_SWING_RANGE = 48
+Constants.STEP_SIZE = 18
+
+-- Hitbox dimensions
+Constants.V_HITBOX = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+
+-- Class maximum speeds
+Constants.CLASS_MAX_SPEEDS = {
+    [1] = 400, -- Scout
+    [2] = 300, -- Sniper
+    [3] = 240, -- Soldier
+    [4] = 280, -- Demoman
+    [5] = 320, -- Medic
+    [6] = 240, -- Heavy
+    [7] = 300, -- Pyro
+    [8] = 280, -- Spy
+    [9] = 240, -- Engineer
+}
+
+-- Charge movement constants
+Constants.CHARGE_CONSTANTS = {
+    SIDE_MOVE_VALUE = 450, -- A/D key movement speed
+    MAX_TURN_RATE = 73.04, -- Maximum turn per frame in degrees
+    ACCELERATION = 750, -- Charge acceleration
+}
+
+-- Trace masks
+Constants.MASK_SHOT_HULL = 1170801955
+Constants.MASK_PLAYERSOLID = 1179647935
+Constants.MASK_PLAYERSOLID_BRUSHONLY = 1179647935
+
+-- Input constants
+Constants.MOUSE_LEFT = 107
+Constants.MOUSE_RIGHT = 108
+Constants.MOUSE_MIDDLE = 109
+Constants.MOUSE_FIRST = 107
+Constants.KEY_SPACE = 32
+Constants.KEY_ESCAPE = 27
+
+-- Button constants
+Constants.IN_ATTACK = 1
+Constants.IN_ATTACK2 = 2
+Constants.IN_JUMP = 2
+
+-- Condition flags
+Constants.FL_DUCKING = 2
+
+return Constants
+
+
+local Constants = Constants
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
@@ -2455,3 +3081,5 @@ callbacks.Register("Unload", "MCT_Unload", OnUnload)             -- Register the
 callbacks.Register("Draw", "MCT_Draw", doDraw)                   -- Register the "Draw" callback
 --[[ Play sound when loaded ]]                                   --
 client.Command('play "ui/buttonclick"', true)                    -- Play the "buttonclick" sound when the script is loaded
+
+
