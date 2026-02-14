@@ -17,6 +17,9 @@ local ImMenu = require("immenu")
 local Config = require("Config")
 local InputModule = require("Input")
 local MathUtils = require("MathUtils")
+local Prediction = require("Prediction")
+local Combat = require("Combat")
+local Constants = require("Constants")
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
@@ -161,17 +164,17 @@ end
 -- Call the initialization function to ensure no nil values
 SafeInitMenu()
 
--- Entity-independent constants
-local swingrange = 48
-local TotalSwingRange = 48
-local SwingHullSize = 38
-local SwingHalfhullSize = SwingHullSize / 2
-local Charge_Range = 128
-local normalWeaponRange = 48
-local normalTotalSwingRange = 48
-local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+-- Entity-independent constants (using Constants module)
+local swingrange = Constants.SWING_RANGE
+local TotalSwingRange = Constants.TOTAL_SWING_RANGE
+local SwingHullSize = Constants.SWING_HULL_SIZE
+local SwingHalfhullSize = Constants.SWING_HALF_HULL_SIZE
+local Charge_Range = Constants.CHARGE_RANGE
+local normalWeaponRange = Constants.NORMAL_WEAPON_RANGE
+local normalTotalSwingRange = Constants.NORMAL_TOTAL_SWING_RANGE
+local vHitbox = Constants.V_HITBOX
 local gravity = client.GetConVar("sv_gravity") or 800
-local stepSize = 18
+local stepSize = Constants.STEP_SIZE
 
 -- Function to update server cvars only on events
 local function UpdateServerCvars()
@@ -1286,7 +1289,7 @@ local function OnCreateMove(pCmd)
             fixedAngles = Math.PositionAngles(pLocalOrigin, CurrentTarget:GetAbsOrigin())
         end
 
-        local predData = PredictPlayer(player, simTicks, strafeAngle, simulateCharge, fixedAngles)
+        local predData = Prediction.PredictPlayer(player, simTicks, strafeAngle, simulateCharge, fixedAngles, Menu, lastAttackTick, vHitbox)
         if not predData then return end
 
         pLocalPath = predData.pos
@@ -1426,7 +1429,7 @@ local function OnCreateMove(pCmd)
     -- Only try instant attack when it's possible
     if can_attack then
         -- Get the actual weapon smack delay if available
-        local weaponSmackDelay = 13 -- Default fallback value
+        local weaponSmackDelay = Combat.UpdateWeaponSwingTime(Menu, pWeapon)
         if pWeapon and pWeapon:GetWeaponData() then
             local weaponData = pWeapon:GetWeaponData()
             if weaponData and weaponData.smackDelay then
@@ -2406,6 +2409,9 @@ local function doDraw()
         end
     end
 end
+
+
+print("XD")
 
 --[[ Remove the menu when unloaded ]]                         --
 local function OnUnload()                                     -- Called when the script is unloaded

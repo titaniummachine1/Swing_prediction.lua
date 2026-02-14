@@ -1,5 +1,7 @@
---[[ Config module for Swing prediction ]]--
---[[ Handles configuration loading and saving ]]--
+--[[ Config module for Swing prediction ]]
+--
+--[[ Handles configuration loading and saving ]]
+--
 
 local Config = {}
 
@@ -19,12 +21,12 @@ local function serializeTable(tbl, level)
     local indent = string.rep("    ", level)
     local out = indent .. "{\n"
     for k, v in pairs(tbl) do
-        local keyRepr = (type(k) == "string") and string.format("[\"%s\"]", k) or string.format("[%s]", k)
+        local keyRepr = (type(k) == "string") and string.format('["%s"]', k) or string.format("[%s]", k)
         out = out .. indent .. "    " .. keyRepr .. " = "
         if type(v) == "table" then
             out = out .. serializeTable(v, level + 1) .. ",\n"
         elseif type(v) == "string" then
-            out = out .. string.format("\"%s\",\n", v)
+            out = out .. string.format('"%s",\n', v)
         else
             out = out .. tostring(v) .. ",\n"
         end
@@ -36,9 +38,13 @@ end
 -- Shallow-key presence check (recurses into subtables)
 local function keysMatch(template, loaded)
     for k, v in pairs(template) do
-        if loaded[k] == nil then return false end
+        if loaded[k] == nil then
+            return false
+        end
         if type(v) == "table" and type(loaded[k]) == "table" then
-            if not keysMatch(v, loaded[k]) then return false end
+            if not keysMatch(v, loaded[k]) then
+                return false
+            end
         end
     end
     return true

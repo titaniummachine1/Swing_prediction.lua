@@ -1,5 +1,7 @@
---[[ MathUtils module for Swing prediction ]]--
---[[ Common mathematical functions and utilities ]]--
+--[[ MathUtils module for Swing prediction ]]
+--
+--[[ Common mathematical functions and utilities ]]
+--
 
 local MathUtils = {}
 
@@ -10,8 +12,11 @@ end
 
 -- Clamp value between min and max
 function MathUtils.Clamp(val, min, max)
-    if val < min then return min
-    elseif val > max then return max end
+    if val < min then
+        return min
+    elseif val > max then
+        return max
+    end
     return val
 end
 

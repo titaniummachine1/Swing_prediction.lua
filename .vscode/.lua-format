@@ -18,4 +18,3 @@ chop_down_kv_table: true
 table_sep: ","
 extra_sep_at_table_end: false
 column_table_limit: 120
-

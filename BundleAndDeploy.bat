@@ -24,10 +24,6 @@ set "BUILD_DIR=%SCRIPT_DIR%build"
 rem Ensure build directory exists
 if not exist "%BUILD_DIR%\" mkdir "%BUILD_DIR%"
 
-rem Run MCP bundler on src folder
-echo [BundleAndDeploy] Running MCP bundle on src folder...
-rem The MCP tool will handle bundling from src to build and deploy to lua folder
-
 rem Determine actual output file name from title.txt or default
 set "OUTFILE=Swing_prediction.lua"
 if exist "%SCRIPT_DIR%%TITLEFILE%" (
@@ -37,6 +33,14 @@ if "%OUTFILE%"=="" set "OUTFILE=Swing_prediction.lua"
 
 set "BUNDLE_PATH=%BUILD_DIR%\%OUTFILE%"
 set "DEPLOY_PATH=%DEPLOY_DIR%\%OUTFILE%"
+
+rem Run luabundler on src folder
+echo [BundleAndDeploy] Running luabundler on src folder...
+luabundler bundle "src/Main.lua" -p "src/?.lua" -p "?.lua" -o "%BUNDLE_PATH%"
+if errorlevel 1 (
+  echo [BundleAndDeploy] Luabundler failed. Ensure luabundler is installed and in PATH.
+  exit /b 1
+)
 
 rem Wait for bundle to be created
 set "_BUNDLE_READY="
