@@ -1,3 +1,46 @@
+local __bundle_require, __bundle_loaded, __bundle_register, __bundle_modules = (function(superRequire)
+	local loadingPlaceholder = {[{}] = true}
+
+	local register
+	local modules = {}
+
+	local require
+	local loaded = {}
+
+	register = function(name, body)
+		if not modules[name] then
+			modules[name] = body
+		end
+	end
+
+	require = function(name)
+		local loadedModule = loaded[name]
+
+		if loadedModule then
+			if loadedModule == loadingPlaceholder then
+				return nil
+			end
+		else
+			if not modules[name] then
+				if not superRequire then
+					local identifier = type(name) == 'string' and '\"' .. name .. '\"' or tostring(name)
+					error('Tried to require ' .. identifier .. ', but no such module has been registered')
+				else
+					return superRequire(name)
+				end
+			end
+
+			loaded[name] = loadingPlaceholder
+			loadedModule = modules[name](require, loaded, register, modules)
+			loaded[name] = loadedModule
+		end
+
+		return loadedModule
+	end
+
+	return require, loaded, register, modules
+end)(require)
+__bundle_register("__root", function(require, _LOADED, __bundle_register, __bundle_modules)
 --[[ Swing prediction for  Lmaobox  ]] --
 --[[          --Authors--           ]] --
 --[[           Terminator           ]] --
@@ -13,6 +56,11 @@ end
 local lnxLib = require("lnxlib")
 local ImMenu = require("immenu")
 
+-- Import custom modules
+local Config = require("Config")
+local InputModule = require("Input")
+local MathUtils = require("MathUtils")
+
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
 local Helpers = lnxLib.TF2.Helpers
@@ -22,19 +70,7 @@ local Input = lnxLib.Utils.Input
 local Notify = lnxLib.UI.Notify
 
 local function GetPressedkey()
-    local pressedKey = Input.GetPressedKey()
-    if not pressedKey then
-        -- Check for standard mouse buttons
-        if input.IsButtonDown(MOUSE_LEFT) then return MOUSE_LEFT end
-        if input.IsButtonDown(MOUSE_RIGHT) then return MOUSE_RIGHT end
-        if input.IsButtonDown(MOUSE_MIDDLE) then return MOUSE_MIDDLE end
-
-        -- Check for additional mouse buttons
-        for i = 1, 10 do
-            if input.IsButtonDown(MOUSE_FIRST + i - 1) then return MOUSE_FIRST + i - 1 end
-        end
-    end
-    return pressedKey
+    return InputModule.GetPressedKey()
 end
 
 --[[menu:AddComponent(MenuLib.Button("Debug", function() -- Disable Weapon Sway (Executes commands)
@@ -120,93 +156,9 @@ local Menu = {
 local Lua__fullPath = GetScriptName()
 local Lua__fileName = Lua__fullPath:match("\\([^\\]-)$"):gsub("%.lua$", "")
 
--- Config helpers rewrite -----------------------------------------------------------------
--- Build full path once from script name or supplied folder
-local function GetConfigPath(folder_name)
-    folder_name = folder_name or string.format([[Lua %s]], Lua__fileName)
-    local _, fullPath = filesystem.CreateDirectory(folder_name) -- succeeds even if already exists
-    local sep = package.config:sub(1, 1)
-    return fullPath .. sep .. "config.cfg"
-end
-
--- Serialize a Lua table (simple, ordered by iteration) ------------------------------------
-local function serializeTable(tbl, level)
-    level = level or 0
-    local indent = string.rep("    ", level)
-    local out = indent .. "{\n"
-    for k, v in pairs(tbl) do
-        local keyRepr = (type(k) == "string") and string.format("[\"%s\"]", k) or string.format("[%s]", k)
-        out = out .. indent .. "    " .. keyRepr .. " = "
-        if type(v) == "table" then
-            out = out .. serializeTable(v, level + 1) .. ",\n"
-        elseif type(v) == "string" then
-            out = out .. string.format("\"%s\",\n", v)
-        else
-            out = out .. tostring(v) .. ",\n"
-        end
-    end
-    out = out .. indent .. "}"
-    return out
-end
-
--- Shallow-key presence check (recurses into subtables) ------------------------------------
-local function keysMatch(template, loaded)
-    for k, v in pairs(template) do
-        if loaded[k] == nil then return false end
-        if type(v) == "table" and type(loaded[k]) == "table" then
-            if not keysMatch(v, loaded[k]) then return false end
-        end
-    end
-    return true
-end
-
--- Save current (or supplied) menu ---------------------------------------------------------
-local function CreateCFG(folder_name, cfg)
-    cfg = cfg or Menu
-    local path = GetConfigPath(folder_name)
-    local f = io.open(path, "w")
-    if not f then
-        printc(255, 0, 0, 255, "[Config] Failed to write: " .. path)
-        return
-    end
-    f:write(serializeTable(cfg))
-    f:close()
-    printc(100, 183, 0, 255, "[Config] Saved: " .. path)
-end
-
--- Load config; regenerate if invalid/outdated/SHIFT bypass ---------------------------------
-local function LoadCFG(folder_name)
-    local path = GetConfigPath(folder_name)
-    local f = io.open(path, "r")
-    if not f then
-        -- First run – make directory & default cfg
-        CreateCFG(folder_name, Menu)
-        return Menu
-    end
-    local content = f:read("*a")
-    f:close()
-
-    local chunk, err = load("return " .. content)
-    if not chunk then
-        print("[Config] Compile error, regenerating: " .. tostring(err))
-        CreateCFG(folder_name, Menu)
-        return Menu
-    end
-
-    local ok, cfg = pcall(chunk)
-    if not ok or type(cfg) ~= "table" or not keysMatch(Menu, cfg) or input.IsButtonDown(KEY_LSHIFT) then
-        print("[Config] Invalid or outdated cfg – regenerating …")
-        CreateCFG(folder_name, Menu)
-        return Menu
-    end
-
-    printc(0, 255, 140, 255, "[Config] Loaded: " .. path)
-    return cfg
-end
--- End of config helpers rewrite -----------------------------------------------------------
-
+-- Load config using Config module
 local status, loadedMenu = pcall(function()
-    return assert(LoadCFG(string.format([[Lua %s]], Lua__fileName)))
+    return assert(Config.Load(string.format([[Lua %s]], Lua__fileName), Menu))
 end) -- Auto-load config
 
 if status and loadedMenu then
@@ -226,16 +178,27 @@ local function SafeInitMenu()
     Menu.Aimbot.MaxSwingTime = Menu.Aimbot.MaxSwingTime or 13
     Menu.Aimbot.ChargeBot = Menu.Aimbot.ChargeBot ~= nil and Menu.Aimbot.ChargeBot or true
 
+    -- Initialize Charge settings
+    Menu.Charge = Menu.Charge or {}
+    Menu.Charge.ChargeBot = Menu.Charge.ChargeBot ~= nil and Menu.Charge.ChargeBot or false
+    Menu.Charge.ChargeControl = Menu.Charge.ChargeControl ~= nil and Menu.Charge.ChargeControl or false
+    Menu.Charge.ChargeSensitivity = Menu.Charge.ChargeSensitivity or 1.0
+    Menu.Charge.ChargeReach = Menu.Charge.ChargeReach ~= nil and Menu.Charge.ChargeReach or true
+    Menu.Charge.ChargeJump = Menu.Charge.ChargeJump ~= nil and Menu.Charge.ChargeJump or true
+    Menu.Charge.LateCharge = Menu.Charge.LateCharge ~= nil and Menu.Charge.LateCharge or true
+
     -- Initialize Misc settings
     Menu.Misc = Menu.Misc or {}
+    Menu.Misc.strafePred = Menu.Misc.strafePred ~= nil and Menu.Misc.strafePred or true
+    Menu.Misc.CritRefill = Menu.Misc.CritRefill or { Active = true, NumCrits = 1 }
+    Menu.Misc.CritMode = Menu.Misc.CritMode or 1
     Menu.Misc.InstantAttack = Menu.Misc.InstantAttack ~= nil and Menu.Misc.InstantAttack or false
     Menu.Misc.WarpOnAttack = Menu.Misc.WarpOnAttack ~= nil and Menu.Misc.WarpOnAttack or true
+    Menu.Misc.TroldierAssist = Menu.Misc.TroldierAssist ~= nil and Menu.Misc.TroldierAssist or false
+    Menu.Misc.advancedHitreg = Menu.Misc.advancedHitreg ~= nil and Menu.Misc.advancedHitreg or true
 
     -- Initialize other sections if needed
-    Menu.Charge = Menu.Charge or {}
     Menu.Visuals = Menu.Visuals or {}
-    -- LateCharge default
-    Menu.Charge.LateCharge = Menu.Charge.LateCharge ~= nil and Menu.Charge.LateCharge or true
 end
 
 -- Call the initialization function to ensure no nil values
@@ -274,15 +237,7 @@ local drawVhitbox = {}
 -- Track swing ticks after +attack is sent
 local swingTickCounter = 0
 
--- Helpers for charge-bot yaw clamping
-local function NormalizeYaw(y)
-    return ((y + 180) % 360) - 180
-end
-local function Clamp(val, min, max)
-    if val < min then return min
-    elseif val > max then return max end
-    return val
-end
+-- Helpers for charge-bot yaw clamping (using MathUtils module)
 local MAX_CHARGE_BOT_TURN = 17
 
 -- Variables to track attack and charge state
@@ -960,7 +915,7 @@ local function ChargeControl(pCmd)
     end
 
     -- CRITICAL: Limit maximum turn per frame to 73.04 degrees
-    turnAmount = Clamp(turnAmount, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+    turnAmount = MathUtils.Clamp(turnAmount, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
 
     -- Calculate new yaw angle
     local newYaw = currentAngles.yaw + turnAmount
@@ -1480,8 +1435,8 @@ local function OnCreateMove(pCmd)
                 end
                 -- Limit yaw change to MAX_CHARGE_BOT_TURN per tick
                 local currentAng = engine.GetViewAngles()
-                local yawDiff = NormalizeYaw(aim_angles.yaw - currentAng.yaw)
-                local limitedYaw = currentAng.yaw + Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+                local yawDiff = MathUtils.NormalizeYaw(aim_angles.yaw - currentAng.yaw)
+                local limitedYaw = currentAng.yaw + MathUtils.Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
                 engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
             end
         elseif Menu.Aimbot.ChargeBot and pLocalClass == 4 and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
@@ -1495,8 +1450,8 @@ local function OnCreateMove(pCmd)
                 end
                 -- Limit yaw change to MAX_CHARGE_BOT_TURN per tick
                 local currentAng = engine.GetViewAngles()
-                local yawDiff = NormalizeYaw(aim_angles.yaw - currentAng.yaw)
-                local limitedYaw = currentAng.yaw + Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+                local yawDiff = MathUtils.NormalizeYaw(aim_angles.yaw - currentAng.yaw)
+                local limitedYaw = currentAng.yaw + MathUtils.Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
                 engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
             end
         elseif can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
@@ -2498,7 +2453,7 @@ end
 --[[ Remove the menu when unloaded ]]                         --
 local function OnUnload()                                     -- Called when the script is unloaded
     UnloadLib()                                               --unloading lualib
-    CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
+    Config.Save(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
     client.Command('play "ui/buttonclickrelease"', true)      -- Play the "buttonclickrelease" sound
 end
 
@@ -2536,3 +2491,150 @@ callbacks.Register("Unload", "MCT_Unload", OnUnload)             -- Register the
 callbacks.Register("Draw", "MCT_Draw", doDraw)                   -- Register the "Draw" callback
 --[[ Play sound when loaded ]]                                   --
 client.Command('play "ui/buttonclick"', true)                    -- Play the "buttonclick" sound when the script is loaded
+
+end)
+__bundle_register("MathUtils", function(require, _LOADED, __bundle_register, __bundle_modules)
+--[[ MathUtils module for Swing prediction ]]--
+--[[ Common mathematical functions and utilities ]]--
+
+local MathUtils = {}
+
+-- Normalize yaw to -180 to 180 range
+function MathUtils.NormalizeYaw(y)
+    return ((y + 180) % 360) - 180
+end
+
+-- Clamp value between min and max
+function MathUtils.Clamp(val, min, max)
+    if val < min then return min
+    elseif val > max then return max end
+    return val
+end
+
+return MathUtils
+
+end)
+__bundle_register("Input", function(require, _LOADED, __bundle_register, __bundle_modules)
+--[[ Input module for Swing prediction ]]--
+--[[ Handles key detection and input utilities ]]--
+
+local lnxLib = require("lnxlib")
+local Input = lnxLib.Utils.Input
+
+local InputModule = {}
+
+-- Get pressed key with fallback to standard mouse buttons
+function InputModule.GetPressedKey()
+    local pressedKey = Input.GetPressedKey()
+    if not pressedKey then
+        -- Check for standard mouse buttons
+        if input.IsButtonDown(MOUSE_LEFT) then return MOUSE_LEFT end
+        if input.IsButtonDown(MOUSE_RIGHT) then return MOUSE_RIGHT end
+        if input.IsButtonDown(MOUSE_MIDDLE) then return MOUSE_MIDDLE end
+
+        -- Check for additional mouse buttons
+        for i = 1, 10 do
+            if input.IsButtonDown(MOUSE_FIRST + i - 1) then return MOUSE_FIRST + i - 1 end
+        end
+    end
+    return pressedKey
+end
+
+return InputModule
+
+end)
+__bundle_register("Config", function(require, _LOADED, __bundle_register, __bundle_modules)
+--[[ Config module for Swing prediction ]]--
+--[[ Handles configuration loading and saving ]]--
+
+local Config = {}
+
+-- Build full path once from script name or supplied folder
+local function GetConfigPath(folder_name)
+    local Lua__fullPath = GetScriptName()
+    local Lua__fileName = Lua__fullPath:match("\\([^\\]-)$"):gsub("%.lua$", "")
+    folder_name = folder_name or string.format([[Lua %s]], Lua__fileName)
+    local _, fullPath = filesystem.CreateDirectory(folder_name)
+    local sep = package.config:sub(1, 1)
+    return fullPath .. sep .. "config.cfg"
+end
+
+-- Serialize a Lua table (simple, ordered by iteration)
+local function serializeTable(tbl, level)
+    level = level or 0
+    local indent = string.rep("    ", level)
+    local out = indent .. "{\n"
+    for k, v in pairs(tbl) do
+        local keyRepr = (type(k) == "string") and string.format("[\"%s\"]", k) or string.format("[%s]", k)
+        out = out .. indent .. "    " .. keyRepr .. " = "
+        if type(v) == "table" then
+            out = out .. serializeTable(v, level + 1) .. ",\n"
+        elseif type(v) == "string" then
+            out = out .. string.format("\"%s\",\n", v)
+        else
+            out = out .. tostring(v) .. ",\n"
+        end
+    end
+    out = out .. indent .. "}"
+    return out
+end
+
+-- Shallow-key presence check (recurses into subtables)
+local function keysMatch(template, loaded)
+    for k, v in pairs(template) do
+        if loaded[k] == nil then return false end
+        if type(v) == "table" and type(loaded[k]) == "table" then
+            if not keysMatch(v, loaded[k]) then return false end
+        end
+    end
+    return true
+end
+
+-- Save current (or supplied) menu
+function Config.Save(folder_name, cfg)
+    cfg = cfg or {}
+    local path = GetConfigPath(folder_name)
+    local f = io.open(path, "w")
+    if not f then
+        printc(255, 0, 0, 255, "[Config] Failed to write: " .. path)
+        return
+    end
+    f:write(serializeTable(cfg))
+    f:close()
+    printc(100, 183, 0, 255, "[Config] Saved: " .. path)
+end
+
+-- Load config; regenerate if invalid/outdated/SHIFT bypass
+function Config.Load(folder_name, default_config)
+    local path = GetConfigPath(folder_name)
+    local f = io.open(path, "r")
+    if not f then
+        -- First run – make directory & default cfg
+        Config.Save(folder_name, default_config)
+        return default_config
+    end
+    local content = f:read("*a")
+    f:close()
+
+    local chunk, err = load("return " .. content)
+    if not chunk then
+        print("[Config] Compile error, regenerating: " .. tostring(err))
+        Config.Save(folder_name, default_config)
+        return default_config
+    end
+
+    local ok, cfg = pcall(chunk)
+    if not ok or type(cfg) ~= "table" or not keysMatch(default_config, cfg) or input.IsButtonDown(KEY_LSHIFT) then
+        print("[Config] Invalid or outdated cfg – regenerating …")
+        Config.Save(folder_name, default_config)
+        return default_config
+    end
+
+    printc(0, 255, 140, 255, "[Config] Loaded: " .. path)
+    return cfg
+end
+
+return Config
+
+end)
+return __bundle_require("__root")

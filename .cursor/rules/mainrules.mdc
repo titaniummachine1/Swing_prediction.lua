@@ -1,0 +1,138 @@
+---
+alwaysApply: true
+---
+
+## II. Code conventions
+
+1. ### **Module layout**
+
+   ```lua
+   -- Imports
+   local G = require("globals")  --[[ Imported by: Foo, Bar ]]
+
+   -- Module declaration
+   local PlayerAI = {}
+
+   -- Local constants / utilities --------
+
+   -- Private helpers --------------------
+
+   -- Public API -------------------------
+   function PlayerAI.Initialize() ... end
+
+   -- Self-init (optional) ---------------
+
+   -- Callbacks --------------------------
+
+   return PlayerAI
+   ```
+
+   _Never reorder these blocks._ Muscle memory lowers “code-scanning time.”
+
+2. ### **Naming**
+
+   - **Functions:** `verbNoun` → `processShot`, `reloadConfig`.
+   - **Booleans:** start with `is/has/should/can`.
+   - **Files:** `snake_case`.
+   - **No mystery vars** like `x`, `y`, `z`—unless you’re doing obvious geometry.
+
+3. ### **No anonymous functions**
+
+   Give every function a name; better stack traces and profiling.
+   _Only_ acceptable anonymous: a one-liner callback that never leaves the module.
+
+4. ### **`G` over `_G`**
+
+   Shared runtime data lives in `G.PlayerData`, `G.Database`, etc.
+   In `globals.lua`, comment which modules read each key.
+
+5. ### **Guard clauses everywhere**
+
+   ```lua
+   if not player:IsAlive()    then return end
+   if not hasPermission(user) then return end
+   -- happy path ↓
+   ```
+
+   Zero indentation staircases.
+
+6. ### **DRY—_but with brakes_**
+
+   - Copy-paste ≤ 2 times? **Wait.**
+   - ≥ 3 times _and_ the differences can be parameterized? Extract a function.
+   - If abstraction demands convoluted state-plumbing, scrap it; clarity wins.
+
+7. ### **File size warning**
+
+   When a file hits \~500 lines, split it. If you can’t see “the whole picture,” maintenance suffers.
+
+8. ### **Self-initializing modules**
+
+   A module decides whether it needs `Initialize()` on first `require()` or an explicit call. `Main.lua` is _not_ a staging area for setup gymnastics.
+
+9. ### **No `collectgarbage()`**
+
+   Leaks get fixed, not swept under the rug. GC-hammer is a band-aid.
+
+10. ### **Bit-flag checks done right**
+
+    ```lua
+    if (flags & FL_ONGROUND) ~= 0 then ...
+    ```
+
+    _No_ `bit.band`, _no_ `== 1`, _no_ magic numbers.
+    Better: API helpers like `player:IsOnGround()`.
+
+11. ### **Dependency loading**
+
+    - Internal files → plain `require`.
+    - Optional/external →
+
+      ```lua
+      local ok, lib = pcall(require, "foo")
+      if not ok then log("foo missing, degraded mode") end
+      ```
+
+12. ### **No “wet” test stubs in production**
+
+    Fake data only in test folders or behind config flags. Live game talks to the real world.
+
+13. ### **Touch only what’s asked**
+
+    Fix the bug or add the requested feature—no speculative refactors. Avoid ripple effects.
+
+14. ### **Comment conscious rule-breaks**
+
+    Duplicating 20 lines because DI would be a circus? Leave a one-liner _why_ so future-you doesn’t curse present-you.
+
+15. ### **Optimize on demand**
+
+    Profile → find 5 % hotspot in `Vector:Normalize()` → speed _that_ up.
+    Don’t assume “this will surely be slow” ahead of evidence.
+
+---
+
+## III. Workflow TL;DR
+
+1. **Pull → small change → in-game test → commit → push.**
+2. Feature branches live days, not weeks.
+3. Code review checks clarity first, numbers second.
+
+---
+
+## IV. Sanity checklist before PR
+
+| Question                                               | Yes ✅ / No ❌ |
+| ------------------------------------------------------ | -------------- |
+| Can you understand the function without hopping files? |                |
+| Are conditions one-liners _or_ named helpers?          |                |
+| Is this duplication actually painful now?              |                |
+| Can you point to a measured hotspot, not a guess?      |                |
+
+If any answer is “No,” fix it—or explain why in a comment.
+
+---
+
+if you do any debug script to run something for debuging always try dpoing it inline in terminal or at least ensure to remoe the script after you run it
+
+Break these rules and future-you will be the one debugging at 3 AM. Follow them and your Lua code stays sane, readable, and weaponized for rapid change.

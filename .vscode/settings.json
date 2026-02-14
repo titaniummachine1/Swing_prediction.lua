@@ -1,0 +1,41 @@
+{
+  "editor.formatOnSave": true,
+  "[lua]": {
+    "editor.defaultFormatter": "JohnnyMorganz.stylua",
+    "editor.formatOnSave": true
+  },
+  "stylua.searchParentDirectories": true,
+  "stylua.targetReleaseVersion": "latest",
+  "Lua.runtime.version": "Lua 5.5",
+  "Lua.workspace.library": ["${workspace}/types"],
+  "Lua.diagnostics.globals": [
+    "client",
+    "draw",
+    "engine",
+    "entities",
+    "globals",
+    "gui",
+    "input",
+    "render",
+    "warp",
+    "filesystem",
+    "callbacks",
+    "Lua__fileName",
+    "printc",
+    "KEY_NONE",
+    "KEY_LSHIFT",
+    "KEY_RSHIFT"
+  ],
+  "Lua.diagnostics.disable": ["unused-local", "unused-function"],
+  "emeraldwalk.runonsave": {
+    "commands": [
+      {
+        "match": "\\.lua$",
+        "isAsync": true,
+        "cmd": "cmd /c \"\"${workspaceFolder}\\BundleAndDeploy.bat\"\"",
+        "message": "Attempting to run default build task for ${fileBasename}...",
+        "autoShowOutputPanel": "error"
+      }
+    ]
+  }
+}
