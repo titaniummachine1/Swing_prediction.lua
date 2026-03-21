@@ -1,0 +1,7 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/lua-language-server/master/schemas/luarc.schema.json",
+  "Lua.runtime.version": "Lua 5.4.7",
+  "Lua.workspace.library": [
+    "C:/gitProjects/Lmaobox-Annotations/library"
+  ]
+}

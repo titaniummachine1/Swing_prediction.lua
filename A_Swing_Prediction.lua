@@ -236,6 +236,13 @@ local function SafeInitMenu()
     Menu.Visuals = Menu.Visuals or {}
     -- LateCharge default
     Menu.Charge.LateCharge = Menu.Charge.LateCharge ~= nil and Menu.Charge.LateCharge or true
+    Menu.Charge.ChargeReach = Menu.Charge.ChargeReach ~= nil and Menu.Charge.ChargeReach or true
+    Menu.Charge.ChargeControl = Menu.Charge.ChargeControl ~= nil and Menu.Charge.ChargeControl or false
+    Menu.Charge.ChargeJump = Menu.Charge.ChargeJump ~= nil and Menu.Charge.ChargeJump or true
+    -- Legacy keys: gameplay used Menu.Misc.* before Demoknight tab synced them
+    Menu.Misc.ChargeReach = Menu.Charge.ChargeReach
+    Menu.Misc.ChargeControl = Menu.Charge.ChargeControl
+    Menu.Misc.ChargeJump = Menu.Charge.ChargeJump
 end
 
 -- Call the initialization function to ensure no nil values
@@ -259,6 +266,41 @@ local function UpdateServerCvars()
 end
 
 UpdateServerCvars() -- Initialize on script load
+
+-- Weapon smack delay → ticks (matches C++ ceil(smackDelay / TICK_INTERVAL))
+local function smackDelayToTicks(smackDelaySeconds)
+    if not smackDelaySeconds or smackDelaySeconds <= 0 then
+        return math.max(Menu.Aimbot.MaxSwingTime or 13, 5)
+    end
+    return math.max(math.ceil(smackDelaySeconds / globals.TickInterval()), 5)
+end
+
+-- Remaining ticks until melee impact when windup is active (TF2 m_flSmackTime > 0)
+local function getMeleeSwingTicksRemaining(pWeapon)
+    if not pWeapon then return nil end
+    local ok, smackUntil = pcall(function()
+        return pWeapon:GetPropFloat("m_flSmackTime")
+    end)
+    if not ok or not smackUntil or smackUntil <= 0 then return nil end
+    local rem = smackUntil - globals.CurTime()
+    if rem <= 0 then return nil end
+    return math.max(math.ceil(rem / globals.TickInterval()), 1)
+end
+
+local function getOutgoingLatencyTicks()
+    local lat = 0
+    if clientstate and clientstate.GetLatencyOut then
+        lat = math.max(clientstate.GetLatencyOut(), 0)
+    end
+    return math.max(math.ceil(lat / globals.TickInterval()), 0)
+end
+
+-- Charge-reach IN_ATTACK2 window: max(out_latency_ticks + choke_margin, 2) — same shape as reference C++
+local function getChargeReachWindowTicks()
+    local choke = (clientstate and clientstate.GetChokedCommands and clientstate.GetChokedCommands()) or 0
+    choke = math.max(choke, 1)
+    return math.max(getOutgoingLatencyTicks() + choke, 2)
+end
 
 -- Per-tick variables (reset each tick)
 local isMelee = false
@@ -480,8 +522,9 @@ local function PredictPlayer(player, t, d, simulateCharge, fixedAngles)
 
     -- Check if this is charge reach exploit simulation
     -- Only consider charging flag when doing charge reach exploit, not regular charging toward enemies
-    local isChargeReachExploit = Menu.Misc.ChargeReach and player == pLocal and
-        ((globals.TickCount() - lastAttackTick) <= 13) and player:InCond(17)
+    local swingAttackWindowTicks = Menu.Aimbot.MaxSwingTime or 13
+    local isChargeReachExploit = Menu.Charge.ChargeReach and player == pLocal and
+        ((globals.TickCount() - lastAttackTick) <= swingAttackWindowTicks) and player:InCond(17)
 
     -- Add the current record
     local _out = {
@@ -906,7 +949,7 @@ local CONDITIONS = {
 -- Improved ChargeControl function that incorporates logic from Charge_controll.lua
 local function ChargeControl(pCmd)
     -- Check if charge control is enabled in the menu
-    if not Menu.Misc.ChargeControl then
+    if not Menu.Charge.ChargeControl then
         return
     end
 
@@ -1212,12 +1255,16 @@ local function OnCreateMove(pCmd)
     -- Simple charge reach logic
     local hasFullCharge = chargeLeft == 100
     local isDemoman = pLocalClass == 4
-    local isExploitReady = Menu.Misc.ChargeReach and hasFullCharge and isDemoman
-    local withinAttackWindow = (globals.TickCount() - lastAttackTick) <= 13
+    local isExploitReady = Menu.Charge.ChargeReach and hasFullCharge and isDemoman
+    local attackWindowTicks = Menu.Aimbot.MaxSwingTime or 13
+    if pWeaponData and pWeaponData.smackDelay then
+        attackWindowTicks = smackDelayToTicks(pWeaponData.smackDelay)
+    end
+    local withinAttackWindow = (globals.TickCount() - lastAttackTick) <= attackWindowTicks
 
     if isCurrentlyCharging then
-        -- When charging: check if we swung within last 13 ticks
-        local isDoingExploit = Menu.Misc.ChargeReach and withinAttackWindow
+        -- When charging: check if we swung within the current weapon's swing window
+        local isDoingExploit = Menu.Charge.ChargeReach and withinAttackWindow
 
         if isDoingExploit then
             -- Use charge reach range (128) + hull size for total range
@@ -1241,7 +1288,7 @@ local function OnCreateMove(pCmd)
     end
     --[--Manual charge control--]
 
-    if Menu.Misc.ChargeControl and pLocal:InCond(17) then
+    if Menu.Charge.ChargeControl and pLocal:InCond(17) then
         ChargeControl(pCmd)
     end
 
@@ -1325,7 +1372,7 @@ local function OnCreateMove(pCmd)
     local OnGround = (flags & FL_ONGROUND) ~= 0
 
     --[[--------------Modular Charge-Jump (manual) -------------------]]
-    if Menu.Misc.ChargeJump and pLocalClass == 4 then
+    if Menu.Charge.ChargeJump and pLocalClass == 4 then
         if (pCmd:GetButtons() & IN_ATTACK2) ~= 0 and chargeLeft == 100 and OnGround then
             -- Add jump along with existing charge command
             pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
@@ -1343,6 +1390,18 @@ local function OnCreateMove(pCmd)
     end
     CalcStrafe()
 
+    -- Shared swing lookahead: full ticks for warp / charge-start lookahead; shorter when mid windup (m_flSmackTime)
+    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
+        warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
+    local simulateCharge = (not isCurrentlyCharging) and isExploitReady and (not Menu.Charge.LateCharge)
+    local simTicks = Menu.Aimbot.SwingTime
+    if not instantAttackReady and not simulateCharge then
+        local remSwing = getMeleeSwingTicksRemaining(pWeapon)
+        if remSwing then
+            simTicks = math.max(remSwing, 1)
+        end
+    end
+
     -- Local player prediction
     if pLocal:EstimateAbsVelocity() == 0 then
         -- If the local player is not accelerating, set the predicted position to the current position
@@ -1351,23 +1410,12 @@ local function OnCreateMove(pCmd)
         -- Always predict local player movement regardless of instant attack state
         local player = WPlayer.FromEntity(pLocal)
 
-        -- Check if we're doing instant attack with warp
-        local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
-            warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
-
         -- Don't use strafe prediction when warping (time is frozen for us too)
         local useStrafePred = Menu.Misc.strafePred and not (instantAttackReady and Menu.Misc.WarpOnAttack)
         strafeAngle = useStrafePred and strafeAngles[pLocal:GetIndex()] or 0
 
-        -- Always use weapon-specific ticks for simulation with instant attack
-        local simTicks = Menu.Aimbot.SwingTime
-        if not instantAttackReady then
-            simTicks = Menu.Aimbot.SwingTime
-        end
-
         -- If charge-reach exploit is READY (full meter, demo, exploit enabled) but we're **not yet charging**,
         -- run a secondary prediction that simulates starting a charge right now.
-        local simulateCharge = (not isCurrentlyCharging) and isExploitReady and (not Menu.Charge.LateCharge)
         local fixedAngles = nil
         if simulateCharge and CurrentTarget then
             -- Use current target's position to define intended charge heading for prediction
@@ -1401,9 +1449,6 @@ local function OnCreateMove(pCmd)
         vHitbox[2].z = 82
     end
 
-    -- Check if instant attack is ready (no dash-key dependency)
-    local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
-        warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
     local canInstantAttack = instantAttackReady
 
     -- Debug output for instant attack status (only when instant attack is enabled)
@@ -1420,9 +1465,6 @@ local function OnCreateMove(pCmd)
         -- Only predict enemy movement when NOT using instant attack
         local player = WPlayer.FromEntity(CurrentTarget)
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
-
-        -- Default to Menu.Aimbot.SwingTime since we're not using instant attack
-        local simTicks = Menu.Aimbot.SwingTime
 
         local predData = PredictPlayer(player, simTicks, strafeAngle, false, nil)
         if not predData then return end
@@ -1518,10 +1560,7 @@ local function OnCreateMove(pCmd)
         if pWeapon and pWeapon:GetWeaponData() then
             local weaponData = pWeapon:GetWeaponData()
             if weaponData and weaponData.smackDelay then
-                -- Convert smackDelay time to ticks (rounded up to ensure we have enough time)
-                weaponSmackDelay = math.floor(weaponData.smackDelay / globals.TickInterval())
-                -- Ensure a minimum viable value
-                weaponSmackDelay = math.max(weaponSmackDelay, 5)
+                weaponSmackDelay = smackDelayToTicks(weaponData.smackDelay)
 
                 -- Update the menu's SwingTime setting to match the current weapon's properties
                 -- Only update if it's different to avoid constant updates
@@ -1599,20 +1638,20 @@ local function OnCreateMove(pCmd)
         elseif Menu.Misc.InstantAttack and canInstantAttack and not Menu.Misc.WarpOnAttack then
             -- Instant attack enabled but warp disabled - just do normal attack
             client.ChatPrintf("[Debug] Instant Attack: Warp disabled, using normal attack")
-            local normalAttackTicks = math.min(math.floor(weaponSmackDelay), 24)
+            local normalAttackTicks = math.min(weaponSmackDelay, 24)
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
             can_attack = false
         else
             -- Normal attack (instant attack disabled or not ready)
-            local normalAttackTicks = math.min(math.floor(weaponSmackDelay), 24)
+            local normalAttackTicks = math.min(weaponSmackDelay, 24)
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
 
             -- Start tracking attack ticks for charge reach exploit
-            if pLocalClass == 4 and Menu.Misc.ChargeReach and chargeLeft == 100 and not attackStarted then
+            if pLocalClass == 4 and Menu.Charge.ChargeReach and chargeLeft == 100 and not attackStarted then
                 attackStarted = true
                 attackTickCount = 0
                 -- Store aim direction to target future position so charge travels correctly
@@ -1631,18 +1670,28 @@ local function OnCreateMove(pCmd)
             attackTickCount = attackTickCount + 1
 
             -- Get weapon smack delay (when the weapon will hit)
-            local weaponSmackDelay = Menu.Aimbot.MaxSwingTime
-            if pWeapon and pWeapon:GetWeaponData() and pWeapon:GetWeaponData().smackDelay then
-                weaponSmackDelay = math.floor(pWeapon:GetWeaponData().smackDelay / globals.TickInterval())
+            local weaponSmackDelayTicks = Menu.Aimbot.MaxSwingTime or 13
+            local wd = pWeapon and pWeapon:GetWeaponData()
+            if wd and wd.smackDelay then
+                weaponSmackDelayTicks = smackDelayToTicks(wd.smackDelay)
             end
 
             -- If charge-jump enabled issue jump together with charge
-            if Menu.Misc.ChargeJump and OnGround then
+            if Menu.Charge.ChargeJump and OnGround then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
             end
 
-            -- Execute charge exactly at the end of the swing animation (1 tick before the hit registers)
-            if attackTickCount >= (weaponSmackDelay - 2) then
+            -- Fire +attack2 when within latency/choke window of impact (same idea as reference melee charge-reach)
+            local chargeWindow = getChargeReachWindowTicks()
+            local ticksToSmack = getMeleeSwingTicksRemaining(pWeapon)
+            local shouldTriggerCharge = false
+            if ticksToSmack then
+                shouldTriggerCharge = ticksToSmack <= chargeWindow
+            else
+                shouldTriggerCharge = attackTickCount >= math.max(weaponSmackDelayTicks - 2, 1)
+            end
+
+            if shouldTriggerCharge then
                 -- Schedule aim then charge via state machine
                 chargeState = "aim" -- on this tick we aim; next tick we charge
                 -- Reset attack tracking
@@ -2523,6 +2572,8 @@ local function damageLogger(event)
         end
     end
 end
+
+
 
 --[[ Unregister previous callbacks ]]                            --
 callbacks.Unregister("CreateMove", "MCT_CreateMove")             -- Unregister the "CreateMove" callback

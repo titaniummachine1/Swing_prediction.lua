@@ -1,0 +1,8 @@
+{
+  "name": "swing-prediction",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bundle-deploy": "node bundle-and-deploy.js"
+  }
+}
