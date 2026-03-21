@@ -206,9 +206,12 @@ local CLASS_MAX_SPEEDS = {
 }
 Simulation.CLASS_MAX_SPEEDS = CLASS_MAX_SPEEDS
 
+-- { swingRange, hullSize }
+-- TotalSwingRange displayed/used in targeting = swingRange + (hullSize / 2)
 local MELEE_TUNING_BY_DEFINDEX = {
-    -- Disciplinary Action
-    [447] = { 81.6, 55.8 },
+    [447] = { 81.6,  55.8  }, -- Disciplinary Action (Soldier)
+    [423] = { 128.0, 64.0  }, -- Saxxy — also used as VSH Saxton Hale proxy on community servers
+    [1071]= { 128.0, 64.0  }, -- Saxton Hale Fists (official VSH 2023 internal defindex if present)
 }
 
 function Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
@@ -232,18 +235,21 @@ function Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
     if weaponName then
         local lowerName = string.lower(weaponName)
 
-        if string.find(lowerName, "disciplinary action", 1, true) then
-            swingRange = 81.6
-            hullSize = 55.8
+        -- Disciplinary Action name-match as a fallback if defindex wasn't in the table.
+        if string.find(lowerName, "disciplinary", 1, true) then
+            swingRange = math.max(swingRange, 81.6)
+            hullSize   = math.max(hullSize,   55.8)
         end
 
-        -- VSH/custom bosses often use long-range melee names; widen safely.
-        if string.find(lowerName, "saxton", 1, true)
-            or string.find(lowerName, "hale", 1, true)
-            or string.find(lowerName, "vsh", 1, true)
-        then
-            swingRange = math.max(swingRange, 96.0)
-            hullSize = math.max(hullSize, 60.0)
+        -- VSH / custom boss: names like "saxton", "hale", "vsh", "saxxy".
+        -- These values match the defindex-table entries above.
+        local isVSH = string.find(lowerName, "saxton", 1, true)
+                   or string.find(lowerName, "hale",   1, true)
+                   or string.find(lowerName, "vsh",    1, true)
+                   or string.find(lowerName, "saxxy",  1, true)
+        if isVSH then
+            swingRange = math.max(swingRange, 128.0)
+            hullSize   = math.max(hullSize,    64.0)
         end
     end
 
