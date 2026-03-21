@@ -1214,26 +1214,17 @@ local function OnCreateMove(pCmd)
     end
 
     -- Local player prediction
+    -- For simulateCharge we need the target to compute aim yaw, so defer that branch.
+    local chargeNeedsPrediction = simulateCharge
     if pLocal:EstimateAbsVelocity() == 0 then
-        -- If the local player is not accelerating, set the predicted position to the current position
         pLocalFuture = pLocalOrigin
-    else
-        -- Always predict local player movement regardless of instant attack state
+        chargeNeedsPrediction = false
+    elseif not chargeNeedsPrediction then
         local player = WPlayer.FromEntity(pLocal)
-
-        -- Don't use strafe prediction when warping (time is frozen for us too)
         local useStrafePred = Menu.Misc.strafePred and not (instantAttackReady and Menu.Misc.WarpOnAttack)
         strafeAngle = useStrafePred and strafeAngles[pLocal:GetIndex()] or 0
 
-        -- If charge-reach exploit is READY, simulate charge in the direction we are currently LOOKING
-        -- (matches C++ reference: tLocalStorage.m_MoveData.m_vecViewAngles = { 0, pCmd->viewangles.y, 0 })
-        local fixedAngles = nil
-        if simulateCharge then
-            local va = engine.GetViewAngles()
-            fixedAngles = EulerAngles(0, va.yaw, 0)
-        end
-
-        local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, simulateCharge, fixedAngles)
+        local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, false, nil)
         if not predData then return end
 
         pLocalPath = predData.pos
@@ -1251,6 +1242,25 @@ local function OnCreateMove(pCmd)
     end
 
     vPlayerOrigin = CurrentTarget:GetAbsOrigin() -- Get closest player origin
+
+    -- If we deferred the charge prediction, run it now using the aimbot yaw toward the target.
+    -- This is the angle the melee aimbot will set engine angles to when it fires IN_ATTACK2.
+    if chargeNeedsPrediction then
+        local player = WPlayer.FromEntity(pLocal)
+        local useStrafePred = Menu.Misc.strafePred and not (instantAttackReady and Menu.Misc.WarpOnAttack)
+        strafeAngle = useStrafePred and strafeAngles[pLocal:GetIndex()] or 0
+
+        -- Aim yaw = horizontal angle from our eye pos toward target eye pos
+        local targetEyePos = vPlayerOrigin + Vheight
+        local aimYaw = Math.PositionAngles(pLocalOrigin, targetEyePos).yaw
+        local fixedAngles = EulerAngles(0, aimYaw, 0)
+
+        local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, true, fixedAngles)
+        if not predData then return end
+
+        pLocalPath = predData.pos
+        pLocalFuture = predData.pos[simTicks] + viewOffset
+    end
 
     local VpFlags = CurrentTarget:GetPropInt("m_fFlags")
     local DUCKING = (VpFlags & FL_DUCKING) ~= 0
