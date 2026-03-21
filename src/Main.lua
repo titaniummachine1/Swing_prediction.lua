@@ -181,20 +181,16 @@ end
 local MAX_CHARGE_BOT_TURN = 17
 
 -- Variables to track attack and charge state
-local attackStarted = false
-local attackTickCount = 0
+local attackStartTick = -1000 -- tickcount when IN_ATTACK was pressed; -1000 = not tracking
 local lastChargeTime = 0
-local chargeAimAngles = nil -- yaw/pitch to look at when triggering charge reach exploit
 local chargeState = "idle"
--- chargeJumpDone no longer needed (simplified)
 
 -- Track the tick index of the last +attack press (user or script)
 local lastAttackTick = -1000 -- initialize far in the past
 
 -- Add this function to reset the attack tracking when needed
 local function resetAttackTracking()
-    attackStarted = false
-    attackTickCount = 0
+    attackStartTick = -1000
 end
 
 local function applySilentAttackTick(pCmd, aimAngles)
@@ -967,20 +963,14 @@ local function OnCreateMove(pCmd)
 
     -- ===== Charge Reach State Machine (Demoman only) =====
     if pLocalClass == 4 then
-        if chargeState == "aim" then
-            if chargeAimAngles then
-                engine.SetViewAngles(EulerAngles(chargeAimAngles.pitch, chargeAimAngles.yaw, 0))
-            end
-            chargeState = "charge" -- next tick will trigger charge
-        elseif chargeState == "charge" then
+        if chargeState == "charge" then
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)
             chargeState = "idle"
-            chargeAimAngles = nil
         end
     else
         -- Not Demoman: never drive charge reach state machine
         chargeState = "idle"
-        chargeAimAngles = nil
+        attackStartTick = -1000
     end
     -- =====================================
 
@@ -1482,57 +1472,35 @@ local function OnCreateMove(pCmd)
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
             applySilentAttackTick(pCmd, scheduledAimAngles)
 
-            -- Start tracking attack ticks for charge reach exploit
-            if pLocalClass == 4 and Menu.Charge.ChargeReach and chargeLeft == 100 and not attackStarted then
-                attackStarted = true
-                attackTickCount = 0
-                -- Store aim direction to target future position so charge travels correctly
-                if inRangePoint then
-                    chargeAimAngles = Math.PositionAngles(pLocalOrigin, inRangePoint)
-                else
-                    chargeAimAngles = Math.PositionAngles(pLocalOrigin, vPlayerFuture)
-                end
+            -- Arm charge reach: record the tick when attack was first pressed
+            if pLocalClass == 4 and Menu.Charge.ChargeReach and chargeLeft == 100 and attackStartTick < 0 then
+                attackStartTick = globals.TickCount()
             end
 
             can_attack = false
         end
 
-        -- Track attack ticks and execute charge at right moment
-        if attackStarted then
-            attackTickCount = attackTickCount + 1
-
-            -- Get weapon smack delay (when the weapon will hit)
+        -- Charge reach: fire IN_ATTACK2 when we are chargeWindow ticks before damage registers
+        if attackStartTick >= 0 then
             local weaponSmackDelayTicks = Menu.Aimbot.MaxSwingTime or 13
             local wd = pWeapon and pWeapon:GetWeaponData()
             if wd and wd.smackDelay then
                 weaponSmackDelayTicks = smackDelayToTicks(wd.smackDelay)
             end
 
-            -- If charge-jump enabled issue jump together with charge
             if Menu.Charge.ChargeJump and OnGround then
                 pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
             end
 
-            -- Fire +attack2 when within latency/choke window of impact (same idea as reference melee charge-reach)
             local chargeWindow = getChargeReachWindowTicks()
-            local ticksToSmack = getMeleeSwingTicksRemaining(pWeapon)
-            local shouldTriggerCharge = false
-            if ticksToSmack then
-                shouldTriggerCharge = ticksToSmack <= chargeWindow
-            else
-                shouldTriggerCharge = attackTickCount >= math.max(weaponSmackDelayTicks - 2, 1)
-            end
+            local damageRegisterTick = attackStartTick + weaponSmackDelayTicks
+            local ticksToSmack = damageRegisterTick - globals.TickCount()
 
-            if shouldTriggerCharge then
-                -- Schedule aim then charge via state machine
-                chargeState = "aim" -- on this tick we aim; next tick we charge
-                -- Reset attack tracking
-                attackStarted = false
-                attackTickCount = 0
+            if ticksToSmack <= chargeWindow then
+                chargeState = "charge"
+                attackStartTick = -1000
             end
         end
-
-        -- No need to track exploit flag anymore; logic is purely timing-based
     end
 
     -- Update last variables
