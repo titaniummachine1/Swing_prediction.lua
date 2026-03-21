@@ -1,3 +1,5 @@
+--[[ Imported by: utils.Config ]]
+
 local Serializer = {}
 
 local function deepCopy(orig)

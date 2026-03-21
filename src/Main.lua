@@ -1,7 +1,23 @@
-﻿--[[ Swing prediction for  Lmaobox  ]] --
---[[          --Authors--           ]] --
---[[           Terminator           ]] --
---[[  (github.com/titaniummachine1  ]] --
+﻿---@class Entity
+---@field IsValid fun(self: Entity): boolean
+---@field GetName fun(self: Entity): string
+---@field GetClass fun(self: Entity): string
+---@field GetIndex fun(self: Entity): integer
+---@field GetTeamNumber fun(self: Entity): integer
+---@field GetAbsOrigin fun(self: Entity): Vector3
+---@field SetAbsOrigin fun(self: Entity, origin: Vector3)
+---@field GetAbsAngles fun(self: Entity): EulerAngles
+---@field SetAbsAngles fun(self: Entity, angles: Vector3)
+---@field GetMins fun(self: Entity): Vector3
+---@field GetMaxs fun(self: Entity): Vector3
+---@field InCond fun(self: Entity, cond: number): boolean
+---@field GetPropInt fun(self: Entity, name: string): number
+---@field GetPropFloat fun(self: Entity, name: string): number
+---@field EstimateAbsVelocity fun(self: Entity): Vector3
+---@field GetWeaponData fun(self: Entity): table
+---@field IsAlive fun(self: Entity): boolean
+---@field IsDormant fun(self: Entity): boolean
+
 
 
 -- Unload the module if it is already loaded
@@ -19,11 +35,11 @@ local ChargeBot      = require("ChargeBot")
 local TargetSelector = require("TargetSelector")
 local CritManager    = require("CritManager")
 
-local Math    = lnxLib.Utils.Math
-local WPlayer = lnxLib.TF2.WPlayer
-local Notify  = lnxLib.UI.Notify
+local Math           = lnxLib.Utils.Math
+local WPlayer        = lnxLib.TF2.WPlayer
+local Notify         = lnxLib.UI.Notify
 
-local Menu = {
+local Menu           = {
     currentTab = 1,
     tabs = { "Aimbot", "Demoknight", "Visuals", "Misc" },
 
@@ -87,8 +103,8 @@ local Menu = {
     KeybindName = "Always On",
 }
 
-local Lua__fullPath = GetScriptName()
-local Lua__fileName = Lua__fullPath:match("([^/\\]+)%.lua$")
+local Lua__fullPath  = GetScriptName()
+local Lua__fileName  = Lua__fullPath:match("([^/\\]+)%.lua$")
 if not Lua__fileName or Lua__fileName == "" then
     Lua__fileName = "A_Swing_Prediction"
 end
@@ -106,16 +122,16 @@ TargetSelector.Init(Menu)
 CritManager.Init(Menu)
 
 -- Constants
-local swingrange           = 48.0
-local TotalSwingRange      = 48.0
-local SwingHullSize        = 38.0
-local SwingHalfhullSize    = SwingHullSize / 2
-local Charge_Range         = 128.0
-local normalWeaponRange    = 48.0
+local swingrange            = 48.0
+local TotalSwingRange       = 48.0
+local SwingHullSize         = 38.0
+local SwingHalfhullSize     = SwingHullSize / 2
+local Charge_Range          = 128.0
+local normalWeaponRange     = 48.0
 local normalTotalSwingRange = 48.0
-local vHitbox              = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
-local gravity              = client.GetConVar("sv_gravity") or 800
-local stepSize             = 18
+local vHitbox               = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+local gravity               = client.GetConVar("sv_gravity") or 800
+local stepSize              = 18
 
 local function UpdateServerCvars()
     gravity = client.GetConVar("sv_gravity") or 800
@@ -125,31 +141,35 @@ end
 UpdateServerCvars()
 
 -- Per-tick variables (reset each tick)
-local isMelee          = false
-local pLocal           = nil
-local players          = nil
-local can_attack       = false
-local can_charge       = false
-local pLocalPath       = {}
-local vPlayerPath      = {}
-local drawVhitbox      = {}
+local isMelee                 = false
+---@type Entity|nil
+local pLocal                  = nil
+---@type Entity[]|nil
+local players                 = nil
+local can_attack              = false
+local can_charge              = false
+local pLocalPath              = {}
+local vPlayerPath             = {}
+local drawVhitbox             = {}
 
-local pLocalClass      = nil
-local pLocalFuture     = nil
-local pLocalOrigin     = nil
-local pWeapon          = nil
-local viewheight       = nil
-local Vheight          = nil
-local vPlayerFuture    = nil
-local vPlayer          = nil
-local vPlayerOrigin    = nil
-local chargeLeft       = nil
-local CurrentTarget    = nil
-local aimposVis        = nil
-local tickCounterrecharge = 0
+local pLocalClass             = nil
+local pLocalFuture            = nil
+local pLocalOrigin            = nil
+---@type Entity|nil
+local pWeapon                 = nil
+local viewheight              = nil
+local Vheight                 = nil
+local vPlayerFuture           = nil
+local vPlayer                 = nil
+local vPlayerOrigin           = nil
+local chargeLeft              = nil
+---@type Entity|nil
+local CurrentTarget           = nil
+local aimposVis               = nil
+local tickCounterrecharge     = 0
 
 -- Track the tick of the last +attack press (user or script)
-local lastAttackTick   = -1000
+local lastAttackTick          = -1000
 
 local dashKeyNotBoundNotified = true
 
@@ -193,8 +213,8 @@ local function checkInRange(targetPos, spherePos, sphereRadius)
 end
 
 local function checkInRangeSimple(playerIndex, swingRange, weaponParam, cmd)
-    local inRange = false
-    local point   = nil
+    local inRange  = false
+    local point    = nil
 
     inRange, point = checkInRange(vPlayerOrigin, pLocalOrigin, swingRange)
     if inRange then
@@ -233,21 +253,21 @@ local function OnCreateMove(pCmd)
     viewheight    = nil
     Vheight       = nil
 
-    pLocalPath  = {}
-    vPlayerPath = {}
-    drawVhitbox = {}
+    pLocalPath    = {}
+    vPlayerPath   = {}
+    drawVhitbox   = {}
 
-    isMelee    = false
-    can_attack = false
-    can_charge = false
+    isMelee       = false
+    can_attack    = false
+    can_charge    = false
 
-    pLocal = entities.GetLocalPlayer()
+    pLocal        = entities.GetLocalPlayer()
     if not pLocal or not pLocal:IsAlive() then
         goto continue
     end
 
     -- Refresh physics constants
-    stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
+    stepSize = pLocal:GetPropFloat("m_flStepSize") or 18
     Simulation.UpdatePhysics(gravity, stepSize, vHitbox)
 
     -- Track last +attack tick for charge-reach logic
@@ -283,10 +303,10 @@ local function OnCreateMove(pCmd)
     end
 
     do
-        local flags   = pLocal:GetPropInt("m_fFlags")
-        local airbone = pLocal:InCond(81)
-        chargeLeft    = pLocal:GetPropFloat("m_flChargeMeter")
-        chargeLeft    = math.floor(chargeLeft)
+        local flags           = pLocal:GetPropInt("m_fFlags")
+        local airbone         = pLocal:InCond(81)
+        chargeLeft            = pLocal:GetPropFloat("m_flChargeMeter")
+        chargeLeft            = math.floor(chargeLeft)
 
         local pWeaponData     = pWeapon:GetWeaponData()
         local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
@@ -308,19 +328,19 @@ local function OnCreateMove(pCmd)
         end
 
         -- Eye position
-        local viewOffset     = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
-        local adjustedHeight = pLocal:GetAbsOrigin() + viewOffset
-        viewheight           = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
-        Vheight              = Vector3(0, 0, viewheight)
-        pLocalOrigin         = pLocal:GetAbsOrigin() + Vheight
+        local viewOffset                       = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
+        local adjustedHeight                   = pLocal:GetAbsOrigin() + viewOffset
+        viewheight                             = (adjustedHeight - pLocal:GetAbsOrigin()):Length()
+        Vheight                                = Vector3(0, 0, viewheight)
+        pLocalOrigin                           = pLocal:GetAbsOrigin() + Vheight
 
         -- Swing range
         local weaponSwingRange, weaponHullSize = Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
-        swingrange        = weaponSwingRange
-        SwingHullSize     = weaponHullSize
-        SwingHalfhullSize = SwingHullSize / 2
+        swingrange                             = weaponSwingRange
+        SwingHullSize                          = weaponHullSize
+        SwingHalfhullSize                      = SwingHullSize / 2
 
-        local isCurrentlyCharging = pLocal:InCond(17)
+        local isCurrentlyCharging              = pLocal:InCond(17)
         if not isCurrentlyCharging then
             normalWeaponRange     = swingrange or normalWeaponRange
             normalTotalSwingRange = swingrange + (SwingHullSize / 2)
@@ -390,14 +410,14 @@ local function OnCreateMove(pCmd)
         end
 
         -- Refresh physics before prediction
-        gravity  = client.GetConVar("sv_gravity") or 800
-        stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or stepSize
+        gravity                  = client.GetConVar("sv_gravity") or 800
+        stepSize                 = pLocal:GetPropFloat("m_flStepSize") or stepSize
 
         -- Prediction setup
         local instantAttackReady = Menu.Misc.InstantAttack and warp.CanWarp() and
             warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
-        local simulateCharge = (not isCurrentlyCharging) and isExploitReady and (not Menu.Charge.LateCharge)
-        local simTicks = Menu.Aimbot.SwingTime
+        local simulateCharge     = (not isCurrentlyCharging) and isExploitReady and (not Menu.Charge.LateCharge)
+        local simTicks           = Menu.Aimbot.SwingTime
         if not instantAttackReady and not simulateCharge then
             local remSwing = Simulation.getMeleeSwingTicksRemaining(pWeapon)
             if remSwing then
@@ -409,14 +429,14 @@ local function OnCreateMove(pCmd)
         local chargeNeedsPrediction = simulateCharge
         local velIsZero = pLocal:EstimateAbsVelocity():Length() < 1
         if velIsZero then
-            pLocalFuture        = pLocalOrigin
+            pLocalFuture          = pLocalOrigin
             chargeNeedsPrediction = false
         elseif not chargeNeedsPrediction then
             local player        = WPlayer.FromEntity(pLocal)
             local useStrafePred = Menu.Misc.strafePred and not (instantAttackReady and Menu.Misc.WarpOnAttack)
             local strafeAngle   = useStrafePred and TargetSelector.GetStrafeAngle(pLocal:GetIndex()) or 0
 
-            local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, false, nil)
+            local predData      = Simulation.PredictPlayer(player, simTicks, strafeAngle, false, nil)
             if not predData then return end
 
             pLocalPath   = predData.pos
@@ -428,8 +448,7 @@ local function OnCreateMove(pCmd)
             return
         end
 
-        local isTargetValid = CurrentTarget:IsValid() and CurrentTarget:IsAlive() and not CurrentTarget:IsDormant()
-        if not isTargetValid then
+        if not (CurrentTarget and CurrentTarget:IsValid() and CurrentTarget:IsAlive() and not CurrentTarget:IsDormant()) then
             return
         end
 
@@ -441,11 +460,11 @@ local function OnCreateMove(pCmd)
             local useStrafePred = Menu.Misc.strafePred and not (instantAttackReady and Menu.Misc.WarpOnAttack)
             local strafeAngle   = useStrafePred and TargetSelector.GetStrafeAngle(pLocal:GetIndex()) or 0
 
-            local targetEyePos = vPlayerOrigin + Vheight
-            local aimYaw       = Math.PositionAngles(pLocalOrigin, targetEyePos).yaw
-            local fixedAngles  = EulerAngles(0, aimYaw, 0)
+            local targetEyePos  = vPlayerOrigin + Vheight
+            local aimYaw        = Math.PositionAngles(pLocalOrigin, targetEyePos).yaw
+            local fixedAngles   = EulerAngles(0, aimYaw, 0)
 
-            local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, true, fixedAngles)
+            local predData      = Simulation.PredictPlayer(player, simTicks, strafeAngle, true, fixedAngles)
             if not predData then return end
 
             pLocalPath   = predData.pos
@@ -463,9 +482,8 @@ local function OnCreateMove(pCmd)
 
         -- Enemy prediction
         if not instantAttackReady then
-            local player      = WPlayer.FromEntity(CurrentTarget)
+            local player = WPlayer.FromEntity(CurrentTarget)
             local strafeAngle = TargetSelector.GetStrafeAngle(CurrentTarget:GetIndex())
-
             local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, false, nil)
             if not predData then return end
 
@@ -485,38 +503,49 @@ local function OnCreateMove(pCmd)
         -- Range check
         local inRangePoint
         do
-            local inR, iRP, chg = checkInRangeSimple(CurrentTarget:GetIndex(), TotalSwingRange, pWeapon, pCmd)
-            inRangePoint = iRP
-            can_attack   = inR
-            can_charge   = chg
-        end
+            local inR, iRP, chg = false, nil, false
+            if CurrentTarget and CurrentTarget.GetIndex then
+                inR, iRP, chg = checkInRangeSimple(CurrentTarget:GetIndex(), TotalSwingRange, pWeapon, pCmd)
+                do
+                    local inR, iRP, chg = checkInRangeSimple(CurrentTarget:GetIndex(), TotalSwingRange, pWeapon, pCmd)
+                    inRangePoint        = iRP
+                    can_attack          = inR
+                    can_charge          = chg
+                end
+                local aim_angles = nil
+                if inRangePoint then
+                    aimposVis  = inRangePoint
+                    aim_angles = Math.PositionAngles(pLocalOrigin, inRangePoint)
+                end
 
-        -- Aimbot
-        if Menu.Aimbot.Aimbot then
-            local aim_angles
-            if inRangePoint then
-                aimposVis  = inRangePoint
-                local aimpos = Math.PositionAngles(pLocalOrigin, inRangePoint)
-                aim_angles   = aimpos
-            end
+                -- ChargeBot steering (modifies engine angles directly, does not return aim_angles)
+                ChargeBot.GetChargeBotAim(
+                    pLocalClass,
+                    pLocal,
+                    chargeLeft,
+                    pLocalOrigin or Vector3(0, 0, 0),
+                    pLocalFuture or Vector3(0, 0, 0),
+                    vPlayerFuture or Vector3(0, 0, 0),
+                    inRangePoint or Vector3(0, 0, 0),
+                    can_attack,
+                    fDistance,
+                    vHitbox
+                )
 
-            -- ChargeBot steering (modifies engine angles directly, does not return aim_angles)
-            ChargeBot.GetChargeBotAim(
-                pLocalClass, pLocal, chargeLeft, pLocalOrigin, pLocalFuture,
-                vPlayerFuture, inRangePoint, can_attack, fDistance, vHitbox
-            )
-
-            -- Normal silent/overt aim when in range
-            if can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
-                if not Menu.Aimbot.Silent then
-                    engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
+                -- Normal silent/overt aim when in range
+                if can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
+                    if not Menu.Aimbot.Silent then
+                        engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
+                    end
                 end
             end
-        end
 
-        -- Attack logic
-        if can_attack then
+            -- Attack logic
             local weaponSmackDelay = 13
+            if can_attack then
+                ::continue::
+                return
+            end
             if pWeapon and pWeapon:GetWeaponData() then
                 local weaponData = pWeapon:GetWeaponData()
                 if weaponData and weaponData.smackDelay then
@@ -529,8 +558,9 @@ local function OnCreateMove(pCmd)
                         end
                         Menu.Aimbot.MaxSwingTime = weaponSmackDelay
 
-                        local pWDef  = itemschema.GetItemDefinitionByID(pWeapon:GetPropInt("m_iItemDefinitionIndex"))
-                        local pWName = (pWDef and pWDef:GetName()) or "Unknown"
+                        local pWDef              = itemschema.GetItemDefinitionByID(pWeapon:GetPropInt(
+                            "m_iItemDefinitionIndex"))
+                        local pWName             = (pWDef and pWDef:GetName()) or "Unknown"
                         Notify.Simple(string.format(
                             "Updated SwingTime for %s:\n - Old: %d ticks\n - New: %d ticks\n - Delay: %.2f s",
                             pWName, oldValue, Menu.Aimbot.SwingTime or weaponSmackDelay, weaponData.smackDelay
@@ -575,7 +605,6 @@ local function OnCreateMove(pCmd)
                         chargedTicks .. "/" .. safeTickValue .. "), normal attack")
                 end
                 can_attack = false
-
             elseif Menu.Misc.InstantAttack and instantAttackReady and not Menu.Misc.WarpOnAttack then
                 client.ChatPrintf("[Debug] Instant Attack: Warp disabled, using normal attack")
                 local normalAttackTicks = math.min(weaponSmackDelay, 24)
@@ -584,7 +613,6 @@ local function OnCreateMove(pCmd)
                 pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
                 applySilentAttackTick(pCmd, scheduledAimAngles)
                 can_attack = false
-
             else
                 local normalAttackTicks = math.min(weaponSmackDelay, 24)
                 client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
@@ -666,14 +694,14 @@ local function damageLogger(event)
 end
 
 -- Callbacks
-callbacks.Unregister("CreateMove",    "MCT_CreateMove")
+callbacks.Unregister("CreateMove", "MCT_CreateMove")
 callbacks.Unregister("FireGameEvent", "adaamaXDgeLogger")
-callbacks.Unregister("Unload",        "MCT_Unload")
-callbacks.Unregister("Draw",          "MCT_Draw")
+callbacks.Unregister("Unload", "MCT_Unload")
+callbacks.Unregister("Draw", "MCT_Draw")
 
-callbacks.Register("CreateMove",    "MCT_CreateMove",   OnCreateMove)
+callbacks.Register("CreateMove", "MCT_CreateMove", OnCreateMove)
 callbacks.Register("FireGameEvent", "adaamaXDgeLogger", damageLogger)
-callbacks.Register("Unload",        "MCT_Unload",       OnUnload)
-callbacks.Register("Draw",          "MCT_Draw",         doDraw)
+callbacks.Register("Unload", "MCT_Unload", OnUnload)
+callbacks.Register("Draw", "MCT_Draw", doDraw)
 
 client.Command('play "ui/buttonclick"', true)

@@ -1,12 +1,16 @@
---[[ Imported by: Main ]]
--- Target selection: CalcStrafe + GetBestTarget.
-
 local Simulation       = require("Simulation")
 
 local TargetSelector   = {}
 
 -- ─── Module state ──────────────────────────────────────────────────────────────
 
+---@class MenuAimbot
+---@field AimbotFOV number
+
+---@class Menu
+---@field Aimbot MenuAimbot
+
+---@type Menu|nil
 local _menu            = nil
 
 -- Strafe-deviation tracking tables (per-entity, keyed by entity index)
@@ -18,7 +22,8 @@ local _inaccuracy      = {} ---@type table<number, number>
 local _pastPositions   = {}
 local _maxPositions    = 4
 
--- Shared state injected from Main each tick
+---@class TargetSelectorMenu
+---@field Aimbot table
 local _players         = nil
 local _pLocal          = nil
 local _Vheight         = nil
@@ -32,9 +37,8 @@ function TargetSelector.Init(menuRef)
     _menu = menuRef
 end
 
--- Call once per tick before calling CalcStrafe / GetBestTarget.
 ---@param players      table
----@param pLocal       userdata
+---@param pLocal       Entity
 ---@param Vheight      Vector3
 ---@param TotalSwingRange number
 function TargetSelector.SetTickState(players, pLocal, Vheight, TotalSwingRange)
@@ -46,7 +50,9 @@ function TargetSelector.SetTickState(players, pLocal, Vheight, TotalSwingRange)
     _pLocal          = pLocal
     _Vheight         = Vheight
     _TotalSwingRange = TotalSwingRange
-    _settings.MaxFOV = _menu.Aimbot.AimbotFOV
+    if _menu and _menu.Aimbot then
+        _settings.MaxFOV = _menu.Aimbot.AimbotFOV
+    end
 end
 
 -- ─── Strafe angle read-back ───────────────────────────────────────────────────
@@ -126,7 +132,7 @@ function TargetSelector.CalcStrafe()
         local delta                = angle.y - _lastAngles[entityIndex].y
         local smoothingFactor      = 0.2
         local avgDelta             = (_lastDeltas[entityIndex] or delta) * (1 - smoothingFactor) +
-        delta * smoothingFactor
+            delta * smoothingFactor
 
         _avgDeltas[entityIndex]    = avgDelta
 
@@ -152,9 +158,8 @@ function TargetSelector.CalcStrafe()
 end
 
 -- ─── GetBestTarget ────────────────────────────────────────────────────────────
--- Returns the best enemy entity to aim at, or nil.
----@param me userdata  local player entity
----@return userdata|nil
+---@param me Entity  local player entity
+---@return Entity|nil
 function TargetSelector.GetBestTarget(me)
     assert(me, "TargetSelector.GetBestTarget: me is nil")
     assert(_players, "TargetSelector.GetBestTarget: call SetTickState first")
@@ -172,7 +177,10 @@ function TargetSelector.GetBestTarget(me)
     local localPlayerViewAngles   = engine.GetViewAngles()
     local localPlayerOrigin       = me:GetAbsOrigin()
     local localPlayerEyePos       = localPlayerOrigin + Vector3(0, 0, 75)
-    local effectiveFOV            = _menu.Aimbot.AimbotFOV
+    local effectiveFOV            = 360
+    if _menu and _menu.Aimbot and _menu.Aimbot.AimbotFOV then
+        effectiveFOV = _menu.Aimbot.AimbotFOV
+    end
 
     for _, player in pairs(_players) do
         local isInvalid = player == nil

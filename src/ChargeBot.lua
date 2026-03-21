@@ -1,18 +1,15 @@
---[[ Imported by: Main ]]
--- Demoknight charge-reach state machine, ChargeControl, and ChargeJump logic.
+local Simulation = require("Simulation")
 
-local Simulation             = require("Simulation")
+local ChargeBot  = {}
 
-local ChargeBot              = {}
 
--- ─── Module state ──────────────────────────────────────────────────────────────
-
--- Reference to the shared Menu table (set via Init)
+---@class ChargeBotMenu
+---@field Aimbot table
+---@field Charge table
 local _menu                  = nil
 
--- Charge-reach state machine
 local _chargeState           = "idle" -- "idle" | "charge"
-local _attackStartTick       = -1000 -- tickcount when IN_ATTACK was pressed; -1000 = not tracking
+local _attackStartTick       = -1000  -- tickcount when IN_ATTACK was pressed; -1000 = not tracking
 
 -- Max turn rate for ChargeBot yaw clamping (degrees per tick)
 local MAX_CHARGE_BOT_TURN    = 17
@@ -56,20 +53,20 @@ function ChargeBot.GetMaxChargeBotTurn()
 end
 
 -- ─── ChargeControl ────────────────────────────────────────────────────────────
--- Simulates A/D key strafe while charging to allow mouse-steered turning.
--- Call inside OnCreateMove when the local player is a Demoman.
----@param pCmd userdata  CUserCmd
----@param pLocal userdata  local player entity
+---@param pCmd UserCmd
+---@param pLocal Entity
 function ChargeBot.ChargeControl(pCmd, pLocal)
-    assert(pCmd, "ChargeBot.ChargeControl: pCmd is nil")
-    assert(pLocal, "ChargeBot.ChargeControl: pLocal is nil")
-
-    if not _menu.Charge.ChargeControl then
+    if not pCmd or not pLocal then
         return
     end
 
-    local isLocalValid = pLocal:IsValid()
-    assert(isLocalValid, "ChargeBot.ChargeControl: pLocal invalid")
+    if not _menu or not _menu.Charge or not _menu.Charge.ChargeControl then
+        return
+    end
+
+    if not pLocal:IsValid() then
+        return
+    end
 
     local isCharging = pLocal:InCond(17)
     if not isCharging then
@@ -122,15 +119,17 @@ end
 
 -- ─── State machine tick ───────────────────────────────────────────────────────
 -- Call early in OnCreateMove (Demoman only, before target selection).
--- Drives: inject IN_ATTACK2 one tick after chargeState is set to "charge".
----@param pCmd userdata  CUserCmd
+---@param pCmd UserCmd
 ---@param pLocalClass integer  local player class ID
 function ChargeBot.TickStateMachine(pCmd, pLocalClass)
-    assert(pCmd, "ChargeBot.TickStateMachine: pCmd is nil")
+    if not pCmd or not pLocalClass then
+        return
+    end
 
     if pLocalClass == 4 then
         if _chargeState == "charge" then
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)
+            local buttons = pCmd:GetButtons() or 0
+            pCmd:SetButtons(buttons | IN_ATTACK2)
             _chargeState = "idle"
         end
     else
@@ -141,16 +140,16 @@ end
 
 -- ─── Charge-reach fire logic ──────────────────────────────────────────────────
 -- Call after IN_ATTACK is pressed (can_attack block) to arm and fire the charge.
--- Returns true if IN_ATTACK2 was scheduled (chargeState set to "charge").
----@param pCmd     userdata
----@param pWeapon  userdata
----@param chargeLeft  number  (0–100)
+---@param pCmd UserCmd
+---@param pWeapon Entity
+---@param chargeLeft number  (0–100)
 ---@param pLocalClass integer
----@param OnGround    boolean
----@return boolean  fired
+---@param OnGround boolean
+---@return boolean fired
 function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeLeft, pLocalClass, OnGround)
-    assert(pCmd, "ChargeBot.UpdateChargeReach: pCmd is nil")
-    assert(pLocalClass, "ChargeBot.UpdateChargeReach: pLocalClass is nil")
+    if not pCmd or not pLocalClass then
+        return false
+    end
 
     if _attackStartTick < 0 then
         return false
@@ -194,10 +193,8 @@ function ChargeBot.ArmChargeReach(pLocalClass, chargeLeft)
 end
 
 -- ─── ChargeBot steering (pre-attack) ─────────────────────────────────────────
--- Steers toward target while charging toward enemy (not can_attack).
--- Returns aim_angles or nil if not steering.
 ---@param pLocalClass   integer
----@param pLocal        userdata
+---@param pLocal        Entity
 ---@param chargeLeft    number
 ---@param pLocalOrigin  Vector3   eye origin of local player
 ---@param pLocalFuture  Vector3   predicted eye origin of local player

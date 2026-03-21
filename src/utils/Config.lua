@@ -1,4 +1,6 @@
-local Serializer = require("Serializer")
+--[[ Imported by: Main ]]
+
+local Serializer = require("utils.Serializer")
 
 local Config = {}
 

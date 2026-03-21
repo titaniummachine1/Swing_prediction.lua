@@ -1,10 +1,20 @@
---[[ Imported by: Main ]]
--- Crit-bucket refill manager.
+---@class Entity
+---@field IsDormant fun(self: Entity): boolean
+
+---@class MenuMisc
+---@field CritRefill table
+---@field CritMode number
+
+---@class Menu
+---@field Misc MenuMisc
+
 
 local CritManager            = {}
 
 -- ─── Module state ──────────────────────────────────────────────────────────────
 
+---@class CritManagerMenu
+---@field Misc table
 local _menu                  = nil
 
 local _originalCritHackKey   = 0
@@ -20,10 +30,8 @@ function CritManager.Init(menuRef)
 end
 
 -- ─── Tick ─────────────────────────────────────────────────────────────────────
--- Call once per OnCreateMove tick, after the active weapon is known.
--- Injects IN_ATTACK into pCmd when the crit bucket needs refilling.
----@param pCmd       userdata  CUserCmd
----@param pWeapon    userdata  active melee weapon
+---@param pCmd       UserCmd  CUserCmd
+---@param pWeapon    Entity   active melee weapon
 ---@param hasTarget  boolean   whether a CurrentTarget exists
 function CritManager.Tick(pCmd, pWeapon, hasTarget)
     assert(pCmd, "CritManager.Tick: pCmd is nil")
