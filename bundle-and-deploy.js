@@ -1,4 +1,4 @@
-// Bundle (multi-file from src/Main.lua or single root file) and deploy to %LOCALAPPDATA%\lua
+// Bundle from src/Main.lua (module-aware) or fallback to single-file copy, then deploy to %LOCALAPPDATA%\lua
 import fs from "fs";
 import path from "path";
 
@@ -9,45 +9,10 @@ const outputPath = path.join(buildDir, luaFileName);
 const deployDir = path.join(process.env.LOCALAPPDATA || "", "lua");
 const deployPath = path.join(deployDir, luaFileName);
 
-const mainPath = path.join(process.cwd(), "src", "Main.lua");
+const srcDir = path.join(process.cwd(), "src");
+const mainPath = path.join(srcDir, "Main.lua");
 const singleCandidates = ["A_Swing_Prediction.lua", "Swing_prediction.lua"];
-
-function processFile(filePath, processedFiles = new Set()) {
-	if (processedFiles.has(filePath)) {
-		return "";
-	}
-	processedFiles.add(filePath);
-
-	const content = fs.readFileSync(filePath, "utf8");
-	let result = `-- File: ${path.relative(process.cwd(), filePath)}\n`;
-
-	const lines = content.split("\n");
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-		const requireMatch = line.match(/local\s+(\w+)\s*=\s*require\("([^"]+)"\)/);
-
-		if (requireMatch) {
-			const [, varName, moduleName] = requireMatch;
-
-			if (moduleName === "lnxlib" || moduleName === "immenu") {
-				result += line + "\n";
-			} else {
-				const modulePath = path.join(process.cwd(), "src", moduleName + ".lua");
-				if (fs.existsSync(modulePath)) {
-					result += `-- Including module: ${moduleName}\n`;
-					result += processFile(modulePath, processedFiles);
-					result += `local ${varName} = ${moduleName}\n`;
-				} else {
-					result += line + "\n";
-				}
-			}
-		} else {
-			result += line + "\n";
-		}
-	}
-
-	return result + "\n";
-}
+const externalModules = new Set(["lnxlib", "immenu"]);
 
 function resolveSingleEntry() {
 	for (const name of singleCandidates) {
@@ -59,6 +24,82 @@ function resolveSingleEntry() {
 	return null;
 }
 
+function normalizeModulePath(moduleName) {
+	return moduleName.replace(/\./g, "/") + ".lua";
+}
+
+function resolveModuleFile(moduleName) {
+	const moduleFile = path.join(srcDir, normalizeModulePath(moduleName));
+	return fs.existsSync(moduleFile) ? moduleFile : null;
+}
+
+function transformRequires(content, includeModule) {
+	const lines = content.split(/\r?\n/);
+	const out = [];
+	const requireAssignRe = /^\s*local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*require\((['"])([^'"]+)\2\)\s*;?\s*$/;
+
+	for (const line of lines) {
+		const match = line.match(requireAssignRe);
+		if (!match) {
+			out.push(line);
+			continue;
+		}
+
+		const [, varName, , moduleName] = match;
+		if (externalModules.has(moduleName)) {
+			out.push(line);
+			continue;
+		}
+
+		const moduleFile = resolveModuleFile(moduleName);
+		if (!moduleFile) {
+			out.push(line);
+			continue;
+		}
+
+		includeModule(moduleName, moduleFile);
+		const indent = line.match(/^\s*/)?.[0] || "";
+		out.push(`${indent}local ${varName} = __MODULES[${JSON.stringify(moduleName)}]`);
+	}
+
+	return out.join("\n");
+}
+
+function buildBundleFromMain(mainFilePath) {
+	const moduleCode = new Map();
+	const processing = new Set();
+
+	function includeModule(moduleName, moduleFile) {
+		if (moduleCode.has(moduleName) || processing.has(moduleName)) {
+			return;
+		}
+		processing.add(moduleName);
+
+		const raw = fs.readFileSync(moduleFile, "utf8");
+		const transformed = transformRequires(raw, includeModule);
+		const stamped = `-- Module: ${moduleName} (${path.relative(process.cwd(), moduleFile).replace(/\\/g, "/")})\n${transformed}`;
+		moduleCode.set(moduleName, stamped);
+		processing.delete(moduleName);
+	}
+
+	const mainRaw = fs.readFileSync(mainFilePath, "utf8");
+	const mainTransformed = transformRequires(mainRaw, includeModule);
+
+	const parts = [];
+	parts.push("-- Auto-generated bundle from src/Main.lua");
+	parts.push("local __MODULES = {}\n");
+
+	for (const [moduleName, code] of moduleCode) {
+		parts.push(`__MODULES[${JSON.stringify(moduleName)}] = (function()\n${code}\nend)()\n`);
+	}
+
+	parts.push(`-- Entry: ${path.relative(process.cwd(), mainFilePath).replace(/\\/g, "/")}`);
+	parts.push(mainTransformed);
+	parts.push("");
+
+	return parts.join("\n");
+}
+
 try {
 	if (!fs.existsSync(buildDir)) {
 		fs.mkdirSync(buildDir, { recursive: true });
@@ -66,15 +107,15 @@ try {
 
 	if (fs.existsSync(mainPath)) {
 		console.log("Bundling from src/Main.lua...");
-		const bundled = processFile(mainPath);
+		const bundled = buildBundleFromMain(mainPath);
 		fs.writeFileSync(outputPath, bundled);
 	} else {
 		const entry = resolveSingleEntry();
 		if (!entry) {
 			console.error(
 				"bundle-and-deploy: No src/Main.lua and no single file (" +
-					singleCandidates.join(", ") +
-					") found."
+				singleCandidates.join(", ") +
+				") found."
 			);
 			process.exit(1);
 		}

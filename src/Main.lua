@@ -12,6 +12,7 @@ end
 -- Initialize libraries
 local lnxLib = require("lnxlib")
 local ImMenu = require("immenu")
+local Config = require("Config")
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
@@ -56,11 +57,12 @@ local Menu = {
     Aimbot = {
         Aimbot = true,
         Silent = true,
+        SilentPlus = false,
         AimbotFOV = 360,
         SwingTime = 13,
         AlwaysUseMaxSwingTime = false, -- Default to always use max for best experience
-        MaxSwingTime = 11,            -- Starting value, will be updated based on weapon
-        ChargeBot = true,             -- Moved to Charge tab in UI but kept here for backward compatibility
+        MaxSwingTime = 11,             -- Starting value, will be updated based on weapon
+        ChargeBot = true,              -- Moved to Charge tab in UI but kept here for backward compatibility
     },
 
     -- Charge settings (moved from mixed locations to a dedicated section)
@@ -118,99 +120,15 @@ local Menu = {
 }
 
 local Lua__fullPath = GetScriptName()
-local Lua__fileName = Lua__fullPath:match("\\([^\\]-)$"):gsub("%.lua$", "")
-
--- Config helpers rewrite -----------------------------------------------------------------
--- Build full path once from script name or supplied folder
-local function GetConfigPath(folder_name)
-    folder_name = folder_name or string.format([[Lua %s]], Lua__fileName)
-    local _, fullPath = filesystem.CreateDirectory(folder_name) -- succeeds even if already exists
-    local sep = package.config:sub(1, 1)
-    return fullPath .. sep .. "config.cfg"
+local Lua__fileName = Lua__fullPath:match("([^/\\]+)%.lua$")
+if not Lua__fileName or Lua__fileName == "" then
+    Lua__fileName = "A_Swing_Prediction"
 end
 
--- Serialize a Lua table (simple, ordered by iteration) ------------------------------------
-local function serializeTable(tbl, level)
-    level = level or 0
-    local indent = string.rep("    ", level)
-    local out = indent .. "{\n"
-    for k, v in pairs(tbl) do
-        local keyRepr = (type(k) == "string") and string.format("[\"%s\"]", k) or string.format("[%s]", k)
-        out = out .. indent .. "    " .. keyRepr .. " = "
-        if type(v) == "table" then
-            out = out .. serializeTable(v, level + 1) .. ",\n"
-        elseif type(v) == "string" then
-            out = out .. string.format("\"%s\",\n", v)
-        else
-            out = out .. tostring(v) .. ",\n"
-        end
-    end
-    out = out .. indent .. "}"
-    return out
-end
+Menu = Config.LoadCFG(Menu, Lua__fileName)
 
--- Shallow-key presence check (recurses into subtables) ------------------------------------
-local function keysMatch(template, loaded)
-    for k, v in pairs(template) do
-        if loaded[k] == nil then return false end
-        if type(v) == "table" and type(loaded[k]) == "table" then
-            if not keysMatch(v, loaded[k]) then return false end
-        end
-    end
-    return true
-end
-
--- Save current (or supplied) menu ---------------------------------------------------------
 local function CreateCFG(folder_name, cfg)
-    cfg = cfg or Menu
-    local path = GetConfigPath(folder_name)
-    local f = io.open(path, "w")
-    if not f then
-        printc(255, 0, 0, 255, "[Config] Failed to write: " .. path)
-        return
-    end
-    f:write(serializeTable(cfg))
-    f:close()
-    printc(100, 183, 0, 255, "[Config] Saved: " .. path)
-end
-
--- Load config; regenerate if invalid/outdated/SHIFT bypass ---------------------------------
-local function LoadCFG(folder_name)
-    local path = GetConfigPath(folder_name)
-    local f = io.open(path, "r")
-    if not f then
-        -- First run – make directory & default cfg
-        CreateCFG(folder_name, Menu)
-        return Menu
-    end
-    local content = f:read("*a")
-    f:close()
-
-    local chunk, err = load("return " .. content)
-    if not chunk then
-        print("[Config] Compile error, regenerating: " .. tostring(err))
-        CreateCFG(folder_name, Menu)
-        return Menu
-    end
-
-    local ok, cfg = pcall(chunk)
-    if not ok or type(cfg) ~= "table" or not keysMatch(Menu, cfg) or input.IsButtonDown(KEY_LSHIFT) then
-        print("[Config] Invalid or outdated cfg – regenerating …")
-        CreateCFG(folder_name, Menu)
-        return Menu
-    end
-
-    printc(0, 255, 140, 255, "[Config] Loaded: " .. path)
-    return cfg
-end
--- End of config helpers rewrite -----------------------------------------------------------
-
-local status, loadedMenu = pcall(function()
-    return assert(LoadCFG(string.format([[Lua %s]], Lua__fileName)))
-end) -- Auto-load config
-
-if status and loadedMenu then
-    Menu = loadedMenu
+    return Config.CreateCFG(cfg or Menu, Lua__fileName, folder_name)
 end
 
 -- Ensure all the Menu settings are initialized
@@ -219,10 +137,11 @@ local function SafeInitMenu()
     Menu.Aimbot = Menu.Aimbot or {}
     Menu.Aimbot.Aimbot = Menu.Aimbot.Aimbot ~= nil and Menu.Aimbot.Aimbot or true
     Menu.Aimbot.Silent = Menu.Aimbot.Silent ~= nil and Menu.Aimbot.Silent or true
+    Menu.Aimbot.SilentPlus = Menu.Aimbot.SilentPlus ~= nil and Menu.Aimbot.SilentPlus or false
     Menu.Aimbot.AimbotFOV = Menu.Aimbot.AimbotFOV or 360
     Menu.Aimbot.SwingTime = Menu.Aimbot.SwingTime or 13
     Menu.Aimbot.AlwaysUseMaxSwingTime = Menu.Aimbot.AlwaysUseMaxSwingTime ~= nil and Menu.Aimbot.AlwaysUseMaxSwingTime or
-    true
+        true
     Menu.Aimbot.MaxSwingTime = Menu.Aimbot.MaxSwingTime or 13
     Menu.Aimbot.ChargeBot = Menu.Aimbot.ChargeBot ~= nil and Menu.Aimbot.ChargeBot or true
 
@@ -289,8 +208,9 @@ end
 
 local function getOutgoingLatencyTicks()
     local lat = 0
-    if clientstate and clientstate.GetLatencyOut then
-        lat = math.max(clientstate.GetLatencyOut(), 0)
+    local net = clientstate and clientstate.GetNetChannel and clientstate:GetNetChannel() or nil
+    if net and net.GetLatency then
+        lat = math.max(net:GetLatency(0) or 0, 0)
     end
     return math.max(math.ceil(lat / globals.TickInterval()), 0)
 end
@@ -321,8 +241,11 @@ local function NormalizeYaw(y)
     return ((y + 180) % 360) - 180
 end
 local function Clamp(val, min, max)
-    if val < min then return min
-    elseif val > max then return max end
+    if val < min then
+        return min
+    elseif val > max then
+        return max
+    end
     return val
 end
 local MAX_CHARGE_BOT_TURN = 17
@@ -341,6 +264,17 @@ local lastAttackTick = -1000 -- initialize far in the past
 local function resetAttackTracking()
     attackStarted = false
     attackTickCount = 0
+end
+
+local function applySilentPlusAttackTick(pCmd, aimAngles)
+    if not Menu.Aimbot.SilentPlus or not Menu.Aimbot.Silent or not aimAngles then
+        return
+    end
+    if (pCmd:GetButtons() & IN_ATTACK) == 0 then
+        return
+    end
+
+    pCmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
 end
 
 
@@ -487,7 +421,7 @@ local function shouldHitEntityFun(entity, player, ignoreEntities)
     local pos = entity:GetAbsOrigin() + Vector3(0, 0, 1)
     local contents = engine.GetPointContents(pos)
     if contents ~= 0 then return true end
-    if entity:GetName() == player:GetName() then return false end             -- ignore self
+    if entity:GetName() == player:GetName() then return false end -- ignore self
     -- Ignore all players except world/props; we only need brushes for movement prediction
     if entity:IsPlayer() then return false end
     return true
@@ -501,7 +435,7 @@ end
                • Force horizontal velocity to align with the view-angle forward direction (so walking backwards flips)
                • Skip ground speed-cap logic while the fake charge is simulated
 ]]
----@param player WPlayer
+---@param player any
 ---@param t      integer                          -- number of ticks to simulate
 ---@param d      number?                          -- strafe deviation angle (optional)
 ---@param simulateCharge boolean?                -- simulate shield charge starting now
@@ -665,10 +599,10 @@ local function PredictPlayer(player, t, d, simulateCharge, fixedAngles)
 end
 
 -- Constants for minimum and maximum speed
-local MIN_SPEED = 10                     -- Minimum speed to avoid jittery movements
-local MAX_SPEED = 650                    -- Maximum speed the player can move
+local MIN_SPEED = 10             -- Minimum speed to avoid jittery movements
+local MAX_SPEED = 650            -- Maximum speed the player can move
 
-local MoveDir = Vector3(0, 0, 0)         -- Variable to store the movement direction
+local MoveDir = Vector3(0, 0, 0) -- Variable to store the movement direction
 -- Using tick-scoped pLocal defined in OnCreateMove; avoid shadowing here
 
 local function NormalizeVector(vector)
@@ -1121,7 +1055,6 @@ local dashKeyNotBoundNotified = true
 
 --[[ Code needed to run 66 times a second ]] --
 -- Predicts player position after set amount of ticks
----@param strafeAngle number
 local function OnCreateMove(pCmd)
     -- Clear ALL entity variables at start of every tick to prevent stale references
     pLocal = nil
@@ -1573,9 +1506,9 @@ local function OnCreateMove(pCmd)
             end
         elseif can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
             -- Use normal aimbot behavior regardless of charging state
-            if Menu.Aimbot.Silent then
+            if Menu.Aimbot.Silent and not Menu.Aimbot.SilentPlus then
                 pCmd:SetViewAngles(aim_angles.pitch, aim_angles.yaw, 0)
-            else
+            elseif not Menu.Aimbot.Silent then
                 engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
             end
         end
@@ -1626,6 +1559,13 @@ local function OnCreateMove(pCmd)
             end
         end
 
+        local scheduledAimAngles = nil
+        if inRangePoint then
+            scheduledAimAngles = Math.PositionAngles(pLocalOrigin, inRangePoint)
+        else
+            scheduledAimAngles = Math.PositionAngles(pLocalOrigin, vPlayerFuture)
+        end
+
         if Menu.Misc.InstantAttack and canInstantAttack and Menu.Misc.WarpOnAttack then
             -- Instant attack with warp is enabled and ready
             local velocity = pLocal:EstimateAbsVelocity()
@@ -1647,6 +1587,7 @@ local function OnCreateMove(pCmd)
 
             -- Set up the attack and warp
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- Initiate attack
+            applySilentPlusAttackTick(pCmd, scheduledAimAngles)
 
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             local safeTickValue = math.min(weaponSmackDelay, 20)
@@ -1655,13 +1596,13 @@ local function OnCreateMove(pCmd)
             -- Trigger the warp
             local chargedTicks = warp.GetChargedTicks() or 0
             if chargedTicks >= safeTickValue then
-                warp.TriggerWarp(safeTickValue)
+                warp.TriggerWarp()
                 -- Debug output
                 client.ChatPrintf("[Debug] Instant Attack: Warping with " .. chargedTicks .. " ticks")
             else
                 -- Not enough ticks for warp, but still do instant attack without warp
                 client.ChatPrintf("[Debug] Instant Attack: Not enough ticks (" ..
-                chargedTicks .. "/" .. safeTickValue .. "), normal attack")
+                    chargedTicks .. "/" .. safeTickValue .. "), normal attack")
             end
 
             can_attack = false
@@ -1672,6 +1613,7 @@ local function OnCreateMove(pCmd)
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            applySilentPlusAttackTick(pCmd, scheduledAimAngles)
             can_attack = false
         else
             -- Normal attack (instant attack disabled or not ready)
@@ -1679,6 +1621,7 @@ local function OnCreateMove(pCmd)
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            applySilentPlusAttackTick(pCmd, scheduledAimAngles)
 
             -- Start tracking attack ticks for charge reach exploit
             if pLocalClass == 4 and Menu.Charge.ChargeReach and chargeLeft == 100 and not attackStarted then
@@ -1982,6 +1925,10 @@ local function doDraw()
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
+            Menu.Aimbot.SilentPlus = ImMenu.Checkbox("Silent+ (Hit Tick)", Menu.Aimbot.SilentPlus)
+            ImMenu.EndFrame()
+
+            ImMenu.BeginFrame(1)
             Menu.Aimbot.AimbotFOV = ImMenu.Slider("Fov", Menu.Aimbot.AimbotFOV, 1, 360)
             ImMenu.EndFrame()
 
@@ -2235,7 +2182,8 @@ local function doDraw()
                             local screenFinalPos = client.WorldToScreen(finalPos)
 
                             if screenFinalPos then
-                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1], screenFinalPos[2])
+                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenFinalPos[1],
+                                    screenFinalPos[2])
                                 draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenFinalPos[1],
                                     screenFinalPos[2])
                             end
@@ -2414,9 +2362,11 @@ local function doDraw()
 
                                         if screenLeftBase and screenRightBase then
                                             if lastLeftBaseScreen and lastRightBaseScreen then
-                                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1],
+                                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase
+                                                    [1],
                                                     screenLeftBase[2])
-                                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1],
+                                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2],
+                                                    screenRightBase[1],
                                                     screenRightBase[2])
                                             end
 
@@ -2456,9 +2406,11 @@ local function doDraw()
 
                                         if screenLeftBase and screenRightBase then
                                             if lastLeftBaseScreen and lastRightBaseScreen then
-                                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase[1],
+                                                draw.Line(lastLeftBaseScreen[1], lastLeftBaseScreen[2], screenLeftBase
+                                                    [1],
                                                     screenLeftBase[2])
-                                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2], screenRightBase[1],
+                                                draw.Line(lastRightBaseScreen[1], lastRightBaseScreen[2],
+                                                    screenRightBase[1],
                                                     screenRightBase[2])
                                             end
 
@@ -2574,9 +2526,12 @@ local function doDraw()
     end
 end
 
---[[ Remove the menu when unloaded ]]                         --
-local function OnUnload()                                     -- Called when the script is unloaded
-    UnloadLib()                                               --unloading lualib
+--[[ Remove the menu when unloaded ]] --
+local function OnUnload()             -- Called when the script is unloaded
+    local unloadLib = rawget(_G, "UnloadLib")
+    if type(unloadLib) == "function" then
+        unloadLib()                                           --unloading lualib
+    end
     CreateCFG(string.format([[Lua %s]], Lua__fileName), Menu) --saving the config
     client.Command('play "ui/buttonclickrelease"', true)      -- Play the "buttonclickrelease" sound
 end
@@ -2597,7 +2552,7 @@ local function damageLogger(event)
         -- Trigger recharge if instant attack is enabled and warp ticks are below threshold
         if Menu.Misc.InstantAttack and warp.GetChargedTicks() < 13
             and not warp.IsWarping() then
-            warp.TriggerCharge(24) -- Trigger charge to max ticks
+            warp.TriggerCharge() -- Trigger charge to max ticks
             tickCounterrecharge = 0
         end
     end
