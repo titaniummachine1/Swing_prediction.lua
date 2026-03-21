@@ -54,15 +54,7 @@ function Simulation.Clamp(val, minV, maxV)
 end
 
 function Simulation.Normalize(vec)
-    local length = vec:Length()
-    assert(length > 0, "Simulation.Normalize: zero-length vector")
-    return vector.Divide(vec, length)
-end
-
-function Simulation.NormalizeVector(vector)
-    local length = vector:Length()
-    assert(length > 0, "Simulation.NormalizeVector: zero-length vector")
-    return vector.Divide(vector, length)
+    return vector.Divide(vec, vec:Length())
 end
 
 function Simulation.calculateMaxAngleChange(currentVelocity, minVelocity, maxTurnRate)
@@ -213,6 +205,57 @@ local CLASS_MAX_SPEEDS = {
     [9] = 320, -- Engineer
 }
 Simulation.CLASS_MAX_SPEEDS = CLASS_MAX_SPEEDS
+
+local MELEE_TUNING_BY_DEFINDEX = {
+    -- Disciplinary Action
+    [447] = { 81.6, 55.8 },
+}
+
+function Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
+    assert(pWeapon, "Simulation.ResolveMeleeParams: pWeapon is nil")
+
+    local swingRange = pWeapon:GetSwingRange() or 48.0
+    local hullSize = 35.6
+
+    local defIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
+    if defIndex and MELEE_TUNING_BY_DEFINDEX[defIndex] then
+        local tuned = MELEE_TUNING_BY_DEFINDEX[defIndex]
+        swingRange = tuned[1]
+        hullSize = tuned[2]
+    end
+
+    local weaponName = nil
+    if pWeaponDef and pWeaponDef.GetName then
+        weaponName = pWeaponDef:GetName()
+    end
+
+    if weaponName then
+        local lowerName = string.lower(weaponName)
+
+        if string.find(lowerName, "disciplinary action", 1, true) then
+            swingRange = 81.6
+            hullSize = 55.8
+        end
+
+        -- VSH/custom bosses often use long-range melee names; widen safely.
+        if string.find(lowerName, "saxton", 1, true)
+            or string.find(lowerName, "hale", 1, true)
+            or string.find(lowerName, "vsh", 1, true)
+        then
+            swingRange = math.max(swingRange, 96.0)
+            hullSize = math.max(hullSize, 60.0)
+        end
+    end
+
+    if not swingRange or swingRange <= 0 then
+        swingRange = 48.0
+    end
+    if not hullSize or hullSize <= 0 then
+        hullSize = 35.6
+    end
+
+    return swingRange, hullSize
+end
 
 local function shouldHitEntityFun(entity, player, ignoreEntities)
     for _, ignoreEntity in ipairs(ignoreEntities) do

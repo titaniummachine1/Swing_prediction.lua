@@ -1021,7 +1021,7 @@ local function OnCreateMove(pCmd)
     local pWeaponID = pWeapon:GetWeaponID()
     local pWeaponDefIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
     local pWeaponDef = itemschema.GetItemDefinitionByID(pWeaponDefIndex)
-    local pWeaponName = pWeaponDef:GetName()
+    local pWeaponName = (pWeaponDef and pWeaponDef.GetName and pWeaponDef:GetName()) or "Unknown"
     local pUsingMargetGarden = false
 
     if pWeaponDefIndex == 416 then
@@ -1060,15 +1060,9 @@ local function OnCreateMove(pCmd)
     pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
 
     --[-------- Get SwingRange --------]
-    local weaponSwingRange = pWeapon:GetSwingRange() or swingrange
+    local weaponSwingRange, weaponHullSize = Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
     swingrange = weaponSwingRange
-
-    SwingHullSize = 35.6
-
-    if pWeaponDef:GetName() == "The Disciplinary Action" then
-        SwingHullSize = 55.8
-        swingrange = 81.6
-    end
+    SwingHullSize = weaponHullSize
 
     SwingHalfhullSize = SwingHullSize / 2
 
