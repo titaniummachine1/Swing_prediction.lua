@@ -57,7 +57,6 @@ local Menu = {
     Aimbot = {
         Aimbot = true,
         Silent = true,
-        SilentPlus = false,
         AimbotFOV = 360,
         SwingTime = 13,
         AlwaysUseMaxSwingTime = false, -- Default to always use max for best experience
@@ -233,8 +232,8 @@ local function resetAttackTracking()
     attackTickCount = 0
 end
 
-local function applySilentPlusAttackTick(pCmd, aimAngles)
-    if not Menu.Aimbot.SilentPlus or not Menu.Aimbot.Silent or not aimAngles then
+local function applySilentAttackTick(pCmd, aimAngles)
+    if not Menu.Aimbot.Silent or not aimAngles then
         return
     end
     if (pCmd:GetButtons() & IN_ATTACK) == 0 then
@@ -1497,9 +1496,7 @@ local function OnCreateMove(pCmd)
             end
         elseif can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then
             -- Use normal aimbot behavior regardless of charging state
-            if Menu.Aimbot.Silent and not Menu.Aimbot.SilentPlus then
-                pCmd:SetViewAngles(aim_angles.pitch, aim_angles.yaw, 0)
-            elseif not Menu.Aimbot.Silent then
+            if not Menu.Aimbot.Silent then
                 engine.SetViewAngles(EulerAngles(aim_angles.pitch, aim_angles.yaw, 0))
             end
         end
@@ -1578,7 +1575,7 @@ local function OnCreateMove(pCmd)
 
             -- Set up the attack and warp
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK) -- Initiate attack
-            applySilentPlusAttackTick(pCmd, scheduledAimAngles)
+            applySilentAttackTick(pCmd, scheduledAimAngles)
 
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             local safeTickValue = math.min(weaponSmackDelay, 20)
@@ -1604,7 +1601,7 @@ local function OnCreateMove(pCmd)
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-            applySilentPlusAttackTick(pCmd, scheduledAimAngles)
+            applySilentAttackTick(pCmd, scheduledAimAngles)
             can_attack = false
         else
             -- Normal attack (instant attack disabled or not ready)
@@ -1612,7 +1609,7 @@ local function OnCreateMove(pCmd)
             client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
             client.SetConVar("sv_maxusrcmdprocessticks", normalAttackTicks)
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-            applySilentPlusAttackTick(pCmd, scheduledAimAngles)
+            applySilentAttackTick(pCmd, scheduledAimAngles)
 
             -- Start tracking attack ticks for charge reach exploit
             if pLocalClass == 4 and Menu.Charge.ChargeReach and chargeLeft == 100 and not attackStarted then
@@ -1913,10 +1910,6 @@ local function doDraw()
 
             ImMenu.BeginFrame(1)
             Menu.Aimbot.Silent = ImMenu.Checkbox("Silent Aim", Menu.Aimbot.Silent)
-            ImMenu.EndFrame()
-
-            ImMenu.BeginFrame(1)
-            Menu.Aimbot.SilentPlus = ImMenu.Checkbox("Silent+ (Hit Tick)", Menu.Aimbot.SilentPlus)
             ImMenu.EndFrame()
 
             ImMenu.BeginFrame(1)
