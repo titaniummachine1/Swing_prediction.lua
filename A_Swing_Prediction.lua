@@ -855,51 +855,80 @@ local function GetBestTarget(me)
     end
 end
 
--- Function to check if target is in range
-local function checkInRange(targetPos, spherePos, sphereRadius)
-    local hitbox_min_trigger = targetPos + vHitbox[1]
-    local hitbox_max_trigger = targetPos + vHitbox[2]
-
-    -- Calculate the closest point on the hitbox to the sphere
-    local closestPoint = Vector3(
-        math.max(hitbox_min_trigger.x, math.min(spherePos.x, hitbox_max_trigger.x)),
-        math.max(hitbox_min_trigger.y, math.min(spherePos.y, hitbox_max_trigger.y)),
-        math.max(hitbox_min_trigger.z, math.min(spherePos.z, hitbox_max_trigger.z))
+-- Closest point on player AABB (vHitbox relative to target origin) — cheap prefilter only
+local function closestPointOnTargetHitbox(targetOrigin, fromPoint)
+    local mn = targetOrigin + vHitbox[1]
+    local mx = targetOrigin + vHitbox[2]
+    return Vector3(
+        math.max(mn.x, math.min(fromPoint.x, mx.x)),
+        math.max(mn.y, math.min(fromPoint.y, mx.y)),
+        math.max(mn.z, math.min(fromPoint.z, mx.z))
     )
+end
 
-    -- Calculate the distance from the closest point to the sphere center
+--[[
+    Approximate C++ CAimbotMelee::CanHit sweep: ray along eye→aim, length = weapon swing range (not total+hull),
+    then hull trace with melee bounds. AABB closest-point only decides "worth tracing".
+]]
+local function meleeSwingCanHitSimulate(eyePos, aimPoint, targetEntity, weaponSwingRange, hullHalf)
+    if not eyePos or not aimPoint or not targetEntity or not weaponSwingRange or weaponSwingRange <= 0 then
+        return false
+    end
+
+    local dir = aimPoint - eyePos
+    local len = dir:Length()
+    if len < 1e-4 then
+        dir = engine.GetViewAngles():Forward()
+    else
+        dir = Vector3(dir.x / len, dir.y / len, dir.z / len)
+    end
+
+    local traceEnd = eyePos + dir * weaponSwingRange
+    local mask = MASK_SHOT_HULL
+
+    local function shouldHitEntity(ent, _contentsMask)
+        if ent and pLocal and ent == pLocal then
+            return false
+        end
+        return true
+    end
+
+    local tRay = engine.TraceLine(eyePos, traceEnd, mask, shouldHitEntity)
+    if tRay.fraction < 1 then
+        return tRay.entity == targetEntity
+    end
+
+    local hm = Vector3(-hullHalf, -hullHalf, -hullHalf)
+    local hx = Vector3(hullHalf, hullHalf, hullHalf)
+    local tHull = engine.TraceHull(eyePos, traceEnd, hm, hx, mask, shouldHitEntity)
+    if tHull.fraction < 1 then
+        return tHull.entity == targetEntity
+    end
+
+    return false
+end
+
+-- sphereRadius = generous reach for AABB prefilter (e.g. TotalSwingRange); swing trace uses global swingrange
+local function checkInRange(targetPos, spherePos, sphereRadius)
+    local closestPoint = closestPointOnTargetHitbox(targetPos, spherePos)
     local distanceAlongVector = (spherePos - closestPoint):Length()
 
-    -- Check if the target is within the sphere radius
-    if sphereRadius > distanceAlongVector then
-        -- Calculate the direction from spherePos to closestPoint
-        local direction = Normalize(closestPoint - spherePos)
-        local SwingtraceEnd = spherePos + direction * sphereRadius
-
-        if Menu.Misc.advancedHitreg then
-            local trace = engine.TraceLine(spherePos, SwingtraceEnd, MASK_SHOT_HULL)
-            if trace.fraction < 1 and trace.entity == CurrentTarget then
-                return true, closestPoint
-            else
-                local SwingHull = {
-                    Min = Vector3(-SwingHalfhullSize, -SwingHalfhullSize, -SwingHalfhullSize),
-                    Max =
-                        Vector3(SwingHalfhullSize, SwingHalfhullSize, SwingHalfhullSize)
-                }
-                trace = engine.TraceHull(spherePos, SwingtraceEnd, SwingHull.Min, SwingHull.Max, MASK_SHOT_HULL)
-                if trace.fraction < 1 and trace.entity == CurrentTarget then
-                    return true, closestPoint
-                else
-                    return false, nil
-                end
-            end
-        end
-
-        return true, closestPoint
-    else
-        -- Target is not in range
+    if sphereRadius <= distanceAlongVector then
         return false, nil
     end
+
+    if Menu.Misc.advancedHitreg then
+        local wr = swingrange
+        local hh = SwingHalfhullSize
+        if not wr or wr <= 0 or not CurrentTarget then
+            return false, nil
+        end
+        if not meleeSwingCanHitSimulate(spherePos, closestPoint, CurrentTarget, wr, hh) then
+            return false, nil
+        end
+    end
+
+    return true, closestPoint
 end
 
 local Hitbox = {
@@ -1238,12 +1267,13 @@ local function OnCreateMove(pCmd)
     swingrange = pWeapon:GetSwingRange()
 
     SwingHullSize = 35.6
-    SwingHalfhullSize = SwingHullSize / 2
 
     if pWeaponDef:GetName() == "The Disciplinary Action" then
         SwingHullSize = 55.8
         swingrange = 81.6
     end
+
+    SwingHalfhullSize = SwingHullSize / 2
 
     -- Store normal weapon range when NOT charging (this is the true weapon range)
     local isCurrentlyCharging = pLocal:InCond(17)
