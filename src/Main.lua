@@ -1078,22 +1078,22 @@ local function OnCreateMove(pCmd)
         local isDoingExploit = Menu.Charge.ChargeReach and withinAttackWindow
 
         if isDoingExploit then
-            -- Use charge reach range (128) + hull size for total range
+            -- Trace distance = 128, hull half-extension = SwingHullSize/2
+            swingrange      = Charge_Range
             TotalSwingRange = Charge_Range + (SwingHullSize / 2)
-            --client.ChatPrintf("[Debug] Charge reach exploit active! TotalSwingRange = " .. TotalSwingRange)
         else
             -- Force back to normal weapon range
-            swingrange = normalWeaponRange or swingrange
+            swingrange      = normalWeaponRange or swingrange
             TotalSwingRange = normalTotalSwingRange
-            --client.ChatPrintf("[Debug] Charging without exploit, TotalSwingRange = " .. TotalSwingRange)
         end
     else
         -- Not charging: check if ready for exploit
         if isExploitReady then
-            -- Use charge reach range (128) + hull size when ready
+            -- Pre-charge: also set swingrange so the hull trace uses 128
+            swingrange      = Charge_Range
             TotalSwingRange = Charge_Range + (SwingHullSize / 2)
         else
-            -- Normal weapon range
+            -- Normal weapon range (swingrange already set by ResolveMeleeParams)
             TotalSwingRange = swingrange + (SwingHullSize / 2)
         end
     end
