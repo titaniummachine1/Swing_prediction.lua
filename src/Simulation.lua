@@ -209,9 +209,9 @@ Simulation.CLASS_MAX_SPEEDS = CLASS_MAX_SPEEDS
 -- { swingRange, hullSize }
 -- TotalSwingRange displayed/used in targeting = swingRange + (hullSize / 2)
 local MELEE_TUNING_BY_DEFINDEX = {
-    [447] = { 81.6,  55.8  }, -- Disciplinary Action (Soldier)
-    [423] = { 128.0, 64.0  }, -- Saxxy — also used as VSH Saxton Hale proxy on community servers
-    [1071]= { 128.0, 64.0  }, -- Saxton Hale Fists (official VSH 2023 internal defindex if present)
+    [447] = { 81.6, 55.8 },   -- Disciplinary Action (Soldier)
+    [423] = { 128.0, 64.0 },  -- Saxxy — also used as VSH Saxton Hale proxy on community servers
+    [1071] = { 128.0, 64.0 }, -- Saxton Hale Fists (official VSH 2023 internal defindex if present)
 }
 
 function Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
@@ -238,18 +238,18 @@ function Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
         -- Disciplinary Action name-match as a fallback if defindex wasn't in the table.
         if string.find(lowerName, "disciplinary", 1, true) then
             swingRange = math.max(swingRange, 81.6)
-            hullSize   = math.max(hullSize,   55.8)
+            hullSize   = math.max(hullSize, 55.8)
         end
 
         -- VSH / custom boss: names like "saxton", "hale", "vsh", "saxxy".
         -- These values match the defindex-table entries above.
         local isVSH = string.find(lowerName, "saxton", 1, true)
-                   or string.find(lowerName, "hale",   1, true)
-                   or string.find(lowerName, "vsh",    1, true)
-                   or string.find(lowerName, "saxxy",  1, true)
+            or string.find(lowerName, "hale", 1, true)
+            or string.find(lowerName, "vsh", 1, true)
+            or string.find(lowerName, "saxxy", 1, true)
         if isVSH then
             swingRange = math.max(swingRange, 128.0)
-            hullSize   = math.max(hullSize,    64.0)
+            hullSize   = math.max(hullSize, 64.0)
         end
     end
 
@@ -325,16 +325,18 @@ function Simulation.PredictPlayer(player, t, d, simulateCharge, fixedAngles)
         end
 
         if simulateCharge then
-            local useAngles  = fixedAngles or engine.GetViewAngles()
-            local forward    = useAngles:Forward()
-            forward.z        = 0
-            forward          = Simulation.Normalize(forward)
-
-            local horizontal = Vector3(vel.x, vel.y, 0)
-            if horizontal:Dot(forward) < 0 then
-                vel.x, vel.y = 0, 0
-            end
-            vel = vel + forward * (750 * globals.TickInterval())
+            -- Reference C++: m_flMaxSpeed = max(SDK::MaxSpeed(pLocal), 750)
+            --                m_flForwardMove = 450, viewAngles = {0, yaw, 0}
+            -- In TF2 the charge forces horizontal velocity to chargeSpeed in the look direction
+            -- each tick (not a gradual acceleration), so we snap it here.
+            local useAngles   = fixedAngles or engine.GetViewAngles()
+            local forward     = EulerAngles(0, useAngles.yaw, 0):Forward()
+            forward.z         = 0
+            forward           = Simulation.Normalize(forward)
+            local chargeSpeed = math.max(maxSpeed, 750)
+            vel.x             = forward.x * chargeSpeed
+            vel.y             = forward.y * chargeSpeed
+            -- vel.z preserved for gravity
         end
 
         if onGround1 then

@@ -1225,12 +1225,12 @@ local function OnCreateMove(pCmd)
         local useStrafePred = Menu.Misc.strafePred and not (instantAttackReady and Menu.Misc.WarpOnAttack)
         strafeAngle = useStrafePred and strafeAngles[pLocal:GetIndex()] or 0
 
-        -- If charge-reach exploit is READY (full meter, demo, exploit enabled) but we're **not yet charging**,
-        -- run a secondary prediction that simulates starting a charge right now.
+        -- If charge-reach exploit is READY, simulate charge in the direction we are currently LOOKING
+        -- (matches C++ reference: tLocalStorage.m_MoveData.m_vecViewAngles = { 0, pCmd->viewangles.y, 0 })
         local fixedAngles = nil
-        if simulateCharge and CurrentTarget then
-            -- Use current target's position to define intended charge heading for prediction
-            fixedAngles = Math.PositionAngles(pLocalOrigin, CurrentTarget:GetAbsOrigin())
+        if simulateCharge then
+            local va = engine.GetViewAngles()
+            fixedAngles = EulerAngles(0, va.yaw, 0)
         end
 
         local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, simulateCharge, fixedAngles)
