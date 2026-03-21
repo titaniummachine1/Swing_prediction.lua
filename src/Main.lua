@@ -12,7 +12,9 @@ end
 -- Initialize libraries
 local lnxLib = require("lnxlib")
 local ImMenu = require("immenu")
-local Config = require("Config")
+local Config = require("utils.Config")
+local Simulation = require("Simulation")
+local Visuals = require("Visuals")
 
 local Math, Conversion = lnxLib.Utils.Math, lnxLib.Utils.Conversion
 local WPlayer, WWeapon = lnxLib.TF2.WPlayer, lnxLib.TF2.WWeapon
@@ -147,44 +149,29 @@ local stepSize = 18
 -- Function to update server cvars only on events
 local function UpdateServerCvars()
     gravity = client.GetConVar("sv_gravity") or 800
+    Simulation.UpdatePhysics(gravity, stepSize, vHitbox)
 end
 
 UpdateServerCvars() -- Initialize on script load
+Simulation.Init(Menu)
 
 -- Weapon smack delay → ticks (matches C++ ceil(smackDelay / TICK_INTERVAL))
 local function smackDelayToTicks(smackDelaySeconds)
-    if not smackDelaySeconds or smackDelaySeconds <= 0 then
-        return math.max(Menu.Aimbot.MaxSwingTime or 13, 5)
-    end
-    return math.max(math.ceil(smackDelaySeconds / globals.TickInterval()), 5)
+    return Simulation.smackDelayToTicks(smackDelaySeconds)
 end
 
 -- Remaining ticks until melee impact when windup is active (TF2 m_flSmackTime > 0)
 local function getMeleeSwingTicksRemaining(pWeapon)
-    if not pWeapon then return nil end
-    local ok, smackUntil = pcall(function()
-        return pWeapon:GetPropFloat("m_flSmackTime")
-    end)
-    if not ok or not smackUntil or smackUntil <= 0 then return nil end
-    local rem = smackUntil - globals.CurTime()
-    if rem <= 0 then return nil end
-    return math.max(math.ceil(rem / globals.TickInterval()), 1)
+    return Simulation.getMeleeSwingTicksRemaining(pWeapon)
 end
 
 local function getOutgoingLatencyTicks()
-    local lat = 0
-    local net = clientstate and clientstate.GetNetChannel and clientstate:GetNetChannel() or nil
-    if net and net.GetLatency then
-        lat = math.max(net:GetLatency(0) or 0, 0)
-    end
-    return math.max(math.ceil(lat / globals.TickInterval()), 0)
+    return Simulation.getOutgoingLatencyTicks()
 end
 
 -- Charge-reach IN_ATTACK2 window: max(out_latency_ticks + choke_margin, 2) — same shape as reference C++
 local function getChargeReachWindowTicks()
-    local choke = (clientstate and clientstate.GetChokedCommands and clientstate.GetChokedCommands()) or 0
-    choke = math.max(choke, 1)
-    return math.max(getOutgoingLatencyTicks() + choke, 2)
+    return Simulation.getChargeReachWindowTicks()
 end
 
 -- Per-tick variables (reset each tick)
@@ -203,15 +190,10 @@ local swingTickCounter = 0
 
 -- Helpers for charge-bot yaw clamping
 local function NormalizeYaw(y)
-    return ((y + 180) % 360) - 180
+    return Simulation.NormalizeYaw(y)
 end
 local function Clamp(val, min, max)
-    if val < min then
-        return min
-    elseif val > max then
-        return max
-    end
-    return val
+    return Simulation.Clamp(val, min, max)
 end
 local MAX_CHARGE_BOT_TURN = 17
 
@@ -581,67 +563,17 @@ local MoveDir = Vector3(0, 0, 0) -- Variable to store the movement direction
 -- Using tick-scoped pLocal defined in OnCreateMove; avoid shadowing here
 
 local function NormalizeVector(vector)
-    local length = math.sqrt(vector.x * vector.x + vector.y * vector.y + vector.z * vector.z)
-    if length == 0 then
-        return Vector3(0, 0, 0)
-    else
-        return Vector3(vector.x / length, vector.y / length, vector.z / length)
-    end
+    return Simulation.Normalize(vector)
 end
 
 -- Function to compute the move direction
 local function ComputeMove(pCmd, a, b)
-    local diff = (b - a)
-    if diff:Length() == 0 then return Vector3(0, 0, 0) end
-
-    local x = diff.x
-    local y = diff.y
-    local vSilent = Vector3(x, y, 0)
-
-    local ang = vSilent:Angles()
-    local cPitch, cYaw, cRoll = pCmd:GetViewAngles()
-    local yaw = math.rad(ang.y - cYaw)
-    local pitch = math.rad(ang.x - cPitch)
-    local move = Vector3(math.cos(yaw) * MAX_SPEED, -math.sin(yaw) * MAX_SPEED, 0)
-
-    return move
+    return Simulation.ComputeMove(pCmd, a, b)
 end
 
 -- Function to make the player walk to a destination smoothly
 local function WalkTo(pCmd, pLocal, pDestination)
-    -- Safety check - if destination is invalid, don't attempt to move
-    if not pDestination or not pLocal then
-        return
-    end
-
-    local localPos = pLocal:GetAbsOrigin()
-    local distVector = pDestination - localPos
-
-    -- Safety check - make sure the distance vector is valid
-    if not distVector or distVector:Length() > 1000 then
-        return
-    end
-
-    local dist = distVector:Length()
-
-    -- Determine the speed based on the distance
-    local speed = math.max(MIN_SPEED, math.min(MAX_SPEED, dist))
-
-    -- If distance is greater than 1, proceed with walking
-    if dist > 1 then
-        local result = ComputeMove(pCmd, localPos, pDestination)
-
-        -- Safety check - make sure result is valid
-        if not result then return end
-
-        -- Scale down the movements based on the calculated speed
-        local scaleFactor = speed / MAX_SPEED
-        pCmd:SetForwardMove(result.x * scaleFactor)
-        pCmd:SetSideMove(result.y * scaleFactor)
-    else
-        pCmd:SetForwardMove(0)
-        pCmd:SetSideMove(0)
-    end
+    return Simulation.WalkTo(pCmd, pLocal, pDestination)
 end
 
 local playerTicks = {}
@@ -767,13 +699,7 @@ end
 
 -- Closest point on player AABB (vHitbox relative to target origin) — cheap prefilter only
 local function closestPointOnTargetHitbox(targetOrigin, fromPoint)
-    local mn = targetOrigin + vHitbox[1]
-    local mx = targetOrigin + vHitbox[2]
-    return Vector3(
-        math.max(mn.x, math.min(fromPoint.x, mx.x)),
-        math.max(mn.y, math.min(fromPoint.y, mx.y)),
-        math.max(mn.z, math.min(fromPoint.z, mx.z))
-    )
+    return Simulation.ClosestPointOnHitbox(targetOrigin, fromPoint)
 end
 
 --[[
@@ -781,41 +707,7 @@ end
     then hull trace with melee bounds. AABB closest-point only decides "worth tracing".
 ]]
 local function meleeSwingCanHitSimulate(eyePos, aimPoint, targetEntity, weaponSwingRange, hullHalf)
-    if not eyePos or not aimPoint or not targetEntity or not weaponSwingRange or weaponSwingRange <= 0 then
-        return false
-    end
-
-    local dir = aimPoint - eyePos
-    local len = dir:Length()
-    if len < 1e-4 then
-        dir = engine.GetViewAngles():Forward()
-    else
-        dir = Vector3(dir.x / len, dir.y / len, dir.z / len)
-    end
-
-    local traceEnd = eyePos + dir * weaponSwingRange
-    local mask = MASK_SHOT_HULL
-
-    local function shouldHitEntity(ent, _contentsMask)
-        if ent and pLocal and ent == pLocal then
-            return false
-        end
-        return true
-    end
-
-    local tRay = engine.TraceLine(eyePos, traceEnd, mask, shouldHitEntity)
-    if tRay.fraction < 1 then
-        return tRay.entity == targetEntity
-    end
-
-    local hm = Vector3(-hullHalf, -hullHalf, -hullHalf)
-    local hx = Vector3(hullHalf, hullHalf, hullHalf)
-    local tHull = engine.TraceHull(eyePos, traceEnd, hm, hx, mask, shouldHitEntity)
-    if tHull.fraction < 1 then
-        return tHull.entity == targetEntity
-    end
-
-    return false
+    return Simulation.MeleeSwingCanHit(eyePos, aimPoint, targetEntity, weaponSwingRange, hullHalf, pLocal)
 end
 
 -- sphereRadius = generous reach for AABB prefilter (e.g. TotalSwingRange); swing trace uses global swingrange
@@ -1078,10 +970,12 @@ local function OnCreateMove(pCmd)
 
     -- Update stepSize per-tick based on current player
     stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or 18
+    Simulation.UpdatePhysics(gravity, stepSize, vHitbox)
 
     -- Track latest +attack input (from user or script) for charge-reach logic
     if (pCmd:GetButtons() & IN_ATTACK) ~= 0 then
         lastAttackTick = globals.TickCount()
+        Simulation.SetLastAttackTick(lastAttackTick)
     end
 
     -- Quick reference values used multiple times
@@ -1372,7 +1266,7 @@ local function OnCreateMove(pCmd)
             fixedAngles = Math.PositionAngles(pLocalOrigin, CurrentTarget:GetAbsOrigin())
         end
 
-        local predData = PredictPlayer(player, simTicks, strafeAngle, simulateCharge, fixedAngles)
+        local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, simulateCharge, fixedAngles)
         if not predData then return end
 
         pLocalPath = predData.pos
@@ -1416,7 +1310,7 @@ local function OnCreateMove(pCmd)
         local player = WPlayer.FromEntity(CurrentTarget)
         strafeAngle = strafeAngles[CurrentTarget:GetIndex()] or 0
 
-        local predData = PredictPlayer(player, simTicks, strafeAngle, false, nil)
+        local predData = Simulation.PredictPlayer(player, simTicks, strafeAngle, false, nil)
         if not predData then return end
 
         vPlayerPath = predData.pos
@@ -1570,7 +1464,7 @@ local function OnCreateMove(pCmd)
 
             -- Move to opposite point for better warp positioning
             if oppositePoint and (oppositePoint - pLocal:GetAbsOrigin()):Length() < 300 then
-                WalkTo(pCmd, pLocal, oppositePoint)
+                Simulation.WalkTo(pCmd, pLocal, oppositePoint)
             end
 
             -- Set up the attack and warp
@@ -2049,6 +1943,19 @@ local function doDraw()
         if drawPLocal and drawPLocal:IsAlive() then
             local drawPWeapon = drawPLocal:GetPropEntity("m_hActiveWeapon")
             if drawPWeapon and drawPWeapon:IsMeleeWeapon() then
+                Visuals.Render(Menu, {
+                    pLocalFuture = pLocalFuture,
+                    pLocalOrigin = pLocalOrigin,
+                    Vheight = Vheight,
+                    TotalSwingRange = TotalSwingRange,
+                    pLocalPath = pLocalPath,
+                    vPlayerPath = vPlayerPath,
+                    vPlayerFuture = vPlayerFuture,
+                    CurrentTarget = CurrentTarget,
+                    drawVhitbox = drawVhitbox,
+                    aimposVis = aimposVis,
+                })
+            elseif false then
                 draw.Color(255, 255, 255, 255)
                 local w, h = draw.GetScreenSize()
 
