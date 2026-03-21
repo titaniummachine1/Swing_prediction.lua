@@ -122,7 +122,8 @@ function Simulation.smackDelayToTicks(smackDelaySeconds)
     if not smackDelaySeconds or smackDelaySeconds <= 0 then
         return math.max((_menu and _menu.Aimbot.MaxSwingTime) or 13, 5)
     end
-    return math.max(math.ceil(smackDelaySeconds / globals.TickInterval()), 5)
+    local ticks = math.floor((1 / globals.TickInterval()) * smackDelaySeconds + 0.5)
+    return math.max(ticks, 5)
 end
 
 function Simulation.getMeleeSwingTicksRemaining(pWeapon)
