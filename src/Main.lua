@@ -131,50 +131,16 @@ local function CreateCFG(folder_name, cfg)
     return Config.CreateCFG(cfg or Menu, Lua__fileName, folder_name)
 end
 
--- Ensure all the Menu settings are initialized
-local function SafeInitMenu()
-    -- Initialize Aimbot settings
-    Menu.Aimbot = Menu.Aimbot or {}
-    Menu.Aimbot.Aimbot = Menu.Aimbot.Aimbot ~= nil and Menu.Aimbot.Aimbot or true
-    Menu.Aimbot.Silent = Menu.Aimbot.Silent ~= nil and Menu.Aimbot.Silent or true
-    Menu.Aimbot.SilentPlus = Menu.Aimbot.SilentPlus ~= nil and Menu.Aimbot.SilentPlus or false
-    Menu.Aimbot.AimbotFOV = Menu.Aimbot.AimbotFOV or 360
-    Menu.Aimbot.SwingTime = Menu.Aimbot.SwingTime or 13
-    Menu.Aimbot.AlwaysUseMaxSwingTime = Menu.Aimbot.AlwaysUseMaxSwingTime ~= nil and Menu.Aimbot.AlwaysUseMaxSwingTime or
-        true
-    Menu.Aimbot.MaxSwingTime = Menu.Aimbot.MaxSwingTime or 13
-    Menu.Aimbot.ChargeBot = Menu.Aimbot.ChargeBot ~= nil and Menu.Aimbot.ChargeBot or true
 
-    -- Initialize Misc settings
-    Menu.Misc = Menu.Misc or {}
-    Menu.Misc.InstantAttack = Menu.Misc.InstantAttack ~= nil and Menu.Misc.InstantAttack or false
-    Menu.Misc.WarpOnAttack = Menu.Misc.WarpOnAttack ~= nil and Menu.Misc.WarpOnAttack or true
-
-    -- Initialize other sections if needed
-    Menu.Charge = Menu.Charge or {}
-    Menu.Visuals = Menu.Visuals or {}
-    -- LateCharge default
-    Menu.Charge.LateCharge = Menu.Charge.LateCharge ~= nil and Menu.Charge.LateCharge or true
-    Menu.Charge.ChargeReach = Menu.Charge.ChargeReach ~= nil and Menu.Charge.ChargeReach or true
-    Menu.Charge.ChargeControl = Menu.Charge.ChargeControl ~= nil and Menu.Charge.ChargeControl or false
-    Menu.Charge.ChargeJump = Menu.Charge.ChargeJump ~= nil and Menu.Charge.ChargeJump or true
-    -- Legacy keys: gameplay used Menu.Misc.* before Demoknight tab synced them
-    Menu.Misc.ChargeReach = Menu.Charge.ChargeReach
-    Menu.Misc.ChargeControl = Menu.Charge.ChargeControl
-    Menu.Misc.ChargeJump = Menu.Charge.ChargeJump
-end
-
--- Call the initialization function to ensure no nil values
-SafeInitMenu()
 
 -- Entity-independent constants
-local swingrange = 48
-local TotalSwingRange = 48
-local SwingHullSize = 38
+local swingrange = 48.0
+local TotalSwingRange = 48.0
+local SwingHullSize = 38.0
 local SwingHalfhullSize = SwingHullSize / 2
-local Charge_Range = 128
-local normalWeaponRange = 48
-local normalTotalSwingRange = 48
+local Charge_Range = 128.0
+local normalWeaponRange = 48.0
+local normalTotalSwingRange = 48.0
 local vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local gravity = client.GetConVar("sv_gravity") or 800
 local stepSize = 18
@@ -255,6 +221,7 @@ local attackStarted = false
 local attackTickCount = 0
 local lastChargeTime = 0
 local chargeAimAngles = nil -- yaw/pitch to look at when triggering charge reach exploit
+local chargeState = "idle"
 -- chargeJumpDone no longer needed (simplified)
 
 -- Track the tick index of the last +attack press (user or script)
@@ -304,7 +271,7 @@ local settings = {
     MaxFOV = Menu.Aimbot.AimbotFOV,
 }
 
-local lastAngles = {} ---@type table<number, Vector3>
+local lastAngles = {} ---@type table<number, EulerAngles>
 local lastDeltas = {} ---@type table<number, number>
 local avgDeltas = {} ---@type table<number, number>
 local strafeAngles = {} ---@type table<number, number>
@@ -313,8 +280,17 @@ local pastPositions = {} -- Stores past positions of the local player
 local maxPositions = 4   -- Number of past positions to consider
 
 local function CalcStrafe()
+    if not players then
+        return
+    end
+
+    local localPlayer = entities.GetLocalPlayer()
+    if not localPlayer then
+        return
+    end
+
     local autostrafe = gui.GetValue("Auto Strafe")
-    local flags = entities.GetLocalPlayer():GetPropInt("m_fFlags")
+    local flags = localPlayer:GetPropInt("m_fFlags")
     local OnGround = (flags & FL_ONGROUND) ~= 0
 
     for idx, entity in pairs(players) do
@@ -699,6 +675,7 @@ end
 local function GetBestTarget(me)
     local localPlayer = entities.GetLocalPlayer()
     if not localPlayer then return end
+    if not players then return end
 
     -- Collect candidates
     local normalCandidates = {} -- { {player=Entity, factor=number} }
@@ -917,7 +894,7 @@ local function ChargeControl(pCmd)
     end
 
     -- Skip if not charging
-    if not pLocal:InCond(17) then
+    if not pLocal or not pLocal:IsValid() or not pLocal:InCond(17) then
         return
     end
 
@@ -986,6 +963,16 @@ end
 local acceleration = 750
 
 local function UpdateHomingMissile()
+    if not pLocal or not pLocal:IsValid() then
+        return nil
+    end
+    if not vPlayer or not vPlayer:IsValid() then
+        return nil
+    end
+    if not vPlayerOrigin then
+        return nil
+    end
+
     local pLocalPos = pLocal:GetAbsOrigin()
     local vPlayerPos = vPlayerOrigin
     local pLocalVel = pLocal:EstimateAbsVelocity()
@@ -1197,7 +1184,8 @@ local function OnCreateMove(pCmd)
     pLocalOrigin = (pLocal:GetAbsOrigin() + Vheight)
 
     --[-------- Get SwingRange --------]
-    swingrange = pWeapon:GetSwingRange()
+    local weaponSwingRange = pWeapon:GetSwingRange() or swingrange
+    swingrange = weaponSwingRange
 
     SwingHullSize = 35.6
 
@@ -1211,7 +1199,7 @@ local function OnCreateMove(pCmd)
     -- Store normal weapon range when NOT charging (this is the true weapon range)
     local isCurrentlyCharging = pLocal:InCond(17)
     if not isCurrentlyCharging then
-        normalWeaponRange = swingrange
+        normalWeaponRange = swingrange or normalWeaponRange
         normalTotalSwingRange = swingrange + (SwingHullSize / 2)
     end
 
@@ -1235,7 +1223,7 @@ local function OnCreateMove(pCmd)
             --client.ChatPrintf("[Debug] Charge reach exploit active! TotalSwingRange = " .. TotalSwingRange)
         else
             -- Force back to normal weapon range
-            swingrange = normalWeaponRange
+            swingrange = normalWeaponRange or swingrange
             TotalSwingRange = normalTotalSwingRange
             --client.ChatPrintf("[Debug] Charging without exploit, TotalSwingRange = " .. TotalSwingRange)
         end
@@ -1296,7 +1284,7 @@ local function OnCreateMove(pCmd)
         local NumCrits = CritValue * Menu.Misc.CritRefill.NumCrits
 
         -- Cap NumCrits to ensure CritBucket does not exceed 1000
-        NumCrits = math.clamp(NumCrits, 27, 1000)
+        NumCrits = Clamp(NumCrits, 27, 1000)
 
         if CurrentTarget == nil and Menu.Misc.CritRefill.Active then
             -- Check if we need to refill the crit bucket
@@ -1344,7 +1332,7 @@ local function OnCreateMove(pCmd)
 
     --[--------------Prediction-------------------]
     -- Predict both players' positions after swing
-    gravity = client.GetConVar("sv_gravity")
+    gravity = client.GetConVar("sv_gravity") or 800
     stepSize = pLocal:GetPropFloat("localdata", "m_flStepSize") or stepSize
 
     -- Ensure players list is populated before using in CalcStrafe
@@ -1451,9 +1439,12 @@ local function OnCreateMove(pCmd)
     -- Get distance between local player and closest player after swing
     local fDistance = (vPlayerFuture - pLocalFuture):Length()
     local inRange = false
-    local inRangePoint = Vector3(0, 0, 0)
+    local inRangePoint = nil
 
     -- Use TotalSwingRange for range checking (already calculated with charge reach logic)
+    if not CurrentTarget then
+        goto continue
+    end
     inRange, inRangePoint, can_charge = checkInRangeSimple(CurrentTarget:GetIndex(), TotalSwingRange, pWeapon, pCmd)
     -- Use inRange to decide if can attack
     can_attack = inRange
@@ -1763,7 +1754,7 @@ local function arrowPathArrow(startPos, endPos, arrowWidth)
     local screenFinPoint2 = client.WorldToScreen(finPoint2)
 
     -- Draw the arrow
-    if screenStartPos and screenEndPos then
+    if screenStartPos and screenEndPos and screenFinPoint1 and screenFinPoint2 then
         draw.Line(screenEndPos[1], screenEndPos[2], screenFinPoint1[1], screenFinPoint1[2])
         draw.Line(screenEndPos[1], screenEndPos[2], screenFinPoint2[1], screenFinPoint2[2])
         draw.Line(screenFinPoint1[1], screenFinPoint1[2], screenFinPoint2[1], screenFinPoint2[2])
@@ -2105,7 +2096,7 @@ local function doDraw()
                 end
 
                 draw.Color(255, 255, 255, 255) -- Reset color for other visuals
-                if Menu.Visuals.Local.RangeCircle and pLocalFuture then
+                if Menu.Visuals.Local.RangeCircle and pLocalFuture and pLocalOrigin and Vheight then
                     draw.Color(255, 255, 255, 255)
 
                     -- Create a cone: traces start from view position (eye level) to ground level circle
@@ -2547,6 +2538,9 @@ local function damageLogger(event)
             return
         end
         local damage = event:GetInt("damageamount")
+        if not victim then
+            return
+        end
         if damage <= victim:GetHealth() then return end
 
         -- Trigger recharge if instant attack is enabled and warp ticks are below threshold
