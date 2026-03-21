@@ -519,18 +519,20 @@ local function OnCreateMove(pCmd)
                 end
 
                 -- ChargeBot steering (modifies engine angles directly, does not return aim_angles)
-                ChargeBot.GetChargeBotAim(
-                    pLocalClass,
-                    pLocal,
-                    chargeLeft,
-                    pLocalOrigin or Vector3(0, 0, 0),
-                    pLocalFuture or Vector3(0, 0, 0),
-                    vPlayerFuture or Vector3(0, 0, 0),
-                    inRangePoint or Vector3(0, 0, 0),
-                    can_attack,
-                    fDistance,
-                    vHitbox
-                )
+                if Menu.Charge.ChargeBot or Menu.Charge.ChargeControl then
+                    ChargeBot.GetChargeBotAim(
+                        pLocalClass,
+                        pLocal,
+                        chargeLeft,
+                        pLocalOrigin or Vector3(0, 0, 0),
+                        pLocalFuture or Vector3(0, 0, 0),
+                        vPlayerFuture or Vector3(0, 0, 0),
+                        inRangePoint or Vector3(0, 0, 0),
+                        can_attack,
+                        fDistance,
+                        vHitbox
+                    )
+                end
 
                 -- Normal silent/overt aim when in range
                 if can_attack and aim_angles and aim_angles.pitch and aim_angles.yaw then

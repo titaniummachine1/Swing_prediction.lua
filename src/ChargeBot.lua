@@ -6,13 +6,85 @@ local ChargeBot  = {}
 ---@class ChargeBotMenu
 ---@field Aimbot table
 ---@field Charge table
-local _menu                  = nil
+local _menu            = nil
 
-local _chargeState           = "idle" -- "idle" | "charge"
-local _attackStartTick       = -1000  -- tickcount when IN_ATTACK was pressed; -1000 = not tracking
+local _chargeState     = "idle"       -- "idle" | "charge"
+local _attackStartTick = -1000        -- tickcount when IN_ATTACK was pressed; -1000 = not tracking
 
--- Max turn rate for ChargeBot yaw clamping (degrees per tick)
-local MAX_CHARGE_BOT_TURN    = 17
+-- Dynamic turn cap: calculated per tick
+
+-- Shield/boots itemdef indexes
+local SHIELD_TARGE     = 131;
+local SHIELD_SPLENDID  = 406;
+local SHIELD_TIDE      = 1099;
+local BOOTIES          = 405;
+local BOOTLEGGER       = 608;
+
+-- Returns the effective yaw cap (in degrees per tick) for the current player state
+local function GetChargeTurnCap(pLocal)
+    if not pLocal or not pLocal:IsValid() then return 17 end -- fallback
+    local isCharging = pLocal:InCond(17)
+    if not isCharging then return 17 end
+
+    -- Find equipped shield
+    local shields = entities.FindByClass("CTFWearableDemoShield")
+    local shieldType = nil
+    for _, shield in pairs(shields) do
+        if shield and shield:IsValid() then
+            local owner = shield:GetPropEntity("m_hOwnerEntity")
+            if owner == pLocal then
+                local defIndex = shield:GetPropInt("m_iItemDefinitionIndex")
+                shieldType = defIndex
+                break
+            end
+        end
+    end
+
+    -- Find boots
+    local hasBoots = false
+    local boots = entities.FindByClass("CTFWearable")
+    for _, boot in pairs(boots) do
+        if boot and boot:IsValid() then
+            local owner = boot:GetPropEntity("m_hOwnerEntity")
+            if owner == pLocal then
+                local defIndex = boot:GetPropInt("m_iItemDefinitionIndex")
+                if defIndex == BOOTIES or defIndex == BOOTLEGGER then
+                    hasBoots = true
+                    break
+                end
+            end
+        end
+    end
+
+    -- FPS scaling (frametime)
+    local tickrate = globals.TickInterval() > 0 and 1 / globals.TickInterval() or 66.666
+    local frametime = globals.FrameTime()
+    local scaling = 1.0
+    if frametime > 0 then
+        local tickInterval = globals.TickInterval()
+        local minFT = 0.2 * tickInterval
+        local maxFT = 2.0 * tickInterval
+        if frametime <= minFT then
+            scaling = 0.25
+        elseif frametime >= maxFT then
+            scaling = 2.0
+        else
+            scaling = 0.25 + (frametime - minFT) * (2.0 - 0.25) / (maxFT - minFT)
+        end
+    end
+
+    -- Shield logic
+    if shieldType == SHIELD_TIDE then
+        return 180       -- full control
+    end
+    local baseCap = 0.45 -- radians
+    if hasBoots then baseCap = baseCap * 3 end
+    -- Convert to degrees
+    local capDeg = baseCap * (180 / math.pi)
+    -- Per-tick
+    local perTick = capDeg * scaling * globals.TickInterval()
+    return perTick
+end
 
 -- Constants for ChargeControl mouse-turn steering
 local CHARGE_TURN_MULTIPLIER = 1.0
@@ -48,51 +120,30 @@ function ChargeBot.ResetAttackTracking()
     _attackStartTick = -1000
 end
 
-function ChargeBot.GetMaxChargeBotTurn()
-    return MAX_CHARGE_BOT_TURN
-end
-
 -- ─── ChargeControl ────────────────────────────────────────────────────────────
 ---@param pCmd UserCmd
 ---@param pLocal Entity
 function ChargeBot.ChargeControl(pCmd, pLocal)
-    if not pCmd or not pLocal then
-        return
-    end
-
-    if not _menu or not _menu.Charge or not _menu.Charge.ChargeControl then
-        return
-    end
-
-    if not pLocal:IsValid() then
-        return
-    end
-
+    if not pCmd or not pLocal then return end
+    if not _menu or not _menu.Charge or not _menu.Charge.ChargeControl then return end
+    if not pLocal:IsValid() then return end
     local isCharging = pLocal:InCond(17)
-    if not isCharging then
-        return
-    end
+    if not isCharging then return end
 
-    -- Check if any equipped shield is a Tide Turner (disable control for it)
+    -- Check for Tide Turner (full control)
     local shields = entities.FindByClass("CTFWearableDemoShield")
     for _, shield in pairs(shields) do
         if shield and shield:IsValid() then
-            local owner  = shield:GetPropEntity("m_hOwnerEntity")
-            local isMine = owner == pLocal
-            if isMine then
+            local owner = shield:GetPropEntity("m_hOwnerEntity")
+            if owner == pLocal then
                 local defIndex = shield:GetPropInt("m_iItemDefinitionIndex")
-                local isTideTurner = defIndex == 1099
-                if isTideTurner then
-                    return
-                end
+                if defIndex == SHIELD_TIDE then return end
             end
         end
     end
 
     local mouseDeltaX = -pCmd.mousedx
-    if mouseDeltaX == 0 then
-        return
-    end
+    if mouseDeltaX == 0 then return end
 
     local currentAngles = engine.GetViewAngles()
     local m_yaw         = select(2, client.GetConVar("m_yaw"))
@@ -104,16 +155,11 @@ function ChargeBot.ChargeControl(pCmd, pLocal)
         pCmd.sidemove = -CHARGE_SIDE_MOVE_VALUE
     end
 
-    turnAmount   = Simulation.Clamp(turnAmount, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+    local maxTurn = GetChargeTurnCap(pLocal)
+    turnAmount = Simulation.Clamp(turnAmount, -maxTurn, maxTurn)
 
     local newYaw = currentAngles.yaw + turnAmount
-    newYaw       = newYaw % 360
-    if newYaw > 180 then
-        newYaw = newYaw - 360
-    elseif newYaw < -180 then
-        newYaw = newYaw + 360
-    end
-
+    newYaw = ((newYaw + 180) % 360) - 180
     engine.SetViewAngles(EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll))
 end
 
@@ -220,13 +266,13 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeLeft, pLocalOrigin
     if _menu.Aimbot.ChargeBot and isCharging and not can_attack then
         local aimPosTarget = inRangePoint or vPlayerFuture
         if not aimPosTarget then return nil end
-        local trace = engine.TraceHull(pLocalOrigin, aimPosTarget, vHitbox[1], vHitbox[2],
-            MASK_PLAYERSOLID_BRUSHONLY)
+        local trace = engine.TraceHull(pLocalOrigin, aimPosTarget, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
         if trace.fraction == 1 or trace.entity ~= nil then
             local aimAngles  = Math.PositionAngles(pLocalOrigin, aimPosTarget)
             local currentAng = engine.GetViewAngles()
             local yawDiff    = Simulation.NormalizeYaw(aimAngles.yaw - currentAng.yaw)
-            local limitedYaw = currentAng.yaw + Simulation.Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+            local maxTurn    = GetChargeTurnCap(pLocal)
+            local limitedYaw = currentAng.yaw + Simulation.Clamp(yawDiff, -maxTurn, maxTurn)
             engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
         end
         return nil
@@ -236,13 +282,13 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeLeft, pLocalOrigin
     if _menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
         local aimPosTarget = inRangePoint or vPlayerFuture
         if not aimPosTarget then return nil end
-        local trace = engine.TraceHull(pLocalFuture, aimPosTarget, vHitbox[1], vHitbox[2],
-            MASK_PLAYERSOLID_BRUSHONLY)
+        local trace = engine.TraceHull(pLocalFuture, aimPosTarget, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
         if trace.fraction == 1 or trace.entity ~= nil then
             local aimAngles  = Math.PositionAngles(pLocalOrigin, aimPosTarget)
             local currentAng = engine.GetViewAngles()
             local yawDiff    = Simulation.NormalizeYaw(aimAngles.yaw - currentAng.yaw)
-            local limitedYaw = currentAng.yaw + Simulation.Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+            local maxTurn    = GetChargeTurnCap(pLocal)
+            local limitedYaw = currentAng.yaw + Simulation.Clamp(yawDiff, -maxTurn, maxTurn)
             engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
         end
         return nil
