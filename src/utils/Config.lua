@@ -61,11 +61,11 @@ function Config.LoadCFG(defaultConfig, luaFileName, folderName)
 
     local ok, cfg = pcall(chunk)
     local shiftHeld = input.IsButtonDown(KEY_LSHIFT)
-    if not ok or type(cfg) ~= "table" or not Serializer.keysMatch(template, cfg) or shiftHeld then
+    if not ok or type(cfg) ~= "table" or shiftHeld then
         if shiftHeld then
             printc(255, 200, 100, 255, "[Config] SHIFT held - regenerating config...")
         else
-            printc(255, 100, 100, 255, "[Config] Invalid or outdated config - regenerating...")
+            printc(255, 100, 100, 255, "[Config] Invalid or corrupted config - regenerating...")
         end
         local fresh = Serializer.deepCopy(template)
         Config.CreateCFG(fresh, luaFileName, folderName)
