@@ -1,4 +1,4 @@
-﻿---@class Entity
+---@class Entity
 ---@field IsValid fun(self: Entity): boolean
 ---@field GetName fun(self: Entity): string
 ---@field GetClass fun(self: Entity): string
@@ -16,13 +16,12 @@
 ---@field EstimateAbsVelocity fun(self: Entity): Vector3
 ---@field GetWeaponData fun(self: Entity): table
 ---@field IsAlive fun(self: Entity): boolean
----@field IsDormant fun(self: Entity): boolean
 
 
 
 -- Unload the module if it is already loaded
-if package.loaded["ImMenu"] then
-    package.loaded["ImMenu"] = nil
+if package.loaded["TimMenu"] then
+    package.loaded["TimMenu"] = nil
 end
 
 -- Initialize libraries
@@ -34,6 +33,7 @@ local MenuUI         = require("MenuUI")
 local ChargeBot      = require("ChargeBot")
 local TargetSelector = require("TargetSelector")
 local CritManager    = require("CritManager")
+local TimMenu        = require("TimMenu")
 
 local Math           = lnxLib.Utils.Math
 local WPlayer        = lnxLib.TF2.WPlayer
@@ -60,6 +60,8 @@ local Menu           = {
         ChargeReach = true,
         ChargeJump = true,
         LateCharge = true,
+        Keybind = { key = 0, mode = 0 },
+        ChargeBotHold = false,
     },
 
     Visuals = {
@@ -99,8 +101,7 @@ local Menu           = {
         advancedHitreg = true,
     },
 
-    Keybind = KEY_NONE,
-    KeybindName = "Always On",
+    Keybind = { key = 0, mode = 0 },
 }
 
 local Lua__fullPath  = GetScriptName()
@@ -133,9 +134,17 @@ local vHitbox               = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
 local gravity               = client.GetConVar("sv_gravity") or 800
 local stepSize              = 18
 
+
 local function UpdateServerCvars()
     gravity = client.GetConVar("sv_gravity") or 800
     Simulation.UpdatePhysics(gravity, stepSize, vHitbox)
+end
+
+-- Call this every tick to update ChargeBot hold state
+local function UpdateChargeBotHold()
+    if ChargeBot.UpdateHoldState then
+        ChargeBot.UpdateHoldState()
+    end
 end
 
 UpdateServerCvars()
@@ -271,13 +280,19 @@ local function OnCreateMove(pCmd)
     Simulation.UpdatePhysics(gravity, stepSize, vHitbox)
 
     -- Track last +attack tick for charge-reach logic
-    if (pCmd:GetButtons() & IN_ATTACK) ~= 0 then
+    -- We only track it if it's NOT a crit refill attack
+    local isAttackingThisTick = (pCmd:GetButtons() & IN_ATTACK) ~= 0
+    if isAttackingThisTick and not CritManager.IsRefilling() then
         lastAttackTick = globals.TickCount()
         Simulation.SetLastAttackTick(lastAttackTick)
     end
 
     pLocalClass = pLocal:GetPropInt("m_iClass")
     chargeLeft  = pLocal:GetPropFloat("m_flChargeMeter")
+
+
+    -- Update ChargeBot hold state
+    UpdateChargeBotHold()
 
     -- Charge-reach state machine (Demoman only)
     ChargeBot.TickStateMachine(pCmd, pLocalClass)
@@ -378,26 +393,35 @@ local function OnCreateMove(pCmd)
             ChargeBot.ChargeControl(pCmd, pLocal)
         end
 
-        -- Target selection
-        local keybind = Menu.Keybind
-        players = entities.FindByClass("CTFPlayer")
 
+        -- Target selection and activation mode logic
+        players = entities.FindByClass("CTFPlayer")
         TargetSelector.SetTickState(players, pLocal, Vheight or Vector3(0, 0, 72), TotalSwingRange)
         TargetSelector.CalcStrafe()
 
-        if keybind == 0 then
+        -- --- Aimbot Activation ---
+        local aimActive = TimMenu.IsKeybindActive(Menu.Aimbot.Keybind)
+        if aimActive then
             CurrentTarget = TargetSelector.GetBestTarget(pLocal)
-            vPlayer       = CurrentTarget
-        elseif input.IsButtonDown(keybind) then
-            CurrentTarget = TargetSelector.GetBestTarget(pLocal)
-            vPlayer       = CurrentTarget
+            vPlayer = CurrentTarget
         else
             CurrentTarget = nil
-            vPlayer       = nil
+            vPlayer = nil
         end
 
-        -- Crit refill
-        CritManager.Tick(pCmd, pWeapon, CurrentTarget ~= nil)
+        -- --- ChargeBot Activation ---
+        local chargeActive = TimMenu.IsKeybindActive(Menu.Charge.Keybind)
+        Menu.Charge.ChargeBot = chargeActive
+        Menu.Aimbot.ChargeBot = chargeActive
+
+        -- Crit refill: only when not attacking or charging
+        local doingCritRefill = false
+        if not aimActive and not chargeActive then
+            CritManager.Tick(pCmd, pWeapon, false)
+            doingCritRefill = true
+        else
+            CritManager.Tick(pCmd, pWeapon, CurrentTarget ~= nil)
+        end
 
         local OnGround = (flags & FL_ONGROUND) ~= 0
         can_attack = false
@@ -409,6 +433,11 @@ local function OnCreateMove(pCmd)
             end
         end
 
+        -- If doing crit refill, skip all attack/charge logic
+        if doingCritRefill then
+            return
+        end
+
         -- Refresh physics before prediction
         gravity                  = client.GetConVar("sv_gravity") or 800
         stepSize                 = pLocal:GetPropFloat("m_flStepSize") or stepSize
@@ -418,9 +447,31 @@ local function OnCreateMove(pCmd)
             warp.GetChargedTicks() >= Menu.Aimbot.SwingTime
         local simulateCharge     = (not isCurrentlyCharging) and isExploitReady and (not Menu.Charge.LateCharge)
         local simTicks           = Menu.Aimbot.SwingTime
-        if not instantAttackReady and not simulateCharge then
-            local remSwing = Simulation.getMeleeSwingTicksRemaining(pWeapon)
-            if remSwing then
+        local remSwing           = Simulation.getMeleeSwingTicksRemaining(pWeapon)
+        -- Only allow charge reach if not swinging, or if target is out of range before hit
+        if not instantAttackReady then
+            if remSwing and remSwing > 1 then
+                -- Only allow charge reach if target is out of normal range for all remaining ticks,
+                -- except allow on the last tick before damage is applied
+                local canHitNormally = false
+                if CurrentTarget and CurrentTarget.GetIndex then
+                    for tick = 1, remSwing do
+                        -- On last tick, allow charge reach to expand range
+                        if tick == remSwing then
+                            break
+                        end
+                        local inR, _, _ = checkInRangeSimple(CurrentTarget:GetIndex(), normalTotalSwingRange, pWeapon,
+                            pCmd)
+                        if inR then
+                            canHitNormally = true
+                            break
+                        end
+                    end
+                end
+                -- If can hit normally, block charge reach
+                if canHitNormally then
+                    simulateCharge = false
+                end
                 simTicks = math.max(remSwing, 1)
             end
         end
@@ -519,7 +570,8 @@ local function OnCreateMove(pCmd)
                 end
 
                 -- ChargeBot steering (modifies engine angles directly, does not return aim_angles)
-                if Menu.Charge.ChargeBot or Menu.Charge.ChargeControl then
+                -- Only rotate camera if ChargeBot is enabled
+                if ChargeBot.IsActive and ChargeBot.IsActive() then
                     ChargeBot.GetChargeBotAim(
                         pLocalClass,
                         pLocal,

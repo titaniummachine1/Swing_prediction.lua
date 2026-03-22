@@ -228,7 +228,7 @@ function TargetSelector.GetBestTarget(me)
     local function chooseBest(cands)
         if #cands == 0 then return nil end
         if #cands > 1 then
-            for _, c in ipairs(cands) do
+            for _, c in pairs(cands) do
                 local p       = c.player
                 local hp      = p:GetHealth() or 0
                 local maxhp   = p:GetPropInt("m_iMaxHealth") or hp

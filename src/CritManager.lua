@@ -1,5 +1,4 @@
 ---@class Entity
----@field IsDormant fun(self: Entity): boolean
 
 ---@class MenuMisc
 ---@field CritRefill table
@@ -27,6 +26,10 @@ local _critRefillActive      = false
 function CritManager.Init(menuRef)
     assert(menuRef, "CritManager.Init: menuRef is nil")
     _menu = menuRef
+end
+
+function CritManager.IsRefilling()
+    return _critRefillActive
 end
 
 -- ─── Tick ─────────────────────────────────────────────────────────────────────

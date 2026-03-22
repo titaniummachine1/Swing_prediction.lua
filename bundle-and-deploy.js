@@ -65,6 +65,17 @@ function transformRequires(content, includeModule) {
 	return out.join("\n");
 }
 
+function stripBOM(str) {
+	if (str.charCodeAt(0) === 0xFEFF) {
+		return str.slice(1);
+	}
+	// Also handle UTF-8 BOM (EF BB BF)
+	if (str.length >= 3 && str.charCodeAt(0) === 0xEF && str.charCodeAt(1) === 0xBB && str.charCodeAt(2) === 0xBF) {
+		return str.slice(3);
+	}
+	return str;
+}
+
 function buildBundleFromMain(mainFilePath) {
 	const moduleCode = new Map();
 	const processing = new Set();
@@ -75,14 +86,16 @@ function buildBundleFromMain(mainFilePath) {
 		}
 		processing.add(moduleName);
 
-		const raw = fs.readFileSync(moduleFile, "utf8");
+		let raw = fs.readFileSync(moduleFile, "utf8");
+		raw = stripBOM(raw);
 		const transformed = transformRequires(raw, includeModule);
 		const stamped = `-- Module: ${moduleName} (${path.relative(process.cwd(), moduleFile).replace(/\\/g, "/")})\n${transformed}`;
 		moduleCode.set(moduleName, stamped);
 		processing.delete(moduleName);
 	}
 
-	const mainRaw = fs.readFileSync(mainFilePath, "utf8");
+	let mainRaw = fs.readFileSync(mainFilePath, "utf8");
+	mainRaw = stripBOM(mainRaw);
 	const mainTransformed = transformRequires(mainRaw, includeModule);
 
 	const parts = [];
@@ -97,7 +110,7 @@ function buildBundleFromMain(mainFilePath) {
 	parts.push(mainTransformed);
 	parts.push("");
 
-	return parts.join("\n");
+	return stripBOM(parts.join("\n"));
 }
 
 try {
@@ -108,7 +121,7 @@ try {
 	if (fs.existsSync(mainPath)) {
 		console.log("Bundling from src/Main.lua...");
 		const bundled = buildBundleFromMain(mainPath);
-		fs.writeFileSync(outputPath, bundled);
+		fs.writeFileSync(outputPath, stripBOM(bundled), { encoding: "utf8", flag: "w" });
 	} else {
 		const entry = resolveSingleEntry();
 		if (!entry) {
@@ -128,7 +141,10 @@ try {
 	if (!fs.existsSync(deployDir)) {
 		fs.mkdirSync(deployDir, { recursive: true });
 	}
-	fs.copyFileSync(outputPath, deployPath);
+	// Always write deploy as UTF-8 without BOM
+	let deployContent = fs.readFileSync(outputPath, "utf8");
+	deployContent = stripBOM(deployContent);
+	fs.writeFileSync(deployPath, deployContent, { encoding: "utf8", flag: "w" });
 	console.log("Deployed:", deployPath);
 	process.exit(0);
 } catch (err) {

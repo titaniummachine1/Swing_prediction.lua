@@ -7,9 +7,10 @@ local ChargeBot  = {}
 ---@field Aimbot table
 ---@field Charge table
 local _menu            = nil
+local _isHeldActive    = false
 
-local _chargeState     = "idle"       -- "idle" | "charge"
-local _attackStartTick = -1000        -- tickcount when IN_ATTACK was pressed; -1000 = not tracking
+local _chargeState     = "idle" -- "idle" | "charge"
+local _attackStartTick = -1000  -- tickcount when IN_ATTACK was pressed; -1000 = not tracking
 
 -- Dynamic turn cap: calculated per tick
 
@@ -97,6 +98,25 @@ function ChargeBot.Init(menuRef)
     _menu = menuRef
 end
 
+-- Call this in your main tick to update hold-to-activate logic
+function ChargeBot.UpdateHoldState()
+    if not _menu or not _menu.Charge then return end
+    if _menu.Charge.ChargeBotHold and _menu.Charge.ChargeBotKey and _menu.Charge.ChargeBotKey ~= 0 then
+        _isHeldActive = input.IsButtonDown(_menu.Charge.ChargeBotKey)
+    else
+        _isHeldActive = true
+    end
+end
+
+function ChargeBot.IsActive()
+    if not _menu or not _menu.Charge then return false end
+    if not _menu.Charge.ChargeBot then return false end
+    if _menu.Charge.ChargeBotHold and _menu.Charge.ChargeBotKey and _menu.Charge.ChargeBotKey ~= 0 then
+        return _isHeldActive
+    end
+    return true
+end
+
 -- ─── State accessors ──────────────────────────────────────────────────────────
 
 function ChargeBot.GetChargeState()
@@ -126,6 +146,7 @@ end
 function ChargeBot.ChargeControl(pCmd, pLocal)
     if not pCmd or not pLocal then return end
     if not _menu or not _menu.Charge or not _menu.Charge.ChargeControl then return end
+    if not ChargeBot.IsActive() then return end
     if not pLocal:IsValid() then return end
     local isCharging = pLocal:InCond(17)
     if not isCharging then return end
@@ -258,6 +279,9 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeLeft, pLocalOrigin
     if pLocalClass ~= 4 then
         return nil
     end
+    if not _menu or not _menu.Charge or not ChargeBot.IsActive() then
+        return nil
+    end
 
     local Math = require("lnxLib").Utils.Math
 
@@ -278,22 +302,7 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeLeft, pLocalOrigin
         return nil
     end
 
-    -- Full-charge pre-charge steering (charge meter 100, right-mouse held, not in range)
-    if _menu.Aimbot.ChargeBot and chargeLeft == 100 and input.IsButtonDown(MOUSE_RIGHT) and not can_attack and fDistance < 750 then
-        local aimPosTarget = inRangePoint or vPlayerFuture
-        if not aimPosTarget then return nil end
-        local trace = engine.TraceHull(pLocalFuture, aimPosTarget, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
-        if trace.fraction == 1 or trace.entity ~= nil then
-            local aimAngles  = Math.PositionAngles(pLocalOrigin, aimPosTarget)
-            local currentAng = engine.GetViewAngles()
-            local yawDiff    = Simulation.NormalizeYaw(aimAngles.yaw - currentAng.yaw)
-            local maxTurn    = GetChargeTurnCap(pLocal)
-            local limitedYaw = currentAng.yaw + Simulation.Clamp(yawDiff, -maxTurn, maxTurn)
-            engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
-        end
-        return nil
-    end
-
+    -- Full-charge pre-charge steering removed as requested (was causing "charging from kilometer" issues)
     return nil
 end
 
