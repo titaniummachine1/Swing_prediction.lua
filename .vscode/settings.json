@@ -10,7 +10,7 @@
       {
         "match": ".*[\\\\/]src[\\\\/].*\\.lua$",
         "isAsync": true,
-        "cmd": "node \"${workspaceFolder}/bundle-and-deploy.js\"",
+        "cmd": "if exist \"${workspaceFolder}\\bundle-and-deploy.js\" node \"${workspaceFolder}\\bundle-and-deploy.js\"",
         "autoShowOutputPanel": "always"
       }
     ]
