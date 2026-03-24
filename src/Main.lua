@@ -68,7 +68,7 @@ local function OnCreateMove(pCmd)
     if not menuSettings.Aimbot.Aimbot then return end
 
     -- 1. Updates & State
-    local players = entities.GetPlayers()
+    local players = entities.FindByClass("CTFPlayer")
     _state.vHeight = Vector3(0, 0, pLocal:GetPropVector("localdata", "m_vecViewOffset[0]").z)
 
     local swingRange, hullSize = Simulation.ResolveMeleeParams(pWeapon)
