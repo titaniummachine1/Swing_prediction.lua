@@ -2,6 +2,12 @@
 
 local CritManager = {}
 
+-- --- Initialization ----------------------------------------------------------
+
+function CritManager.Init(menu)
+    -- CritManager handles its own state in Tick
+end
+
 -- --- Module state ------------------------------------------------------------
 
 local _originalCritHackKey = 0

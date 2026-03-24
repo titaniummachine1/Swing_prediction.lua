@@ -22,6 +22,12 @@ local MASK_PLAYERSOLID = MASK_PLAYERSOLID or 33636363
 local MASK_SHOT_HULL = MASK_SHOT_HULL or 10067459
 local CONTENTS_GRATE = CONTENTS_GRATE or 0x8
 
+-- --- Initialization ----------------------------------------------------------
+
+function Simulation.Init(menu)
+    -- Simulation currently uses globals and menu directly in some checks
+end
+
 -- --- Module state ------------------------------------------------------------
 
 local _lastAngles = {}
