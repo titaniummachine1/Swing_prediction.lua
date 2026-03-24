@@ -1,164 +1,47 @@
+--[[ Imported by: Main ]]
+
 local Simulation = require("Simulation")
 
-local ChargeBot  = {}
+local ChargeBot = {}
 
+-- ─── Constants ───────────────────────────────────────────────────────────────
 
----@class ChargeBotMenu
----@field Aimbot table
----@field Charge table
-local _menu            = nil
-local _isHeldActive    = false
+local MAX_CHARGE_BOT_TURN = 17
+local SIDE_MOVE_VALUE = 450
+local TURN_MULTIPLIER = 1.0
 
-local _chargeState     = "idle" -- "idle" | "charge"
-local _attackStartTick = -1000  -- tickcount when IN_ATTACK was pressed; -1000 = not tracking
+-- ─── Module state ────────────────────────────────────────────────────────────
 
--- Dynamic turn cap: calculated per tick
+local _chargeState = "idle"
+local _chargeAimAngles = nil
+local _attackStarted = false
+local _attackTickCount = 0
 
--- Shield/boots itemdef indexes
-local SHIELD_TARGE     = 131;
-local SHIELD_SPLENDID  = 406;
-local SHIELD_TIDE      = 1099;
-local BOOTIES          = 405;
-local BOOTLEGGER       = 608;
+-- ─── Helpers ─────────────────────────────────────────────────────────────────
 
--- Returns the effective yaw cap (in degrees per tick) for the current player state
-local function GetChargeTurnCap(pLocal)
-    if not pLocal or not pLocal:IsValid() then return 17 end -- fallback
-    local isCharging = pLocal:InCond(17)
-    if not isCharging then return 17 end
-
-    -- Find equipped shield
-    local shields = entities.FindByClass("CTFWearableDemoShield")
-    local shieldType = nil
-    for _, shield in pairs(shields) do
-        if shield and shield:IsValid() then
-            local owner = shield:GetPropEntity("m_hOwnerEntity")
-            if owner == pLocal then
-                local defIndex = shield:GetPropInt("m_iItemDefinitionIndex")
-                shieldType = defIndex
-                break
-            end
-        end
-    end
-
-    -- Find boots
-    local hasBoots = false
-    local boots = entities.FindByClass("CTFWearable")
-    for _, boot in pairs(boots) do
-        if boot and boot:IsValid() then
-            local owner = boot:GetPropEntity("m_hOwnerEntity")
-            if owner == pLocal then
-                local defIndex = boot:GetPropInt("m_iItemDefinitionIndex")
-                if defIndex == BOOTIES or defIndex == BOOTLEGGER then
-                    hasBoots = true
-                    break
-                end
-            end
-        end
-    end
-
-    -- FPS scaling (frametime)
-    local tickrate = globals.TickInterval() > 0 and 1 / globals.TickInterval() or 66.666
-    local frametime = globals.FrameTime()
-    local scaling = 1.0
-    if frametime > 0 then
-        local tickInterval = globals.TickInterval()
-        local minFT = 0.2 * tickInterval
-        local maxFT = 2.0 * tickInterval
-        if frametime <= minFT then
-            scaling = 0.25
-        elseif frametime >= maxFT then
-            scaling = 2.0
-        else
-            scaling = 0.25 + (frametime - minFT) * (2.0 - 0.25) / (maxFT - minFT)
-        end
-    end
-
-    -- Shield logic
-    if shieldType == SHIELD_TIDE then
-        return 180       -- full control
-    end
-    local baseCap = 0.45 -- radians
-    if hasBoots then baseCap = baseCap * 3 end
-    -- Convert to degrees
-    local capDeg = baseCap * (180 / math.pi)
-    -- Per-tick
-    local perTick = capDeg * scaling * globals.TickInterval()
-    return perTick
+local function Clamp(val, min, max)
+    if val < min then return min end
+    if val > max then return max end
+    return val
 end
 
--- Constants for ChargeControl mouse-turn steering
-local CHARGE_TURN_MULTIPLIER = 1.0
-local CHARGE_SIDE_MOVE_VALUE = 450
+-- ─── Charge Control ──────────────────────────────────────────────────────────
 
--- ─── Init ─────────────────────────────────────────────────────────────────────
+function ChargeBot.HandleChargeControl(pCmd, pLocal, menuSettings)
+    assert(pCmd, "ChargeBot.HandleChargeControl: pCmd missing")
+    assert(pLocal, "ChargeBot.HandleChargeControl: pLocal missing")
 
-function ChargeBot.Init(menuRef)
-    assert(menuRef, "ChargeBot.Init: menuRef is nil")
-    _menu = menuRef
-end
+    if not menuSettings.ChargeControl then return end
+    if not pLocal:InCond(17) then return end
 
--- Call this in your main tick to update hold-to-activate logic
-function ChargeBot.UpdateHoldState()
-    if not _menu or not _menu.Charge then return end
-    if _menu.Charge.ChargeBotHold and _menu.Charge.ChargeBotKey and _menu.Charge.ChargeBotKey ~= 0 then
-        _isHeldActive = input.IsButtonDown(_menu.Charge.ChargeBotKey)
-    else
-        _isHeldActive = true
-    end
-end
-
-function ChargeBot.IsActive()
-    if not _menu or not _menu.Charge then return false end
-    if not _menu.Charge.ChargeBot then return false end
-    if _menu.Charge.ChargeBotHold and _menu.Charge.ChargeBotKey and _menu.Charge.ChargeBotKey ~= 0 then
-        return _isHeldActive
-    end
-    return true
-end
-
--- ─── State accessors ──────────────────────────────────────────────────────────
-
-function ChargeBot.GetChargeState()
-    return _chargeState
-end
-
-function ChargeBot.SetChargeState(state)
-    assert(state == "idle" or state == "charge", "ChargeBot.SetChargeState: invalid state " .. tostring(state))
-    _chargeState = state
-end
-
-function ChargeBot.GetAttackStartTick()
-    return _attackStartTick
-end
-
-function ChargeBot.SetAttackStartTick(t)
-    _attackStartTick = t
-end
-
-function ChargeBot.ResetAttackTracking()
-    _attackStartTick = -1000
-end
-
--- ─── ChargeControl ────────────────────────────────────────────────────────────
----@param pCmd UserCmd
----@param pLocal Entity
-function ChargeBot.ChargeControl(pCmd, pLocal)
-    if not pCmd or not pLocal then return end
-    if not _menu or not _menu.Charge or not _menu.Charge.ChargeControl then return end
-    if not ChargeBot.IsActive() then return end
-    if not pLocal:IsValid() then return end
-    local isCharging = pLocal:InCond(17)
-    if not isCharging then return end
-
-    -- Check for Tide Turner (full control)
+    -- Tide Turner check
     local shields = entities.FindByClass("CTFWearableDemoShield")
     for _, shield in pairs(shields) do
         if shield and shield:IsValid() then
             local owner = shield:GetPropEntity("m_hOwnerEntity")
-            if owner == pLocal then
+            if owner and owner:GetIndex() == pLocal:GetIndex() then
                 local defIndex = shield:GetPropInt("m_iItemDefinitionIndex")
-                if defIndex == SHIELD_TIDE then return end
+                if defIndex == 1099 then return end -- Skip Tide Turner
             end
         end
     end
@@ -167,143 +50,110 @@ function ChargeBot.ChargeControl(pCmd, pLocal)
     if mouseDeltaX == 0 then return end
 
     local currentAngles = engine.GetViewAngles()
-    local m_yaw         = select(2, client.GetConVar("m_yaw"))
-    local turnAmount    = mouseDeltaX * m_yaw * CHARGE_TURN_MULTIPLIER
+    local m_yaw = select(2, client.GetConVar("m_yaw")) or 0.022
+    local turnAmount = mouseDeltaX * m_yaw * TURN_MULTIPLIER
 
     if turnAmount > 0 then
-        pCmd.sidemove = CHARGE_SIDE_MOVE_VALUE
+        pCmd:SetSideMove(SIDE_MOVE_VALUE)
     else
-        pCmd.sidemove = -CHARGE_SIDE_MOVE_VALUE
+        pCmd:SetSideMove(-SIDE_MOVE_VALUE)
     end
 
-    local maxTurn = GetChargeTurnCap(pLocal)
-    turnAmount = Simulation.Clamp(turnAmount, -maxTurn, maxTurn)
+    turnAmount = Clamp(turnAmount, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
+    local newYaw = Simulation.NormalizeYaw(currentAngles.yaw + turnAmount)
 
-    local newYaw = currentAngles.yaw + turnAmount
-    newYaw = ((newYaw + 180) % 360) - 180
     engine.SetViewAngles(EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll))
 end
 
--- ─── State machine tick ───────────────────────────────────────────────────────
--- Call early in OnCreateMove (Demoman only, before target selection).
----@param pCmd UserCmd
----@param pLocalClass integer  local player class ID
-function ChargeBot.TickStateMachine(pCmd, pLocalClass)
-    if not pCmd or not pLocalClass then
-        return
+-- ─── Charge Reach & Multi-tick execution ─────────────────────────────────────
+
+function ChargeBot.HandleChargeReach(pCmd, pLocal, menuSettings, targetPos, weaponSmackDelay)
+    assert(pCmd, "ChargeBot.HandleChargeReach: pCmd missing")
+    assert(pLocal, "ChargeBot.HandleChargeReach: pLocal missing")
+    assert(menuSettings, "ChargeBot.HandleChargeReach: menuSettings missing")
+
+    local pLocalClass = pLocal:GetPropInt("m_iClass")
+    if pLocalClass ~= 4 then 
+        _chargeState = "idle"
+        _chargeAimAngles = nil
+        return 
     end
 
-    if pLocalClass == 4 then
-        if _chargeState == "charge" then
-            local buttons = pCmd:GetButtons() or 0
-            pCmd:SetButtons(buttons | IN_ATTACK2)
-            _chargeState = "idle"
+    -- State machine logic (from Main.lua)
+    if _chargeState == "aim" then
+        if _chargeAimAngles then
+            engine.SetViewAngles(EulerAngles(_chargeAimAngles.pitch, _chargeAimAngles.yaw, 0))
         end
-    else
-        _chargeState     = "idle"
-        _attackStartTick = -1000
+        _chargeState = "charge"
+    elseif _chargeState == "charge" then
+        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK2)
+        _chargeState = "idle"
+        _chargeAimAngles = nil
+    end
+
+    -- Attack tracking logic
+    if (pCmd:GetButtons() & IN_ATTACK) ~= 0 then
+        local chargeLeft = pLocal:GetPropFloat("m_flChargeMeter") or 0
+        if menuSettings.ChargeReach and chargeLeft >= 100 and not _attackStarted then
+            _attackStarted = true
+            _attackTickCount = 0
+            if targetPos then
+                _chargeAimAngles = (targetPos - (pLocal:GetAbsOrigin() + Vector3(0,0,75))):Angles()
+            end
+        end
+    end
+
+    if _attackStarted then
+        _attackTickCount = _attackTickCount + 1
+        local onGround = (pLocal:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0
+
+        if menuSettings.ChargeJump and onGround then
+            pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
+        end
+
+        local delay = weaponSmackDelay or 13
+        if _attackTickCount >= (delay - 2) then
+            _chargeState = "aim"
+            _attackStarted = false
+            _attackTickCount = 0
+        end
     end
 end
 
--- ─── Charge-reach fire logic ──────────────────────────────────────────────────
--- Call after IN_ATTACK is pressed (can_attack block) to arm and fire the charge.
----@param pCmd UserCmd
----@param pWeapon Entity
----@param chargeLeft number  (0–100)
----@param pLocalClass integer
----@param OnGround boolean
----@return boolean fired
-function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeLeft, pLocalClass, OnGround)
-    if not pCmd or not pLocalClass then
-        return false
-    end
+-- ─── Charge Steering (Homing) ────────────────────────────────────────────────
 
-    if _attackStartTick < 0 then
-        return false
-    end
+function ChargeBot.SteerTowards(pCmd, pLocal, targetPos, menuSettings)
+    assert(pCmd, "ChargeBot.SteerTowards: pCmd missing")
+    assert(pLocal, "ChargeBot.SteerTowards: pLocal missing")
+    if not menuSettings.ChargeBot then return end
+    if not targetPos then return end
 
-    local weaponSmackDelayTicks = _menu.Aimbot.MaxSwingTime or 13
-    local wd = pWeapon and pWeapon:GetWeaponData()
-    if wd and wd.smackDelay then
-        weaponSmackDelayTicks = Simulation.smackDelayToTicks(wd.smackDelay)
-    end
+    local pLocalClass = pLocal:GetPropInt("m_iClass")
+    if pLocalClass ~= 4 then return end
 
-    if _menu.Charge.ChargeJump and OnGround then
-        pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
-    end
-
-    local chargeWindow       = Simulation.getChargeReachWindowTicks()
-    local damageRegisterTick = _attackStartTick + weaponSmackDelayTicks
-    local ticksToSmack       = damageRegisterTick - globals.TickCount()
-
-    if ticksToSmack <= chargeWindow then
-        _chargeState     = "charge"
-        _attackStartTick = -1000
-        return true
-    end
-
-    return false
-end
-
--- ─── Arm charge reach ─────────────────────────────────────────────────────────
--- Call when IN_ATTACK fires and conditions are met to arm the reach exploit.
----@param pLocalClass integer
----@param chargeLeft  number
-function ChargeBot.ArmChargeReach(pLocalClass, chargeLeft)
-    local isDemoman     = pLocalClass == 4
-    local hasFullCharge = chargeLeft == 100
-    local isEnabled     = _menu.Charge.ChargeReach
-
-    if isDemoman and isEnabled and hasFullCharge and _attackStartTick < 0 then
-        _attackStartTick = globals.TickCount()
-    end
-end
-
--- ─── ChargeBot steering (pre-attack) ─────────────────────────────────────────
----@param pLocalClass   integer
----@param pLocal        Entity
----@param chargeLeft    number
----@param pLocalOrigin  Vector3   eye origin of local player
----@param pLocalFuture  Vector3   predicted eye origin of local player
----@param vPlayerFuture Vector3   predicted origin of target
----@param inRangePoint  Vector3|nil
----@param can_attack    boolean
----@param fDistance     number
----@param vHitbox       table
----@return EulerAngles|nil
-function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeLeft, pLocalOrigin, pLocalFuture, vPlayerFuture,
-                                   inRangePoint, can_attack, fDistance, vHitbox)
-    assert(pLocalClass, "ChargeBot.GetChargeBotAim: pLocalClass is nil")
-    assert(pLocal, "ChargeBot.GetChargeBotAim: pLocal is nil")
-
-    if pLocalClass ~= 4 then
-        return nil
-    end
-    if not _menu or not _menu.Charge or not ChargeBot.IsActive() then
-        return nil
-    end
-
-    local Math = require("lnxLib").Utils.Math
-
-    -- Actively charging toward enemy (not in swing range yet)
     local isCharging = pLocal:InCond(17)
-    if _menu.Aimbot.ChargeBot and isCharging and not can_attack then
-        local aimPosTarget = inRangePoint or vPlayerFuture
-        if not aimPosTarget then return nil end
-        local trace = engine.TraceHull(pLocalOrigin, aimPosTarget, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID_BRUSHONLY)
-        if trace.fraction == 1 or trace.entity ~= nil then
-            local aimAngles  = Math.PositionAngles(pLocalOrigin, aimPosTarget)
+    local chargeLeft = pLocal:GetPropFloat("m_flChargeMeter") or 0
+    local isAimbotReady = input.IsButtonDown(MOUSE_RIGHT) -- Parity with Main.lua line 1490
+
+    if isCharging or (chargeLeft >= 100 and isAimbotReady) then
+        local pLocalOrigin = pLocal:GetAbsOrigin() + Vector3(0,0,75)
+        local trace = engine.TraceHull(pLocalOrigin, targetPos, Vector3(-18,-18,-18), Vector3(18,18,18), MASK_PLAYERSOLID_BRUSHONLY)
+        
+        if trace.fraction == 1 or (trace.entity and trace.entity:IsPlayer()) then
+            local aimAngles = (targetPos - pLocalOrigin):Angles()
             local currentAng = engine.GetViewAngles()
-            local yawDiff    = Simulation.NormalizeYaw(aimAngles.yaw - currentAng.yaw)
-            local maxTurn    = GetChargeTurnCap(pLocal)
-            local limitedYaw = currentAng.yaw + Simulation.Clamp(yawDiff, -maxTurn, maxTurn)
+            local yawDiff = Simulation.NormalizeYaw(aimAngles.yaw - currentAng.yaw)
+            local limitedYaw = currentAng.yaw + Clamp(yawDiff, -MAX_CHARGE_BOT_TURN, MAX_CHARGE_BOT_TURN)
             engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
         end
-        return nil
     end
+end
 
-    -- Full-charge pre-charge steering removed as requested (was causing "charging from kilometer" issues)
-    return nil
+function ChargeBot.Reset()
+    _chargeState = "idle"
+    _chargeAimAngles = nil
+    _attackStarted = false
+    _attackTickCount = 0
 end
 
 return ChargeBot
