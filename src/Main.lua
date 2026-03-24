@@ -1,4 +1,4 @@
---[[ Swing prediction Refactoring v2 ]]
+﻿--[[ Swing prediction Refactoring v2 ]]
 --[[ Author: Terminator ]]
 
 -- Unload if existing

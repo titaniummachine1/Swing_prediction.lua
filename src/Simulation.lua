@@ -60,6 +60,41 @@ function Simulation.CalculateMaxAngleChange(currentVelocity, minVelocity, maxTur
     return (velocityBuffer / currentVelocity) * maxTurnRate
 end
 
+-- ─── Melee Helpers ───────────────────────────────────────────────────────────
+
+function Simulation.smackDelayToTicks(smackDelay)
+    return math.floor((smackDelay / globals.TickInterval()) + 0.5)
+end
+
+function Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
+    local swingRange = 48.0
+    local hullSize = 38.0
+
+    if not pWeapon then return swingRange, hullSize end
+
+    local weaponClass = pWeapon:GetClass()
+    if weaponClass == "CTFKnife" then
+        swingRange = 48.0
+        hullSize = 30.0 -- Knives have smaller hull
+    else
+        swingRange = 48.0
+        hullSize = 38.0
+    end
+
+    -- Swords
+    local defIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
+    if defIndex == 132 or defIndex == 172 or defIndex == 327 or defIndex == 404 or defIndex == 482 or defIndex == 1082 then
+        swingRange = 72.0
+    end
+
+    -- Disciplinary Action
+    if defIndex == 354 then
+        swingRange = 72.0
+    end
+
+    return swingRange, hullSize
+end
+
 -- ─── Movement Helpers ────────────────────────────────────────────────────────
 
 function Simulation.ComputeMove(pCmd, a, b)
@@ -342,50 +377,63 @@ end
 
 -- ─── Range Checking ──────────────────────────────────────────────────────────
 
+function Simulation.ClosestPointOnHitbox(targetPos, spherePos, vHitbox)
+    vHitbox = vHitbox or { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+    local hitbox_min = targetPos + vHitbox[1]
+    local hitbox_max = targetPos + vHitbox[2]
+
+    return Vector3(
+        math.max(hitbox_min.x, math.min(spherePos.x, hitbox_max.x)),
+        math.max(hitbox_min.y, math.min(spherePos.y, hitbox_max.y)),
+        math.max(hitbox_min.z, math.min(spherePos.z, hitbox_max.z))
+    )
+end
+
+function Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, swingRange, halfHull, pLocal)
+    local direction = Simulation.Normalize(closestPoint - spherePos)
+    local swingTraceEnd = spherePos + direction * swingRange
+    local swingHullMin = Vector3(-halfHull, -halfHull, -halfHull)
+    local swingHullMax = Vector3(halfHull, halfHull, halfHull)
+
+    -- Try hull trace first (more accurate for melee)
+    local trace = engine.TraceHull(spherePos, swingTraceEnd, swingHullMin, swingHullMax, MASK_SHOT_HULL)
+    if trace.fraction < 1 and trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex() then
+        return true
+    end
+
+    -- Fallback to line trace
+    trace = engine.TraceLine(spherePos, swingTraceEnd, MASK_SHOT_HULL)
+    if trace.fraction < 1 and trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex() then
+        return true
+    end
+
+    return false
+end
+
 function Simulation.CheckInRange(targetPos, spherePos, sphereRadius, targetEntity, params)
     assert(targetPos, "Simulation.CheckInRange: targetPos missing")
     assert(spherePos, "Simulation.CheckInRange: spherePos missing")
     assert(params, "Simulation.CheckInRange: params missing")
-    
+
     local vHitbox = params.vHitbox or { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
     local swingHalfhullSize = params.swingHalfhullSize or 19
     local advancedHitreg = params.advancedHitreg or false
 
-    local hitbox_min_trigger = targetPos + vHitbox[1]
-    local hitbox_max_trigger = targetPos + vHitbox[2]
-
-    local closestPoint = Vector3(
-        math.max(hitbox_min_trigger.x, math.min(spherePos.x, hitbox_max_trigger.x)),
-        math.max(hitbox_min_trigger.y, math.min(spherePos.y, hitbox_max_trigger.y)),
-        math.max(hitbox_min_trigger.z, math.min(spherePos.z, hitbox_max_trigger.z))
-    )
-
+    local closestPoint = Simulation.ClosestPointOnHitbox(targetPos, spherePos, vHitbox)
     local distanceAlongVector = (spherePos - closestPoint):Length()
 
     if sphereRadius > distanceAlongVector then
-        local direction = Simulation.Normalize(closestPoint - spherePos)
-        local swingTraceEnd = spherePos + direction * sphereRadius
-
         if advancedHitreg then
-            local trace = engine.TraceLine(spherePos, swingTraceEnd, MASK_SHOT_HULL)
-            if trace.fraction < 1 and trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex() then
+            if Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, sphereRadius, swingHalfhullSize) then
                 return true, closestPoint
             else
-                local swingHullMin = Vector3(-swingHalfhullSize, -swingHalfhullSize, -swingHalfhullSize)
-                local swingHullMax = Vector3(swingHalfhullSize, swingHalfhullSize, swingHalfhullSize)
-                trace = engine.TraceHull(spherePos, swingTraceEnd, swingHullMin, swingHullMax, MASK_SHOT_HULL)
-                if trace.fraction < 1 and trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex() then
-                    return true, closestPoint
-                else
-                    return false, nil
-                end
+                return false, nil
             end
         end
-
         return true, closestPoint
-    else
-        return false, nil
     end
+
+    return false, nil
 end
 
 function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture, targetEntity, params)

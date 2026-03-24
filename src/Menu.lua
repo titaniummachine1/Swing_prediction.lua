@@ -45,8 +45,14 @@ function MenuUI.Render(menu)
         if menu.Aimbot.AlwaysUseMaxSwingTime then
             menu.Aimbot.SwingTime = menu.Aimbot.MaxSwingTime or 13
         end
-        -- TimMenu.Keybind (with built-in mode selector)
-        menu.Aimbot.Keybind = TimMenu.Keybind("Aimbot Keybind", menu.Aimbot.Keybind or 0)
+        local currentKey = menu.Aimbot.Keybind
+        if type(currentKey) == "table" then currentKey = currentKey.key end
+        local newKey = TimMenu.Keybind("Aimbot Keybind", currentKey or 0)
+        if type(menu.Aimbot.Keybind) == "table" then
+            menu.Aimbot.Keybind.key = newKey
+        else
+            menu.Aimbot.Keybind = { key = newKey, mode = 1 } -- Migrate to table
+        end
         TimMenu.NextLine()
         TimMenu.EndSector()
     end
@@ -62,8 +68,14 @@ function MenuUI.Render(menu)
         end
         menu.Charge.ChargeBotFOV = TimMenu.Slider("ChargeBot FOV", menu.Charge.ChargeBotFOV or 90, 1, 180, 1)
         TimMenu.NextLine()
-        -- TimMenu.Keybind (with built-in mode selector)
-        menu.Charge.Keybind = TimMenu.Keybind("ChargeBot Keybind", menu.Charge.Keybind or 0)
+        local currentKey = menu.Charge.Keybind
+        if type(currentKey) == "table" then currentKey = currentKey.key end
+        local newKey = TimMenu.Keybind("ChargeBot Keybind", currentKey or 0)
+        if type(menu.Charge.Keybind) == "table" then
+            menu.Charge.Keybind.key = newKey
+        else
+            menu.Charge.Keybind = { key = newKey, mode = 1 } -- Migrate to table
+        end
         TimMenu.NextLine()
         local oldChargeControl = menu.Charge.ChargeControl
         menu.Charge.ChargeControl = TimMenu.Checkbox("Charge Control", menu.Charge.ChargeControl)

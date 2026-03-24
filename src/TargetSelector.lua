@@ -8,96 +8,87 @@ local TargetSelector = {}
 local Math = lnxLib.Utils.Math
 local Helpers = lnxLib.TF2.Helpers
 
--- ─── Target Selection ────────────────────────────────────────────────────────
+-- ─── Module state ────────────────────────────────────────────────────────────
 
-function TargetSelector.GetBestTarget(me, players, menuSettings, params)
-    assert(me, "TargetSelector.GetBestTarget: me missing")
-    assert(players, "TargetSelector.GetBestTarget: players list missing")
-    assert(menuSettings, "TargetSelector.GetBestTarget: menuSettings missing")
-    assert(params, "TargetSelector.GetBestTarget: params missing")
+local _players = nil
+local _me = nil
+local _vHeight = nil
+local _swingRange = nil
+local _bestTarget = nil
 
-    local normalCandidates = {}
-    local meleeCandidates = {}
+-- ─── Initialization ──────────────────────────────────────────────────────────
 
-    local totalSwingRange = params.totalSwingRange or 48
-    local meleeRangeThreshold = totalSwingRange + 50
-    local foundTargetInMeleeRange = false
+function TargetSelector.Init(menu)
+    -- TargetSelector currently doesn't need specific menu initialization but kept for parity
+end
 
-    local localPlayerViewAngles = engine.GetViewAngles()
-    local localPlayerOrigin = me:GetAbsOrigin()
-    local localPlayerEyePos = localPlayerOrigin + (params.vHeight or Vector3(0, 0, 75))
+-- ─── Logic ───────────────────────────────────────────────────────────────────
 
-    local effectiveFOV = menuSettings.AimbotFOV or 360
+function TargetSelector.SetTickState(players, me, vHeight, swingRange)
+    _players = players
+    _me = me
+    _vHeight = vHeight or Vector3(0, 0, 72)
+    _swingRange = swingRange or 48
+    _bestTarget = nil
+end
 
-    for _, player in pairs(players) do
+function TargetSelector.CalcStrafe()
+    if not _players or not _me then return end
+    Simulation.CalcStrafe(_players, _me)
+end
+
+function TargetSelector.GetStrafeAngle(entityIndex)
+    return Simulation.GetStrafeAngle(entityIndex)
+end
+
+function TargetSelector.IsVisible(player, fromEntity)
+    if not player or not fromEntity then return false end
+    return Simulation.IsVisible(player, fromEntity, _vHeight)
+end
+
+function TargetSelector.GetBestTarget(me)
+    if not _players or not _me then return nil end
+    
+    local bestTarget = nil
+    local bestFOV = 360 -- Initialize with max FOV
+    local localAngles = engine.GetViewAngles()
+    local myPos = _me:GetAbsOrigin() + _vHeight
+
+    for _, player in pairs(_players) do
         if not player or not player:IsValid() then goto continue end
         
         local isInvalid = not player:IsAlive()
             or player:IsDormant()
-            or player:GetIndex() == me:GetIndex()
-            or player:GetTeamNumber() == me:GetTeamNumber()
+            or player:GetIndex() == _me:GetIndex()
+            or player:GetTeamNumber() == _me:GetTeamNumber()
             or (gui.GetValue("ignore cloaked") == 1 and player:InCond(4))
-            or (me:InCond(17) and (player:GetAbsOrigin().z - me:GetAbsOrigin().z) > 17)
-            or not Simulation.IsVisible(player, me, params.vHeight or Vector3(0, 0, 75))
         
-        if isInvalid then
-            goto continue
-        end
+        if isInvalid then goto continue end
 
         local playerOrigin = player:GetAbsOrigin()
-        local distance = (playerOrigin - localPlayerOrigin):Length()
-        local pViewOffset = player:GetPropVector("localdata", "m_vecViewOffset[0]")
-        local pViewPos = playerOrigin + pViewOffset
-
-        local angles = Math.PositionAngles(localPlayerOrigin, pViewPos)
-        local fov = Math.AngleFov(localPlayerViewAngles, angles)
-        if fov > effectiveFOV then
+        local distance = (playerOrigin - _me:GetAbsOrigin()):Length()
+        
+        -- Range Check: Max effective range (swing + buffer)
+        if distance > (_swingRange + 100) and not _me:InCond(17) then
             goto continue
         end
 
-        local isVisible = Helpers.VisPos(player, localPlayerEyePos, playerOrigin + Vector3(0, 0, 75))
-        local visibilityFactor = isVisible and 1 or 0.1
+        local pViewPos = playerOrigin + Vector3(0, 0, 75)
+        local angles = (pViewPos - myPos):Angles()
+        local fov = Math.AngleFov(localAngles, angles)
 
-        if distance <= meleeRangeThreshold then
-            foundTargetInMeleeRange = true
-            local meleeFovFactor = Math.RemapValClamped(fov, 0, effectiveFOV, 1, 0.7)
-            local factor = meleeFovFactor * visibilityFactor
-            table.insert(meleeCandidates, { player = player, factor = factor })
-        elseif distance <= 770 then
-            local distanceFactor = Math.RemapValClamped(distance, 0, 770, 1, 0.9)
-            local fovFactor = Math.RemapValClamped(fov, 0, effectiveFOV, 1, 0.1)
-            local factor = distanceFactor * fovFactor * visibilityFactor
-            table.insert(normalCandidates, { player = player, factor = factor })
+        if fov < bestFOV then
+            if TargetSelector.IsVisible(player, _me) then
+                bestFOV = fov
+                bestTarget = player
+            end
         end
+
         ::continue::
     end
 
-    local function chooseBest(cands)
-        if #cands == 0 then return nil end
-        if #cands > 1 then
-            for _, c in ipairs(cands) do
-                local p = c.player
-                local hp = p:GetHealth() or 0
-                local maxhp = p:GetPropInt("m_iMaxHealth") or hp
-                local missing = (maxhp > 0) and ((maxhp - hp) / maxhp) or 0
-                c.factor = c.factor * (1 + missing)
-            end
-        end
-        
-        local best = cands[1]
-        for i = 2, #cands do
-            if cands[i].factor > best.factor then
-                best = cands[i]
-            end
-        end
-        return best.player
-    end
-
-    if foundTargetInMeleeRange then
-        return chooseBest(meleeCandidates)
-    else
-        return chooseBest(normalCandidates)
-    end
+    _bestTarget = bestTarget
+    return bestTarget
 end
 
 return TargetSelector
