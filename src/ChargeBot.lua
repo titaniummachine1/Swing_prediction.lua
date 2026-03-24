@@ -48,7 +48,7 @@ function ChargeBot.TickStateMachine(pCmd, pLocalClass)
 
     if _chargeState == "aim" then
         if _chargeAimAngles then
-            engine.SetViewAngles(EulerAngles(_chargeAimAngles.pitch, _chargeAimAngles.yaw, 0))
+            engine.SetViewAngles(_chargeAimAngles)
         end
         _chargeState = "charge"
     elseif _chargeState == "charge" then
@@ -153,8 +153,8 @@ function ChargeBot.ChargeControl(pCmd, pLocal)
         pCmd:SetSideMove(-450)
     end
 
-    local newYaw = MathUtils.NormalizeYaw(currentAngles.yaw + actualTurn)
-    engine.SetViewAngles(EulerAngles(currentAngles.pitch, newYaw, currentAngles.roll))
+    local newYaw = MathUtils.NormalizeYaw(currentAngles.y + actualTurn)
+    engine.SetViewAngles(EulerAngles(currentAngles.x, newYaw, currentAngles.z))
 end
 
 function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeMeter, pLocalOrigin, pLocalFuture, vPlayerFuture, inRangePoint, canAttack, fDistance, vHitbox)
@@ -173,7 +173,7 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeMeter, pLocalOrigi
         if trace.fraction == 1 or (trace.entity and trace.entity:IsPlayer()) then
             local aimAngles = (targetPos - pLocalOrigin):Angles()
             local currentAng = engine.GetViewAngles()
-            local yawDiff = MathUtils.NormalizeYaw(aimAngles.yaw - currentAng.yaw)
+            local yawDiff = MathUtils.NormalizeYaw(aimAngles.y - currentAng.y)
 
             -- Use actual server turn cap for smooth non-rubberband steering
             local turnCapDeg = 17 -- fallback for when not charging but about to charge
@@ -182,8 +182,8 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeMeter, pLocalOrigi
                 if capFromServer then turnCapDeg = capFromServer end
             end
 
-            local limitedYaw = currentAng.yaw + MathUtils.Clamp(yawDiff, -turnCapDeg, turnCapDeg)
-            engine.SetViewAngles(EulerAngles(currentAng.pitch, limitedYaw, 0))
+            local limitedYaw = currentAng.y + MathUtils.Clamp(yawDiff, -turnCapDeg, turnCapDeg)
+            engine.SetViewAngles(EulerAngles(currentAng.x, limitedYaw, 0))
         end
     end
 end
