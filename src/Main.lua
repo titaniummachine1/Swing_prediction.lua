@@ -44,9 +44,8 @@ CritManager.Init(_menuSettings)
 local function applySilentAttackTick(pCmd, aimAngles, settings)
     if not settings.Aimbot.Silent or not aimAngles then return end
     if (pCmd:GetButtons() & IN_ATTACK) == 0 then return end
-    -- pCmd:SetViewAngles(pitch, yaw, roll) might not be supported, 
-    -- using pCmd:SetViewAngles(EulerAngles)
-    pCmd:SetViewAngles(EulerAngles(aimAngles.x, aimAngles.y, 0))
+    -- pCmd:SetViewAngles on some versions expects numbers, not an object
+    pCmd:SetViewAngles(aimAngles.x, aimAngles.y, 0)
 end
 
 -- --- Main Logic --------------------------------------------------------------
