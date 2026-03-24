@@ -8,7 +8,7 @@ local TargetSelector = {}
 local Math = lnxLib.Utils.Math
 local Helpers = lnxLib.TF2.Helpers
 
--- ─── Module state ────────────────────────────────────────────────────────────
+-- --- Module state ------------------------------------------------------------
 
 local _players = nil
 local _me = nil
@@ -16,13 +16,13 @@ local _vHeight = nil
 local _swingRange = nil
 local _bestTarget = nil
 
--- ─── Initialization ──────────────────────────────────────────────────────────
+-- --- Initialization ----------------------------------------------------------
 
 function TargetSelector.Init(menu)
     -- TargetSelector currently doesn't need specific menu initialization but kept for parity
 end
 
--- ─── Logic ───────────────────────────────────────────────────────────────────
+-- --- Logic -------------------------------------------------------------------
 
 function TargetSelector.SetTickState(players, me, vHeight, swingRange)
     _players = players

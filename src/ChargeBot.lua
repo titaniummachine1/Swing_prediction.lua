@@ -5,13 +5,13 @@ local MathUtils = require("MathUtils")
 
 local ChargeBot = {}
 
--- ─── Constants ───────────────────────────────────────────────────────────────
+-- --- Constants --------------------------------------------------------------
 
 local MAX_CHARGE_BOT_TURN = 17
 local SIDE_MOVE_VALUE = 450
 local TURN_MULTIPLIER = 1.0
 
--- ─── Module state ────────────────────────────────────────────────────────────
+-- --- Module state ------------------------------------------------------------
 
 local _menu = nil
 local _chargeState = "idle"
@@ -21,13 +21,13 @@ local _attackTickCount = 0
 local _lastAttackTick = -1000
 local _isExploitReady = false
 
--- ─── Initialization ──────────────────────────────────────────────────────────
+-- --- Initialization ----------------------------------------------------------
 
 function ChargeBot.Init(menu)
     _menu = menu
 end
 
--- ─── Logic ───────────────────────────────────────────────────────────────────
+-- --- Logic -------------------------------------------------------------------
 
 function ChargeBot.IsActive()
     if not _menu then return false end
@@ -115,7 +115,12 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeMeter, pLocalOrigi
 end
 
 function ChargeBot.ArmChargeReach(pLocalClass, chargeMeter)
-    if pLocalClass == 4 and chargeMeter == 100 and _menu.Charge.ChargeReach then
+    local isChargeReachEnabled = false
+    if _menu and _menu.Charge then
+        isChargeReachEnabled = _menu.Charge.ChargeReach
+    end
+
+    if pLocalClass == 4 and chargeMeter == 100 and isChargeReachEnabled then
         _isExploitReady = true
     else
         _isExploitReady = false

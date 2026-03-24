@@ -4,7 +4,7 @@ local Simulation = require("Simulation")
 
 local Visuals = {}
 
--- ─── Constants & Assets ──────────────────────────────────────────────────────
+-- --- Constants & Assets ------------------------------------------------------
 
 local Verdana = draw.CreateFont("Verdana", 16, 800)
 
@@ -15,7 +15,7 @@ local white_texture = draw.CreateTextureRGBA(string.char(
     0xff, 0xff, 0xff, 25
 ), 2, 2)
 
--- ─── Sphere Cache ───────────────────────────────────────────────────────────
+-- --- Sphere Cache -----------------------------------------------------------
 
 local sphere_cache = { vertices = {}, radius = 90, center = Vector3(0, 0, 0) }
 
@@ -47,7 +47,7 @@ end
 -- Initialize sphere
 Visuals.SetupSphere(Vector3(0, 0, 0), 90, 7)
 
--- ─── Drawing Primitives ──────────────────────────────────────────────────────
+-- --- Drawing Primitives ------------------------------------------------------
 
 local function drawPolygon(vertices)
     local cords, reverse_cords = {}, {}
@@ -153,7 +153,7 @@ function Visuals.LLine(startPos, endPos, secondaryLineSize)
     end
 end
 
--- ─── Style Dispatcher ────────────────────────────────────────────────────────
+-- --- Style Dispatcher --------------------------------------------------------
 
 local function renderPathStyle(path, style, width)
     if not path or #path < 2 then return end
@@ -224,7 +224,7 @@ local function renderPathStyle(path, style, width)
     end
 end
 
--- ─── Main Render Dispatch ────────────────────────────────────────────────────
+-- --- Main Render Dispatch ----------------------------------------------------
 
 function Visuals.Render(menu, state)
     assert(menu, "Visuals.Render: menu settings missing")

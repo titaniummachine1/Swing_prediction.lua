@@ -2,14 +2,14 @@
 
 local CritManager = {}
 
--- ─── Module state ────────────────────────────────────────────────────────────
+-- --- Module state ------------------------------------------------------------
 
 local _originalCritHackKey = 0
 local _originalMeleeCritHack = 0
 local _menuWasOpen = false
 local _critRefillActive = false
 
--- ─── Tick ────────────────────────────────────────────────────────────────────
+-- --- Tick --------------------------------------------------------------------
 
 function CritManager.Tick(pCmd, pWeapon, hasTarget, menuSettings)
     assert(pCmd, "CritManager.Tick: pCmd missing")

@@ -2,7 +2,7 @@
 
 local Simulation = {}
 
--- ─── Constants ───────────────────────────────────────────────────────────────
+-- --- Constants --------------------------------------------------------------
 
 local CLASS_MAX_SPEEDS = {
     [1] = 400, -- Scout
@@ -22,7 +22,7 @@ local MASK_PLAYERSOLID = MASK_PLAYERSOLID or 33636363
 local MASK_SHOT_HULL = MASK_SHOT_HULL or 10067459
 local CONTENTS_GRATE = CONTENTS_GRATE or 0x8
 
--- ─── Module state ────────────────────────────────────────────────────────────
+-- --- Module state ------------------------------------------------------------
 
 local _lastAngles = {}
 local _lastDeltas = {}
@@ -32,7 +32,7 @@ local _inaccuracy = {}
 local _pastPositions = {}
 local _maxPositions = 4
 
--- ─── Pure Math Helpers ───────────────────────────────────────────────────────
+-- --- Pure Math Helpers -------------------------------------------------------
 
 function Simulation.NormalizeYaw(y)
     return ((y + 180) % 360) - 180
@@ -60,7 +60,7 @@ function Simulation.CalculateMaxAngleChange(currentVelocity, minVelocity, maxTur
     return (velocityBuffer / currentVelocity) * maxTurnRate
 end
 
--- ─── Melee Helpers ───────────────────────────────────────────────────────────
+-- --- Melee Helpers -----------------------------------------------------------
 
 function Simulation.smackDelayToTicks(smackDelay)
     return math.floor((smackDelay / globals.TickInterval()) + 0.5)
@@ -95,7 +95,7 @@ function Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
     return swingRange, hullSize
 end
 
--- ─── Movement Helpers ────────────────────────────────────────────────────────
+-- --- Movement Helpers --------------------------------------------------------
 
 function Simulation.ComputeMove(pCmd, a, b)
     assert(pCmd, "Simulation.ComputeMove: pCmd missing")
@@ -141,7 +141,7 @@ function Simulation.WalkTo(pCmd, pLocal, pDestination)
     end
 end
 
--- ─── Visibility Helpers ──────────────────────────────────────────────────────
+-- --- Visibility Helpers ------------------------------------------------------
 
 function Simulation.VisPos(target, from, to)
     local trace = engine.TraceLine(from, to, MASK_SHOT | CONTENTS_GRATE)
@@ -158,7 +158,7 @@ function Simulation.IsVisible(player, fromEntity, vHeight)
     return Simulation.VisPos(player, from, to)
 end
 
--- ─── Strafe Prediction ───────────────────────────────────────────────────────
+-- --- Strafe Prediction -------------------------------------------------------
 
 function Simulation.CalcStrafe(players, pLocal)
     assert(players, "Simulation.CalcStrafe: players list missing")
@@ -237,7 +237,7 @@ function Simulation.GetStrafeAngle(entityIndex)
     return _strafeAngles[entityIndex] or 0
 end
 
--- ─── Player Prediction ───────────────────────────────────────────────────────
+-- --- Player Prediction -------------------------------------------------------
 
 local function shouldHitEntityFun(entity, player, ignoreEntities)
     for _, ignoreEntity in ipairs(ignoreEntities) do
@@ -375,7 +375,7 @@ function Simulation.PredictPlayer(player, t, d, simulateCharge, fixedAngles, par
     return _out
 end
 
--- ─── Range Checking ──────────────────────────────────────────────────────────
+-- --- Range Checking ----------------------------------------------------------
 
 function Simulation.ClosestPointOnHitbox(targetPos, spherePos, vHitbox)
     vHitbox = vHitbox or { Vector3(-24, -24, 0), Vector3(24, 24, 82) }

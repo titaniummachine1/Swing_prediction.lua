@@ -37,14 +37,14 @@ local _state         = {
     lastAttackTick = -1000
 }
 
--- ─── Initialization ──────────────────────────────────────────────────────────
+-- --- Initialization ----------------------------------------------------------
 
 Simulation.Init(_menuSettings)
 ChargeBot.Init(_menuSettings)
 TargetSelector.Init(_menuSettings)
 CritManager.Init(_menuSettings)
 
--- ─── Helpers ─────────────────────────────────────────────────────────────────
+-- --- Helpers -----------------------------------------------------------------
 
 local function applySilentAttackTick(pCmd, aimAngles, settings)
     if not settings.Aimbot.Silent or not aimAngles then return end
@@ -52,7 +52,7 @@ local function applySilentAttackTick(pCmd, aimAngles, settings)
     pCmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
 end
 
--- ─── Main Logic ──────────────────────────────────────────────────────────────
+-- --- Main Logic --------------------------------------------------------------
 
 local function OnCreateMove(pCmd)
     local pLocal = entities.GetLocalPlayer()
@@ -166,7 +166,7 @@ local function OnUnload()
     Config.CreateCFG(_menuSettings, "A_Swing_Prediction")
 end
 
--- ─── Initialization ──────────────────────────────────────────────────────────
+-- --- Initialization ----------------------------------------------------------
 
 local function Init()
     callbacks.Unregister("CreateMove", "Swing_CreateMove")
