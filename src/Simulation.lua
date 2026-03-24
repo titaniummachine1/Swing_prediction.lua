@@ -72,30 +72,25 @@ function Simulation.smackDelayToTicks(smackDelay)
     return math.floor((smackDelay / globals.TickInterval()) + 0.5)
 end
 
-function Simulation.ResolveMeleeParams(pWeapon, pWeaponDef)
+function Simulation.ResolveMeleeParams(pWeapon)
     local swingRange = 48.0
-    local hullSize = 38.0
+    local hullSize = 35.6 -- Original used 35.6/38 interchangeably, 35.6 is standard
 
     if not pWeapon then return swingRange, hullSize end
 
-    local weaponClass = pWeapon:GetClass()
-    if weaponClass == "CTFKnife" then
-        swingRange = 48.0
-        hullSize = 30.0 -- Knives have smaller hull
-    else
-        swingRange = 48.0
+    local defIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
+    
+    -- Swords and other long range melee
+    -- Claidheamh Mor, Eyelander, Nessie's Nine Iron, Horseless Headless Horsemann's Headtaker, Scotsman's Skullcutter
+    if defIndex == 132 or defIndex == 172 or defIndex == 327 or defIndex == 404 or defIndex == 482 or defIndex == 1082 then
+        swingRange = 72.0
         hullSize = 38.0
     end
 
-    -- Swords
-    local defIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
-    if defIndex == 132 or defIndex == 172 or defIndex == 327 or defIndex == 404 or defIndex == 482 or defIndex == 1082 then
-        swingRange = 72.0
-    end
-
-    -- Disciplinary Action
+    -- Disciplinary Action (Special Case)
     if defIndex == 354 then
-        swingRange = 72.0
+        swingRange = 81.6
+        hullSize = 55.8
     end
 
     return swingRange, hullSize

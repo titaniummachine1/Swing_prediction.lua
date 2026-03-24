@@ -1,4 +1,4 @@
-﻿--[[ Swing prediction Refactoring v2 ]]
+--[[ Swing prediction Refactoring v2 ]]
 --[[ Author: Terminator ]]
 
 -- Unload if existing
@@ -8,6 +8,7 @@ end
 
 ---- Initialize libraries
 local lnxLib         = require("lnxlib")
+local Shared         = require("Shared")
 local MenuUI         = require("Menu")
 local Config         = require("utils.Config")
 local DefaultConfig  = require("utils.DefaultConfig")
@@ -20,22 +21,16 @@ local Input          = require("Input")
 local MathUtils      = require("MathUtils")
 local Combat         = require("Combat")
 
--- Shared State
-local _menuSettings  = Config.LoadCFG(DefaultConfig.Menu, "A_Swing_Prediction")
-local _state         = {
-    pLocalOrigin = nil,
-    pLocalFuture = nil,
-    pLocalPath = nil,
-    vPlayerOrigin = nil,
-    vPlayerFuture = nil,
-    vPlayerPath = nil,
-    currentTarget = nil,
-    aimposVis = nil,
-    drawVhitbox = nil,
-    vHeight = Vector3(0, 0, 75),
-    totalSwingRange = 48,
-    lastAttackTick = -1000
-}
+printc(100, 255, 200, 255, "[Main] Script starting...")
+
+-- Menu settings loaded from config
+local _menuSettings = Config.LoadCFG(DefaultConfig.Menu, "A_Swing_Prediction")
+
+-- _state is aliased to Shared so all modules can see the same object
+local _state = Shared
+_state.vHeight        = Vector3(0, 0, 75)
+_state.totalSwingRange = 48
+
 
 -- --- Initialization ----------------------------------------------------------
 
@@ -62,17 +57,44 @@ local function OnCreateMove(pCmd)
     end
 
     local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-    if not pWeapon then return end
+    if not pWeapon or not pWeapon:IsMeleeWeapon() then return end
 
     local menuSettings = _menuSettings
     if not menuSettings.Aimbot.Aimbot then return end
 
     -- 1. Updates & State
     local players = entities.FindByClass("CTFPlayer")
-    _state.vHeight = Vector3(0, 0, pLocal:GetPropVector("localdata", "m_vecViewOffset[0]").z)
+    local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
+    _state.vHeight = Vector3(0, 0, viewOffset.z)
 
     local swingRange, hullSize = Simulation.ResolveMeleeParams(pWeapon)
-    _state.totalSwingRange = swingRange + (hullSize / 2)
+    local isCharging = pLocal:InCond(17)
+    local chargeMeter = pLocal:GetPropFloat("m_flChargeMeter")
+    local pLocalClass = pLocal:GetPropInt("m_iClass")
+    local isDemoman = pLocalClass == 4
+
+    -- Charge Reach Range Logic
+    local Charge_Range = 128
+    local isExploitReady = menuSettings.Charge.ChargeReach and chargeMeter == 100 and isDemoman
+    local lastAttackTick = ChargeBot.GetLastAttackTick()
+    local withinAttackWindow = (globals.TickCount() - lastAttackTick) <= 13
+
+    if isCharging then
+        local isDoingExploit = menuSettings.Charge.ChargeReach and withinAttackWindow
+        if isDoingExploit then
+            _state.totalSwingRange = Charge_Range + (hullSize / 2)
+        else
+            _state.totalSwingRange = swingRange + (hullSize / 2)
+        end
+    else
+        if isExploitReady then
+            -- Note: We use exploit range for target selection/aimbot even before charging
+            -- because the aimbot will trigger the charge-reach exploit.
+            _state.totalSwingRange = Charge_Range + (hullSize / 2)
+        else
+            _state.totalSwingRange = swingRange + (hullSize / 2)
+        end
+    end
 
     TargetSelector.SetTickState(players, pLocal, _state.vHeight, _state.totalSwingRange)
     TargetSelector.CalcStrafe()
@@ -89,8 +111,11 @@ local function OnCreateMove(pCmd)
     _state.currentTarget = target
 
     -- 5. Prediction & Aimbot
-    local smackDelay = pWeapon:GetPropFloat("m_flNextPrimaryAttack") - globals.CurTime()
-    local swingTicks = Simulation.smackDelayToTicks(smackDelay > 0 and smackDelay or 0.2)
+    local weaponData = pWeapon:GetWeaponData()
+    local swingTicks = menuSettings.Aimbot.SwingTime or 13
+    if weaponData and weaponData.smackDelay then
+        swingTicks = math.floor(weaponData.smackDelay / globals.TickInterval())
+    end
 
     if target then
         local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
@@ -103,14 +128,19 @@ local function OnCreateMove(pCmd)
             gravity = client.GetConVar("sv_gravity")
         })
 
-        -- ... rest of target prediction ...
         _state.vPlayerOrigin = vPlayerOrigin
         _state.vPlayerFuture = targetPred.pos[swingTicks]
         _state.vPlayerPath = targetPred.pos
 
         -- Predict local
-        local isCharging = pLocal:InCond(17)
-        local localPred = Simulation.PredictPlayer(pLocal, swingTicks, 0, isCharging, nil, {
+        -- Charge-reach simulation factor: if exploit is ready but not yet charging, run prediction with simulated charge
+        local simulateCharge = (not isCharging) and isExploitReady and (not menuSettings.Charge.LateCharge)
+        local fixedAngles = nil
+        if simulateCharge then
+             fixedAngles = (target:GetAbsOrigin() - pLocal:GetAbsOrigin()):Angles()
+        end
+
+        local localPred = Simulation.PredictPlayer(pLocal, swingTicks, 0, simulateCharge or isCharging, fixedAngles, {
             vHeight = _state.vHeight,
             gravity = client.GetConVar("sv_gravity")
         })
@@ -131,7 +161,11 @@ local function OnCreateMove(pCmd)
             _state.aimposVis = point
             local aimAngles = (point - pLocalOrigin):Angles()
 
-            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            local handledWarp = Combat.HandleWarp(pCmd, pLocal, pWeapon, swingTicks, menuSettings.Misc)
+            if not handledWarp then
+                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            end
+
             applySilentAttackTick(pCmd, aimAngles, menuSettings)
             if not menuSettings.Aimbot.Silent then
                 engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
@@ -140,18 +174,22 @@ local function OnCreateMove(pCmd)
 
         -- ChargeBot Steering
         ChargeBot.GetChargeBotAim(
-            pLocal:GetPropInt("m_iClass"), pLocal, pLocal:GetPropFloat("m_flChargeMeter"),
+            pLocalClass, pLocal, chargeMeter,
             pLocalOrigin, _state.pLocalFuture, _state.vPlayerFuture, point, inRange,
             (vPlayerOrigin - pLocalOrigin):Length(), { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
         )
+    else
+        _state.vPlayerFuture = nil
+        _state.pLocalFuture = nil
     end
 
     -- 6. Charge Control & Reach
     if chargeActive then
         ChargeBot.ChargeControl(pCmd, pLocal)
     end
-    ChargeBot.UpdateChargeReach(pCmd, pWeapon, pLocal:GetPropFloat("m_flChargeMeter"), pLocal:GetPropInt("m_iClass"),
-        (pLocal:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0)
+    ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, 
+        (pLocal:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0, 
+        _state.aimposVis, _state.vPlayerFuture, pLocal:GetAbsOrigin() + _state.vHeight)
 
     -- 7. Crit Management
     CritManager.Tick(pCmd, pWeapon, target ~= nil, menuSettings.Misc)
@@ -159,6 +197,7 @@ end
 
 local function OnDraw()
     local menuSettings = _menuSettings
+    MenuUI.Render(menuSettings)
     Visuals.Render(menuSettings, _state)
 end
 

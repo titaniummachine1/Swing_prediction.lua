@@ -21,18 +21,23 @@ function Combat.TroldierAssist(pCmd, pLocal, menuSettings)
     end
 end
 
-function Combat.HandleWarp(pCmd, pWeapon, weaponSmackDelay, menuSettings)
-    if not menuSettings.InstantAttack then return end
-    if not warp.CanWarp() then return end
+function Combat.HandleWarp(pCmd, pLocal, pWeapon, weaponSmackDelay, menuSettings)
+    if not (menuSettings.InstantAttack and warp.CanWarp()) then return false end
 
     local chargedTicks = warp.GetChargedTicks() or 0
     local neededTicks = math.min(weaponSmackDelay or 13, 20)
 
     if chargedTicks >= neededTicks then
+        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+
         if menuSettings.WarpOnAttack then
+            -- Set ConVar for more processed ticks
+            client.RemoveConVarProtection("sv_maxusrcmdprocessticks")
+            client.SetConVar("sv_maxusrcmdprocessticks", neededTicks)
+            
             warp.TriggerWarp()
+            return true
         end
-        return true
     end
 
     return false

@@ -6,11 +6,24 @@
   "Lua.workspace.checkThirdParty": true,
   "files.autoSave": "onFocusChange",
   "achilleshr.runonsave": {
+    "autoSave": true,
+    "onSave": true,
     "commands": [
       {
-        "match": ".*[\\\\/]src[\\\\/].*\\.lua$",
-        "isAsync": true,
-        "cmd": "if exist \"${workspaceFolder}\\bundle-and-deploy.js\" node \"${workspaceFolder}\\bundle-and-deploy.js\"",
+        "match": ".*\\.lua$",
+        "isAsync": false,
+        "cmd": "node \"${workspaceFolder}\\bundle-and-deploy.js\"",
+        "autoShowOutputPanel": "always"
+      }
+    ]
+  },
+  "emeraldwalk.runonsave": {
+    "autoSave": true,
+    "commands": [
+      {
+        "match": ".*\\.lua$",
+        "isAsync": false,
+        "cmd": "node \"${workspaceFolder}\\bundle-and-deploy.js\"",
         "autoShowOutputPanel": "always"
       }
     ]
