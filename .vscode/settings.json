@@ -4,13 +4,14 @@
     "C:/gitProjects/Lmaobox-Annotations/library"
   ],
   "Lua.workspace.checkThirdParty": true,
+  "files.autoSave": "onFocusChange",
   "achilleshr.runonsave": {
     "commands": [
       {
-        "match": ".*[\\\\/]A_Swing_Prediction\\.lua$",
+        "match": ".*[\\\\/]src[\\\\/].*\\.lua$",
         "isAsync": true,
         "cmd": "node \"${workspaceFolder}/bundle-and-deploy.js\"",
-        "autoShowOutputPanel": "error"
+        "autoShowOutputPanel": "always"
       }
     ]
   }
