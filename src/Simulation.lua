@@ -79,7 +79,7 @@ function Simulation.ResolveMeleeParams(pWeapon)
     if not pWeapon then return swingRange, hullSize end
 
     local defIndex = pWeapon:GetPropInt("m_iItemDefinitionIndex")
-    
+
     -- Swords and other long range melee
     -- Claidheamh Mor, Eyelander, Nessie's Nine Iron, Horseless Headless Horsemann's Headtaker, Scotsman's Skullcutter
     if defIndex == 132 or defIndex == 172 or defIndex == 327 or defIndex == 404 or defIndex == 482 or defIndex == 1082 then
@@ -266,7 +266,7 @@ function Simulation.PredictPlayer(player, t, d, simulateCharge, fixedAngles, par
     local vUp = Vector3(0, 0, 1)
     local vStep = Vector3(0, 0, stepSize)
     local ignoreEntities = { "CTFAmmoPack", "CTFDroppedWeapon" }
-    
+
     local pLocal = entities.GetLocalPlayer()
     if not pLocal then return nil end
     local shouldHitEntity = function(entity) return shouldHitEntityFun(entity, player, ignoreEntities) end
@@ -278,9 +278,9 @@ function Simulation.PredictPlayer(player, t, d, simulateCharge, fixedAngles, par
         ((globals.TickCount() - lastAttackTick) <= swingTime) and player:InCond(17)
 
     local _out = {
-        pos = { [0] = player:GetAbsOrigin() },
-        vel = { [0] = player:EstimateAbsVelocity() },
-        onGround = { [0] = player:IsOnGround() }
+        pos      = { [0] = player:GetAbsOrigin() },
+        vel      = { [0] = player:EstimateAbsVelocity() },
+        onGround = { [0] = (player:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0 }
     }
 
     for i = 1, t do
@@ -324,7 +324,8 @@ function Simulation.PredictPlayer(player, t, d, simulateCharge, fixedAngles, par
             end
         end
 
-        local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+        local wallTrace = engine.TraceHull(lastP + vStep, pos + vStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID,
+            shouldHitEntity)
         if wallTrace.fraction < 1 then
             local normal = wallTrace.plane
             local angle = math.deg(math.acos(normal:Dot(vUp)))
@@ -336,7 +337,8 @@ function Simulation.PredictPlayer(player, t, d, simulateCharge, fixedAngles, par
         end
 
         local downStep = onGround1 and vStep or Vector3()
-        local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID, shouldHitEntity)
+        local groundTrace = engine.TraceHull(pos + vStep, pos - downStep, vHitbox[1], vHitbox[2], MASK_PLAYERSOLID,
+            shouldHitEntity)
         if groundTrace.fraction < 1 then
             local normal = groundTrace.plane
             local angle = math.deg(math.acos(normal:Dot(vUp)))
@@ -437,7 +439,8 @@ function Simulation.CheckInRange(targetPos, spherePos, sphereRadius, targetEntit
     return false, nil
 end
 
-function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture, targetEntity, params)
+function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture,
+                                       targetEntity, params)
     local inRange, point = Simulation.CheckInRange(vPlayerOrigin, pLocalPos, swingRange, targetEntity, params)
     if inRange then return true, point, false end
 
