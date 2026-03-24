@@ -262,9 +262,11 @@ function Visuals.Render(menu, state)
     end
 
     -- 2. Range Circle (Local)
-    if menu.Visuals.Local.RangeCircle and state.pLocalFuture and state.pLocalOrigin and state.vHeight then
-        local viewPos = state.pLocalOrigin
-        local center = state.pLocalFuture - state.vHeight
+    -- pLocalOrigin = feet abs origin, pLocalFuture = predicted feet abs origin
+    -- Eye-level trace start: feet origin + vHeight
+    if menu.Visuals.Local.RangeCircle and state.pLocalFuture and state.pLocalOrigin then
+        local viewPos = state.pLocalOrigin + (state.vHeight or Vector3(0,0,75))
+        local center  = state.pLocalFuture   -- already feet position
         local radius = state.totalSwingRange or 48
         local segments = 32
         local angleStep = (2 * math.pi) / segments

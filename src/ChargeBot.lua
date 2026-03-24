@@ -48,7 +48,8 @@ function ChargeBot.TickStateMachine(pCmd, pLocalClass)
 
     if _chargeState == "aim" then
         if _chargeAimAngles then
-            engine.SetViewAngles(_chargeAimAngles)
+            -- _chargeAimAngles is a EulerAngles (pitch=x, yaw=y)
+            engine.SetViewAngles(EulerAngles(_chargeAimAngles.x, _chargeAimAngles.y, 0))
         end
         _chargeState = "charge"
     elseif _chargeState == "charge" then
@@ -218,10 +219,13 @@ function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, on
             _attackTickCount = 0
             
             -- Store aim direction to target future position so charge travels correctly
+            -- :Angles() on a Vector3 returns a Vector3, convert to EulerAngles for SetViewAngles
             if inRangePoint then
-                _chargeAimAngles = (inRangePoint - pLocalOrigin):Angles()
+                local a = (inRangePoint - pLocalOrigin):Angles()
+                _chargeAimAngles = EulerAngles(a.x, a.y, 0)
             elseif vPlayerFuture then
-                _chargeAimAngles = (vPlayerFuture - pLocalOrigin):Angles()
+                local a = (vPlayerFuture - pLocalOrigin):Angles()
+                _chargeAimAngles = EulerAngles(a.x, a.y, 0)
             end
         end
     end

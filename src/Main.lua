@@ -51,6 +51,11 @@ end
 -- --- Main Logic --------------------------------------------------------------
 
 local function OnCreateMove(pCmd)
+    -- Reset transient per-tick visual state
+    _state.aimposVis     = nil
+    _state.currentTarget  = nil
+    _state.drawVhitbox    = nil
+
     local pLocal = entities.GetLocalPlayer()
     if not pLocal or not pLocal:IsAlive() then
         ChargeBot.Reset()
@@ -118,8 +123,23 @@ local function OnCreateMove(pCmd)
         swingTicks = math.floor(weaponData.smackDelay / globals.TickInterval())
     end
 
+    -- Always predict local player (needed for range circle even without a target)
+    local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
+    local simulateChargeNoTarget = (not isCharging) and isExploitReady and (not menuSettings.Charge.LateCharge) and (target ~= nil)
+    local fixedAnglesLocal = nil
+    if simulateChargeNoTarget and target then
+        local a = (target:GetAbsOrigin() - pLocal:GetAbsOrigin()):Angles()
+        fixedAnglesLocal = EulerAngles(a.x, a.y, 0)
+    end
+    local localPred = Simulation.PredictPlayer(pLocal, swingTicks, 0, simulateChargeNoTarget or isCharging, fixedAnglesLocal, {
+        vHeight = _state.vHeight,
+        gravity = client.GetConVar("sv_gravity")
+    })
+    _state.pLocalOrigin = pLocal:GetAbsOrigin()
+    _state.pLocalFuture = localPred.pos[swingTicks]
+    _state.pLocalPath   = localPred.pos
+
     if target then
-        local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
         local vPlayerOrigin = target:GetAbsOrigin()
 
         -- Predict target
@@ -132,22 +152,6 @@ local function OnCreateMove(pCmd)
         _state.vPlayerOrigin = vPlayerOrigin
         _state.vPlayerFuture = targetPred.pos[swingTicks]
         _state.vPlayerPath = targetPred.pos
-
-        -- Predict local
-        -- Charge-reach simulation factor: if exploit is ready but not yet charging, run prediction with simulated charge
-        local simulateCharge = (not isCharging) and isExploitReady and (not menuSettings.Charge.LateCharge)
-        local fixedAngles = nil
-        if simulateCharge then
-             fixedAngles = (target:GetAbsOrigin() - pLocal:GetAbsOrigin()):Angles()
-        end
-
-        local localPred = Simulation.PredictPlayer(pLocal, swingTicks, 0, simulateCharge or isCharging, fixedAngles, {
-            vHeight = _state.vHeight,
-            gravity = client.GetConVar("sv_gravity")
-        })
-        _state.pLocalOrigin = pLocal:GetAbsOrigin()
-        _state.pLocalFuture = localPred.pos[swingTicks]
-        _state.pLocalPath = localPred.pos
 
         -- Range & Attack
         local inRange, point = Simulation.CheckInRangeSimple(
@@ -181,7 +185,7 @@ local function OnCreateMove(pCmd)
         )
     else
         _state.vPlayerFuture = nil
-        _state.pLocalFuture = nil
+        _state.vPlayerPath   = nil
     end
 
     -- 6. Charge Control & Reach
