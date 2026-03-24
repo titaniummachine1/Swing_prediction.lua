@@ -39,13 +39,28 @@ ChargeBot.Init(_menuSettings)
 TargetSelector.Init(_menuSettings)
 CritManager.Init(_menuSettings)
 
--- --- Helpers -----------------------------------------------------------------
+-- Pre-allocated ring for range circle world-space points (32 slots, no alloc per tick)
+local CIRCLE_SEGMENTS = 32
+local _circlePoints = {}
+for _i = 1, CIRCLE_SEGMENTS do _circlePoints[_i] = nil end
 
 local function applySilentAttackTick(pCmd, aimAngles, settings)
     if not settings.Aimbot.Silent or not aimAngles then return end
     if (pCmd:GetButtons() & IN_ATTACK) == 0 then return end
-    -- pCmd:SetViewAngles on some versions expects numbers, not an object
     pCmd:SetViewAngles(aimAngles.x, aimAngles.y, 0)
+end
+
+local function updateRangeCircle(pLocalOrigin, pLocalFuture, totalSwingRange, vHeight)
+    local eyePos = pLocalOrigin + vHeight
+    local center = pLocalFuture  -- feet
+    local radius = totalSwingRange
+    local angleStep = (2 * math.pi) / CIRCLE_SEGMENTS
+    for i = 1, CIRCLE_SEGMENTS do
+        local angle = angleStep * i
+        local circlePoint = center + Vector3(math.cos(angle), math.sin(angle), 0) * radius
+        local trace = engine.TraceLine(eyePos, circlePoint, MASK_SHOT_HULL)
+        _circlePoints[i] = trace.fraction < 1.0 and trace.endpos or circlePoint
+    end
 end
 
 -- --- Main Logic --------------------------------------------------------------
@@ -73,11 +88,14 @@ local function OnCreateMove(pCmd)
     local viewOffset = pLocal:GetPropVector("localdata", "m_vecViewOffset[0]")
     _state.vHeight = Vector3(0, 0, viewOffset.z)
 
+    -- Cache equipment once per tick (avoids FindByClass spam in ChargeControl/GetChargeBotAim)
+    local pLocalClass = pLocal:GetPropInt("m_iClass")
+    local isDemoman = pLocalClass == 4
+    if isDemoman then ChargeBot.CacheEquipment(pLocal) end
+
     local swingRange, hullSize = Simulation.ResolveMeleeParams(pWeapon)
     local isCharging = pLocal:InCond(17)
     local chargeMeter = pLocal:GetPropFloat("m_flChargeMeter")
-    local pLocalClass = pLocal:GetPropInt("m_iClass")
-    local isDemoman = pLocalClass == 4
 
     -- Charge Reach Range Logic
     local Charge_Range = 128
@@ -94,8 +112,6 @@ local function OnCreateMove(pCmd)
         end
     else
         if isExploitReady then
-            -- Note: We use exploit range for target selection/aimbot even before charging
-            -- because the aimbot will trigger the charge-reach exploit.
             _state.totalSwingRange = Charge_Range + (hullSize / 2)
         else
             _state.totalSwingRange = swingRange + (hullSize / 2)
@@ -125,29 +141,45 @@ local function OnCreateMove(pCmd)
 
     -- Always predict local player (needed for range circle even without a target)
     local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
-    local simulateChargeNoTarget = (not isCharging) and isExploitReady and (not menuSettings.Charge.LateCharge) and (target ~= nil)
+    local chargeModeLocal = 0
+    if isCharging then
+        local isDoingExploit = menuSettings.Charge.ChargeReach and withinAttackWindow
+        if isDoingExploit then chargeModeLocal = 1 end
+    elseif isExploitReady and not menuSettings.Charge.LateCharge then
+        chargeModeLocal = 2
+    end
+
     local fixedAnglesLocal = nil
-    if simulateChargeNoTarget and target then
+    if chargeModeLocal == 2 and target then
         local a = (target:GetAbsOrigin() - pLocal:GetAbsOrigin()):Angles()
         fixedAnglesLocal = EulerAngles(a.x, a.y, 0)
     end
-    local localPred = Simulation.PredictPlayer(pLocal, swingTicks, 0, simulateChargeNoTarget or isCharging, fixedAnglesLocal, {
-        vHeight = _state.vHeight,
-        gravity = client.GetConVar("sv_gravity")
-    })
+
+    local localPred = Simulation.PredictPlayer(
+        pLocal, swingTicks, 0, chargeModeLocal, fixedAnglesLocal,
+        { gravity = client.GetConVar("sv_gravity") },
+        Simulation.BufLocal)
     _state.pLocalOrigin = pLocal:GetAbsOrigin()
     _state.pLocalFuture = localPred.pos[swingTicks]
     _state.pLocalPath   = localPred.pos
 
+    -- Pre-compute range circle world positions once per tick (tick-rate, not frame-rate)
+    if menuSettings.Visuals and menuSettings.Visuals.Local and menuSettings.Visuals.Local.RangeCircle then
+        updateRangeCircle(pLocal:GetAbsOrigin(), _state.pLocalFuture, _state.totalSwingRange, _state.vHeight)
+        _state.rangeCirclePoints = _circlePoints
+    else
+        _state.rangeCirclePoints = nil
+    end
+
     if target then
         local vPlayerOrigin = target:GetAbsOrigin()
 
-        -- Predict target
+        -- Predict target (targets never use charge physics)
         local targetStrafe = TargetSelector.GetStrafeAngle(target:GetIndex())
-        local targetPred = Simulation.PredictPlayer(target, swingTicks, targetStrafe, false, nil, {
-            vHeight = _state.vHeight,
-            gravity = client.GetConVar("sv_gravity")
-        })
+        local targetPred = Simulation.PredictPlayer(
+            target, swingTicks, targetStrafe, 0, nil,
+            { gravity = client.GetConVar("sv_gravity") },
+            Simulation.BufTarget)
 
         _state.vPlayerOrigin = vPlayerOrigin
         _state.vPlayerFuture = targetPred.pos[swingTicks]

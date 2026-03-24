@@ -17,6 +17,7 @@ DefaultConfig.Menu = {
         AlwaysUseMaxSwingTime = false,
         MaxSwingTime = 11,
         ChargeBot = true,
+        Keybind = { key = 0, mode = 0 }, -- Always On
     },
 
     -- Charge (Demoknight) settings
@@ -27,6 +28,7 @@ DefaultConfig.Menu = {
         ChargeReach = true,
         ChargeJump = true,
         LateCharge = true,
+        Keybind = { key = 0, mode = 0 }, -- Always On
     },
 
     -- Visuals settings
@@ -68,9 +70,6 @@ DefaultConfig.Menu = {
         advancedHitreg = true,
     },
 
-    -- Global keybind
-    Keybind = KEY_NONE,
-    KeybindName = "Always On",
 }
 
 return DefaultConfig

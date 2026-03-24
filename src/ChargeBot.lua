@@ -18,10 +18,58 @@ local _attackTickCount = 0
 local _lastAttackTick = -1000
 local _isExploitReady = false
 
+-- Cached once per tick by CacheEquipment()
+local _hasTideTurner = false
+local _hasBooties    = false
+
+-- --- Charge Turn Constants (mirrors CalculateChargeCap from tf_player_shared.cpp) ---------------
+-- Base yaw cap (radians/tick, pre-frametime scaling) from CalculateChargeCap flCap = 0.45
+local CHARGE_YAW_CAP_BASE    = 0.45   -- radians
+-- Bootie turn attribute multiplier (+200% = x3 base cap)
+local BOOTIE_TURN_MULTIPLIER = 3.0    -- with Ali Baba's / Bootlegger
+-- Frametime scaling: RemapValClamped(ft, 0.2*ti, 2.0*ti, 0.25, 2.0)
+local SCALE_MIN              = 0.25
+local SCALE_MAX              = 2.0
+-- Shield def indices that grant full Tide Turner-style control (skip our cap logic)
+local TIDE_TURNER_DEFINDEX   = 1099
+-- Boots that grant +200% charge_turn_control attribute
+local BOOTIES_DEFINDICES     = { [405] = true, [1105] = true }
+
 -- --- Initialization ----------------------------------------------------------
 
 function ChargeBot.Init(menu)
     _menu = menu
+end
+
+-- Call once at the top of each CreateMove tick when pLocal is valid
+function ChargeBot.CacheEquipment(pLocal)
+    assert(pLocal, "ChargeBot.CacheEquipment: pLocal missing")
+    _hasTideTurner = false
+    _hasBooties    = false
+
+    local shields = entities.FindByClass("CTFWearableDemoShield")
+    for _, shield in pairs(shields) do
+        if shield and shield:IsValid() then
+            local owner = shield:GetPropEntity("m_hOwnerEntity")
+            if owner and owner:IsValid() and owner:GetIndex() == pLocal:GetIndex() then
+                if shield:GetPropInt("m_iItemDefinitionIndex") == TIDE_TURNER_DEFINDEX then
+                    _hasTideTurner = true
+                end
+            end
+        end
+    end
+
+    local wearables = entities.FindByClass("CTFWearable")
+    for _, w in pairs(wearables) do
+        if w and w:IsValid() then
+            local owner = w:GetPropEntity("m_hOwnerEntity")
+            if owner and owner:IsValid() and owner:GetIndex() == pLocal:GetIndex() then
+                if BOOTIES_DEFINDICES[w:GetPropInt("m_iItemDefinitionIndex")] then
+                    _hasBooties = true
+                end
+            end
+        end
+    end
 end
 
 -- --- Logic -------------------------------------------------------------------
@@ -59,62 +107,18 @@ function ChargeBot.TickStateMachine(pCmd, pLocalClass)
     end
 end
 
--- --- Charge Turn Constants (mirrors CalculateChargeCap from tf_player_shared.cpp) ---------------
+-- --- Charge Turn Constants: definition block is now above, kept here only as section header ---
 
--- Base yaw cap (radians/tick, pre-frametime scaling) from CalculateChargeCap flCap = 0.45
-local CHARGE_YAW_CAP_BASE    = 0.45   -- radians
--- Bootie turn attribute multiplier (+200% = x3 base cap)
-local BOOTIE_TURN_MULTIPLIER = 3.0    -- with Ali Baba's / Bootlegger
--- Frametime scaling: RemapValClamped(ft, 0.2*ti, 2.0*ti, 0.25, 2.0)
-local SCALE_MIN              = 0.25
-local SCALE_MAX              = 2.0
--- Shield def indices that grant full Tide Turner-style control (skip our cap logic)
-local TIDE_TURNER_DEFINDEX   = 1099
--- Boots that grant +200% charge_turn_control attribute
-local BOOTIES_DEFINDICES     = { [405] = true, [1105] = true }
-
-local function getChargeTurnCapDeg(pLocal)
-    -- Detect shield equipped on local player
-    local hasTideTurner = false
-    local hasBooties    = false
-    local shields = entities.FindByClass("CTFWearableDemoShield")
-    for _, shield in pairs(shields) do
-        if shield and shield:IsValid() then
-            local owner = shield:GetPropEntity("m_hOwnerEntity")
-            if owner and owner:IsValid() and owner:GetIndex() == pLocal:GetIndex() then
-                local defIndex = shield:GetPropInt("m_iItemDefinitionIndex")
-                if defIndex == TIDE_TURNER_DEFINDEX then
-                    hasTideTurner = true
-                end
-            end
-        end
+local function getChargeTurnCapDeg()
+    if _hasTideTurner then
+        return nil, true
     end
 
-    -- Check wearable boots on local (slot 8 items, wearable class)
-    local wearables = entities.FindByClass("CTFWearable")
-    for _, w in pairs(wearables) do
-        if w and w:IsValid() then
-            local owner = w:GetPropEntity("m_hOwnerEntity")
-            if owner and owner:IsValid() and owner:GetIndex() == pLocal:GetIndex() then
-                local defIndex = w:GetPropInt("m_iItemDefinitionIndex")
-                if BOOTIES_DEFINDICES[defIndex] then
-                    hasBooties = true
-                end
-            end
-        end
-    end
-
-    if hasTideTurner then
-        return nil, true -- nil = use full mouse, true = is Turner
-    end
-
-    -- flCap calculation
     local flCap = CHARGE_YAW_CAP_BASE
-    if hasBooties then
+    if _hasBooties then
         flCap = flCap * BOOTIE_TURN_MULTIPLIER
     end
 
-    -- Frametime scaling: clamp frametime to [0.2*ti, 2.0*ti], remap to [0.25, 2.0]
     local ti = globals.TickInterval()
     local ft = globals.FrameTime()
     local ftMin = 0.2 * ti
@@ -122,7 +126,6 @@ local function getChargeTurnCapDeg(pLocal)
     local ftClamped = math.max(ftMin, math.min(ftMax, ft))
     local scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * ((ftClamped - ftMin) / (ftMax - ftMin))
 
-    -- Final cap in radians for this tick, then convert to degrees
     local capRad = flCap * scale
     local capDeg = math.deg(capRad)
     return capDeg, false
@@ -131,7 +134,7 @@ end
 function ChargeBot.ChargeControl(pCmd, pLocal)
     if not pLocal:InCond(17) then return end
 
-    local capDeg, isTideTurner = getChargeTurnCapDeg(pLocal)
+    local capDeg, isTideTurner = getChargeTurnCapDeg()
 
     -- Tide Turner: has native full control, no capping needed
     if isTideTurner then return end
@@ -179,7 +182,7 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeMeter, pLocalOrigi
             -- Use actual server turn cap for smooth non-rubberband steering
             local turnCapDeg = 17 -- fallback for when not charging but about to charge
             if isCharging then
-                local capFromServer = getChargeTurnCapDeg(pLocal)
+                local capFromServer = getChargeTurnCapDeg()
                 if capFromServer then turnCapDeg = capFromServer end
             end
 

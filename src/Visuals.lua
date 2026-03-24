@@ -262,31 +262,18 @@ function Visuals.Render(menu, state)
     end
 
     -- 2. Range Circle (Local)
-    -- pLocalOrigin = feet abs origin, pLocalFuture = predicted feet abs origin
-    -- Eye-level trace start: feet origin + vHeight
-    if menu.Visuals.Local.RangeCircle and state.pLocalFuture and state.pLocalOrigin then
-        local viewPos = state.pLocalOrigin + (state.vHeight or Vector3(0,0,75))
-        local center  = state.pLocalFuture   -- already feet position
-        local radius = state.totalSwingRange or 48
-        local segments = 32
-        local angleStep = (2 * math.pi) / segments
-
+    -- Vertices are pre-computed in CreateMove at tick-rate (not per-frame) — zero traces here.
+    if state.rangeCirclePoints then
         local circleColor = state.currentTarget and {0, 255, 0, 255} or {255, 255, 255, 255}
         draw.Color(table.unpack(circleColor))
-
-        local vertices = {}
-        for i = 1, segments do
-            local angle = angleStep * i
-            local circlePoint = center + Vector3(math.cos(angle), math.sin(angle), 0) * radius
-            local trace = engine.TraceLine(viewPos, circlePoint, MASK_SHOT_HULL)
-            local endPoint = trace.fraction < 1.0 and trace.endpos or circlePoint
-            vertices[i] = client.WorldToScreen(endPoint)
-        end
-
-        for i = 1, segments do
-            local j = (i % segments) + 1
-            if vertices[i] and vertices[j] then
-                draw.Line(vertices[i][1], vertices[i][2], vertices[j][1], vertices[j][2])
+        local pts = state.rangeCirclePoints
+        local n = 32  -- must match CIRCLE_SEGMENTS in Main.lua
+        for i = 1, n do
+            local j = (i % n) + 1
+            local sp1 = client.WorldToScreen(pts[i])
+            local sp2 = client.WorldToScreen(pts[j])
+            if sp1 and sp2 then
+                draw.Line(sp1[1], sp1[2], sp2[1], sp2[2])
             end
         end
     end
