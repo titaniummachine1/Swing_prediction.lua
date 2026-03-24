@@ -1,15 +1,19 @@
 // Bundle from src/Main.lua (module-aware) or fallback to single-file copy, then deploy to %LOCALAPPDATA%\lua
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 
-const titleFile = path.join(process.cwd(), "title.txt");
-const luaFileName = fs.readFileSync(titleFile, "utf8").trim();
-const buildDir = path.join(process.cwd(), "build");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const titleFile = path.join(__dirname, "title.txt");
+const rawTitle = fs.readFileSync(titleFile, "utf8");
+const luaFileName = rawTitle.replace(/\uFEFF/g, "").trim();
+
+const buildDir = path.join(__dirname, "build");
 const outputPath = path.join(buildDir, luaFileName);
 const deployDir = path.join(process.env.LOCALAPPDATA || "", "lua");
 const deployPath = path.join(deployDir, luaFileName);
 
-const srcDir = path.join(process.cwd(), "src");
+const srcDir = path.join(__dirname, "src");
 const mainPath = path.join(srcDir, "Main.lua");
 const singleCandidates = ["A_Swing_Prediction.lua", "Swing_prediction.lua"];
 const externalModules = new Set(["lnxlib", "immenu"]);
@@ -111,52 +115,65 @@ function buildBundleFromMain(mainFilePath) {
 	const nonAsciiMatch = sanitized.match(/[^\x00-\x7F]/);
 	if (nonAsciiMatch) {
 		console.warn("WARNING: Bundle still contains non-ASCII characters at index " + nonAsciiMatch.index);
-		// Optionally strip them or alert user. For now, just warn as the user might want some UTF8 in strings.
-		// However, Lmaobox is strict, so let's be more aggressive if we find zero-width chars or similar.
 		return sanitized.replace(/[\u200B-\u200D\uFEFF]/g, "");
 	}
 
 	return sanitized;
 }
 
-try {
-	if (!fs.existsSync(buildDir)) {
-		fs.mkdirSync(buildDir, { recursive: true });
-	}
-
-	if (fs.existsSync(mainPath)) {
-		console.log("Bundling from src/Main.lua...");
-		const bundled = buildBundleFromMain(mainPath);
-		fs.writeFileSync(outputPath, stripBOM(bundled), { encoding: "utf8", flag: "w" });
-	} else {
-		const entry = resolveSingleEntry();
-		if (!entry) {
-			console.error(
-				"bundle-and-deploy: No src/Main.lua and no single file (" +
-				singleCandidates.join(", ") +
-				") found."
-			);
-			process.exit(1);
+function runBundle() {
+	console.log(`[${new Date().toLocaleTimeString()}] Bundling...`);
+	try {
+		if (!fs.existsSync(buildDir)) {
+			fs.mkdirSync(buildDir, { recursive: true });
 		}
-		console.log("Copying single file:", path.basename(entry));
-		fs.copyFileSync(entry, outputPath);
-	}
 
-	console.log("Build:", outputPath);
+		if (fs.existsSync(mainPath)) {
+			const bundled = buildBundleFromMain(mainPath);
+			fs.writeFileSync(outputPath, bundled, { encoding: "utf8", flag: "w" });
+			console.log("Build created:", outputPath);
+		} else {
+			const entry = resolveSingleEntry();
+			if (!entry) {
+				console.error("No src/Main.lua and no single file found.");
+				return false;
+			}
+			console.log("Copying single file:", path.basename(entry));
+			fs.copyFileSync(entry, outputPath);
+		}
 
-	if (!fs.existsSync(deployDir)) {
-		fs.mkdirSync(deployDir, { recursive: true });
+		if (!fs.existsSync(deployDir)) {
+			fs.mkdirSync(deployDir, { recursive: true });
+		}
+
+		let deployContent = fs.readFileSync(outputPath, "utf8");
+		deployContent = stripBOM(deployContent);
+		fs.writeFileSync(deployPath, deployContent, { encoding: "utf8", flag: "w" });
+		console.log("Deployed to:", deployPath);
+		return true;
+	} catch (err) {
+		console.error("Bundle failed:", err.message);
+		return false;
 	}
-	// Always write deploy as UTF-8 without BOM
-	let deployContent = fs.readFileSync(outputPath, "utf8");
-	deployContent = stripBOM(deployContent);
-	fs.writeFileSync(deployPath, deployContent, { encoding: "utf8", flag: "w" });
-	console.log("Deployed:", deployPath);
-	process.exit(0);
-} catch (err) {
-	console.error("bundle-and-deploy failed:", err.message);
-	if (err.stack) {
-		console.error(err.stack);
-	}
-	process.exit(1);
+}
+
+const args = process.argv.slice(2);
+const isWatch = args.includes("--watch") || args.includes("-w");
+
+if (isWatch) {
+	console.log("Watching for changes in src/ directory...");
+	runBundle();
+	let throttleToken = null;
+	fs.watch(srcDir, { recursive: true }, (event, filename) => {
+		if (filename && filename.endsWith(".lua")) {
+			if (throttleToken) clearTimeout(throttleToken);
+			throttleToken = setTimeout(() => {
+				runBundle();
+				throttleToken = null;
+			}, 100);
+		}
+	});
+} else {
+	const ok = runBundle();
+	process.exit(ok ? 0 : 1);
 }

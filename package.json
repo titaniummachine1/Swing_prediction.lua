@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bundle-deploy": "node bundle-and-deploy.js"
+    "bundle-deploy": "node bundle-and-deploy.js",
+    "dev": "node bundle-and-deploy.js --watch"
   }
 }
