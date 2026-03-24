@@ -1,25 +1,28 @@
---[[ Imported by: Global ]]
+--[[ Swing prediction Refactoring v2 ]]
+--[[ Author: Terminator ]]
 
-local lnxLib = require("lnxlib")
-local Menu = require("Menu")
-local Config = require("Config")
-local Simulation = require("Simulation")
+-- Unload if existing
+if package.loaded["A_Swing_Prediction"] then
+    package.loaded["A_Swing_Prediction"] = nil
+end
+
+---- Initialize libraries
+local lnxLib         = require("lnxlib")
+local MenuUI         = require("Menu")
+local Config         = require("utils.Config")
+local DefaultConfig  = require("utils.DefaultConfig")
+local Simulation     = require("Simulation")
 local TargetSelector = require("TargetSelector")
-local CritManager = require("CritManager")
-local ChargeBot = require("ChargeBot")
-local Visuals = require("Visuals")
+local CritManager    = require("CritManager")
+local ChargeBot      = require("ChargeBot")
+local Visuals        = require("Visuals")
+local Input          = require("Input")
+local MathUtils      = require("MathUtils")
+local Combat         = require("Combat")
 
--- ─── Constants ───────────────────────────────────────────────────────────────
-
-local MASK_SHOT_HULL = 10067459
-local MAX_SPEED = 770
-
--- ─── Shared State ────────────────────────────────────────────────────────────
-
-if not rawget(_G, "G") then _G.G = {} end
-G.IsUpdating = false
-
-local _state = {
+-- Shared State
+local _menuSettings  = Config.LoadCFG(DefaultConfig.Menu, "A_Swing_Prediction")
+local _state         = {
     pLocalOrigin = nil,
     pLocalFuture = nil,
     pLocalPath = nil,
@@ -30,124 +33,151 @@ local _state = {
     aimposVis = nil,
     drawVhitbox = nil,
     vHeight = Vector3(0, 0, 75),
-    totalSwingRange = 48
+    totalSwingRange = 48,
+    lastAttackTick = -1000
 }
+
+-- ─── Initialization ──────────────────────────────────────────────────────────
+
+Simulation.Init(_menuSettings)
+ChargeBot.Init(_menuSettings)
+TargetSelector.Init(_menuSettings)
+CritManager.Init(_menuSettings)
 
 -- ─── Helpers ─────────────────────────────────────────────────────────────────
 
-local function GetWeaponSmackDelay(weapon)
-    local defIndex = weapon:GetPropInt("m_iItemDefinitionIndex")
-    if defIndex == 43 or defIndex == 239 or defIndex == 1084 or defIndex == 1100 then return 1 -- Gloves
-    elseif defIndex == 307 then return 1 -- Caber
-    elseif defIndex == 132 or defIndex == 172 or defIndex == 327 or defIndex == 404 or defIndex == 482 then return 18 -- Swords
-    end
-    return 13 -- Default
+local function applySilentAttackTick(pCmd, aimAngles, settings)
+    if not settings.Aimbot.Silent or not aimAngles then return end
+    if (pCmd:GetButtons() & IN_ATTACK) == 0 then return end
+    pCmd:SetViewAngles(aimAngles.pitch, aimAngles.yaw, 0)
 end
 
 -- ─── Main Logic ──────────────────────────────────────────────────────────────
 
 local function OnCreateMove(pCmd)
-    if G.IsUpdating then return end
-
     local pLocal = entities.GetLocalPlayer()
-    if not pLocal or not pLocal:IsAlive() then 
+    if not pLocal or not pLocal:IsAlive() then
         ChargeBot.Reset()
-        return 
+        return
     end
 
     local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-    if not pWeapon or not pWeapon:IsMeleeWeapon() then return end
+    if not pWeapon then return end
 
-    local menuSettings = Menu.GetSettings()
-    if not menuSettings.AimbotEnabled then return end
+    local menuSettings = _menuSettings
+    if not menuSettings.Aimbot.Aimbot then return end
 
-    -- 1. Updates
+    -- 1. Updates & State
     local players = entities.GetPlayers()
-    Simulation.CalcStrafe(players, pLocal)
+    _state.vHeight = Vector3(0, 0, pLocal:GetPropVector("localdata", "m_vecViewOffset[0]").z)
 
-    -- 2. Local Prediction
-    local swingTime = GetWeaponSmackDelay(pWeapon)
-    local isCharging = pLocal:InCond(17)
-    local simCharge = isCharging or (pLocal:GetPropFloat("m_flChargeMeter") >= 100)
-    
-    local simParams = {
-        vHeight = _state.vHeight,
-        chargeJump = input.IsButtonDown(KEY_SPACE),
-        isChargeReachEnabled = menuSettings.ChargeReach
-    }
+    local swingRange, hullSize = Simulation.ResolveMeleeParams(pWeapon)
+    _state.totalSwingRange = swingRange + (hullSize / 2)
 
-    local localPred = Simulation.PredictPlayer(pLocal, swingTime, 0, simCharge, nil, simParams)
-    _state.pLocalOrigin = pLocal:GetAbsOrigin()
-    _state.pLocalFuture = localPred.pos[swingTime]
-    _state.pLocalPath = localPred.pos
-    _state.totalSwingRange = (pLocal:GetPropInt("m_iClass") == 4 and 72 or 48)
+    TargetSelector.SetTickState(players, pLocal, _state.vHeight, _state.totalSwingRange)
+    TargetSelector.CalcStrafe()
 
-    -- 3. Target Selection
-    local target = TargetSelector.GetBestTarget(pLocal, players, menuSettings, {
-        vHeight = _state.vHeight,
-        totalSwingRange = _state.totalSwingRange
-    })
+    -- 2. Activation Check
+    local aimActive = Input.IsKeybindActive(menuSettings.Aimbot.Keybind)
+    local chargeActive = Input.IsKeybindActive(menuSettings.Charge.Keybind)
 
+    -- 3. Troldier & Combat Assists
+    Combat.TroldierAssist(pCmd, pLocal, menuSettings.Misc)
+
+    -- 4. Target Selection
+    local target = aimActive and TargetSelector.GetBestTarget(pLocal) or nil
     _state.currentTarget = target
-    _state.aimposVis = nil
-    _state.vPlayerPath = nil
+
+    -- 5. Prediction & Aimbot
+    local smackDelay = pWeapon:GetPropFloat("m_flNextPrimaryAttack") - globals.CurTime()
+    local swingTicks = Simulation.smackDelayToTicks(smackDelay > 0 and smackDelay or 0.2)
 
     if target then
-        -- 4. Target Prediction
-        local targetStrafe = Simulation.GetStrafeAngle(target:GetIndex())
-        local targetPred = Simulation.PredictPlayer(target, swingTime, targetStrafe, false, nil, simParams)
-        _state.vPlayerOrigin = target:GetAbsOrigin()
-        _state.vPlayerFuture = targetPred.pos[swingTime]
+        local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
+        local vPlayerOrigin = target:GetAbsOrigin()
+
+        -- Predict target
+        local targetStrafe = TargetSelector.GetStrafeAngle(target:GetIndex())
+        local targetPred = Simulation.PredictPlayer(target, swingTicks, targetStrafe, false, nil, {
+            vHeight = _state.vHeight,
+            gravity = client.GetConVar("sv_gravity")
+        })
+
+        -- ... rest of target prediction ...
+        _state.vPlayerOrigin = vPlayerOrigin
+        _state.vPlayerFuture = targetPred.pos[swingTicks]
         _state.vPlayerPath = targetPred.pos
-        
-        -- 5. Range Check & Aimbot
+
+        -- Predict local
+        local isCharging = pLocal:InCond(17)
+        local localPred = Simulation.PredictPlayer(pLocal, swingTicks, 0, isCharging, nil, {
+            vHeight = _state.vHeight,
+            gravity = client.GetConVar("sv_gravity")
+        })
+        _state.pLocalOrigin = pLocal:GetAbsOrigin()
+        _state.pLocalFuture = localPred.pos[swingTicks]
+        _state.pLocalPath = localPred.pos
+
+        -- Range & Attack
         local inRange, point = Simulation.CheckInRangeSimple(
-            target:GetIndex(), _state.totalSwingRange, _state.pLocalOrigin, _state.pLocalFuture,
-            _state.vPlayerOrigin, _state.vPlayerFuture, target, simParams
+            target:GetIndex(), _state.totalSwingRange, pLocalOrigin, _state.pLocalFuture + _state.vHeight,
+            _state.vPlayerOrigin, _state.vPlayerFuture, target, {
+                advancedHitreg = menuSettings.Misc.advancedHitreg,
+                vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+            }
         )
 
         if inRange then
             _state.aimposVis = point
-            _state.drawVhitbox = { Vector3(-24,-24,0), Vector3(24,24,82) }
-            
-            -- Set Angles
-            local aimAngles = (point - (_state.pLocalOrigin + _state.vHeight)):Angles()
-            pCmd:SetViewAngles(aimAngles)
-            if not menuSettings.Silent then
-                engine.SetViewAngles(aimAngles)
-            end
+            local aimAngles = (point - pLocalOrigin):Angles()
 
-            -- Attack
             pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+            applySilentAttackTick(pCmd, aimAngles, menuSettings)
+            if not menuSettings.Aimbot.Silent then
+                engine.SetViewAngles(EulerAngles(aimAngles.pitch, aimAngles.yaw, 0))
+            end
         end
 
-        -- 6. Charge Steering
-        ChargeBot.SteerTowards(pCmd, pLocal, _state.vPlayerOrigin + _state.vHeight, menuSettings)
+        -- ChargeBot Steering
+        ChargeBot.GetChargeBotAim(
+            pLocal:GetPropInt("m_iClass"), pLocal, pLocal:GetPropFloat("m_flChargeMeter"),
+            pLocalOrigin, _state.pLocalFuture, _state.vPlayerFuture, point, inRange,
+            (vPlayerOrigin - pLocalOrigin):Length(), { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+        )
     end
 
-    -- 7. Crit Management
-    CritManager.Tick(pCmd, pWeapon, target ~= nil, menuSettings)
+    -- 6. Charge Control & Reach
+    if chargeActive then
+        ChargeBot.ChargeControl(pCmd, pLocal)
+    end
+    ChargeBot.UpdateChargeReach(pCmd, pWeapon, pLocal:GetPropFloat("m_flChargeMeter"), pLocal:GetPropInt("m_iClass"),
+        (pLocal:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0)
 
-    -- 8. Charge Bot Control
-    ChargeBot.HandleChargeControl(pCmd, pLocal, menuSettings)
-    ChargeBot.HandleChargeReach(pCmd, pLocal, menuSettings, target and target:GetAbsOrigin(), swingTime)
+    -- 7. Crit Management
+    CritManager.Tick(pCmd, pWeapon, target ~= nil, menuSettings.Misc)
 end
 
 local function OnDraw()
-    local menuSettings = Menu.GetSettings()
+    local menuSettings = _menuSettings
     Visuals.Render(menuSettings, _state)
+end
+
+local function OnUnload()
+    Config.CreateCFG(_menuSettings, "A_Swing_Prediction")
 end
 
 -- ─── Initialization ──────────────────────────────────────────────────────────
 
 local function Init()
-    callbacks.Unregister("CreateMove", "Tim_CreateMove")
-    callbacks.Unregister("Draw", "Tim_Draw")
-    
-    callbacks.Register("CreateMove", "Tim_CreateMove", OnCreateMove)
-    callbacks.Register("Draw", "Tim_Draw", OnDraw)
-    
-    print("Swing Prediction Refactored Loaded!")
+    callbacks.Unregister("CreateMove", "Swing_CreateMove")
+    callbacks.Unregister("Draw", "Swing_Draw")
+    callbacks.Unregister("Unload", "Swing_Unload")
+
+    callbacks.Register("CreateMove", "Swing_CreateMove", OnCreateMove)
+    callbacks.Register("Draw", "Swing_Draw", OnDraw)
+    callbacks.Register("Unload", "Swing_Unload", OnUnload)
+
+    print("Swing Prediction v2 Modular Loaded!")
 end
 
 Init()
