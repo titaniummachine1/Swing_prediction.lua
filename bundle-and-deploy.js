@@ -66,14 +66,8 @@ function transformRequires(content, includeModule) {
 }
 
 function stripBOM(str) {
-	if (str.charCodeAt(0) === 0xFEFF) {
-		return str.slice(1);
-	}
-	// Also handle UTF-8 BOM (EF BB BF)
-	if (str.length >= 3 && str.charCodeAt(0) === 0xEF && str.charCodeAt(1) === 0xBB && str.charCodeAt(2) === 0xBF) {
-		return str.slice(3);
-	}
-	return str;
+	// Global BOM removal (\uFEFF)
+	return typeof str === "string" ? str.replace(/\uFEFF/g, "") : str;
 }
 
 function buildBundleFromMain(mainFilePath) {
@@ -110,7 +104,19 @@ function buildBundleFromMain(mainFilePath) {
 	parts.push(mainTransformed);
 	parts.push("");
 
-	return stripBOM(parts.join("\n"));
+	const fullBundle = parts.join("\n");
+	const sanitized = stripBOM(fullBundle);
+
+	// Check for any remaining non-ASCII characters
+	const nonAsciiMatch = sanitized.match(/[^\x00-\x7F]/);
+	if (nonAsciiMatch) {
+		console.warn("WARNING: Bundle still contains non-ASCII characters at index " + nonAsciiMatch.index);
+		// Optionally strip them or alert user. For now, just warn as the user might want some UTF8 in strings.
+		// However, Lmaobox is strict, so let's be more aggressive if we find zero-width chars or similar.
+		return sanitized.replace(/[\u200B-\u200D\uFEFF]/g, "");
+	}
+
+	return sanitized;
 }
 
 try {
