@@ -246,7 +246,7 @@ end
 -- --- Pre-allocated Prediction Buffers (zero heap-alloc per tick) ---------------
 -- Two named buffers: one for local player, one for target.
 -- Each slot is a pre-created Vector3 so we can write x/y/z in-place.
-local MAX_SIM_TICKS = 32 -- must be >= any swingTicks used
+local MAX_SIM_TICKS = 200 -- supports up to ~3 seconds at 66 tick
 
 local function allocBuf()
     local b       = { pos = {}, vel = {}, onGround = {} }
