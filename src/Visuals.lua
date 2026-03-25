@@ -1,6 +1,7 @@
 --[[ Imported by: Main ]]
 
 local Simulation = require("Simulation")
+local MathUtils = require("MathUtils")
 
 local Visuals = {}
 
@@ -72,7 +73,7 @@ function Visuals.ArrowPathArrow2(startPos, endPos, width)
     if not (startPos and endPos) then return nil, nil end
     local direction = endPos - startPos
     if direction:Length() == 0 then return nil, nil end
-    direction = Simulation.Normalize(direction)
+    direction = MathUtils.Normalize(direction)
 
     local perpDir = Vector3(-direction.y, direction.x, 0)
     local leftBase = startPos + perpDir * width
@@ -95,7 +96,7 @@ function Visuals.ArrowPathArrow(startPos, endPos, arrowWidth)
     if not (startPos and endPos) then return end
     local direction = endPos - startPos
     if direction:Length() == 0 then return end
-    direction = Simulation.Normalize(direction)
+    direction = MathUtils.Normalize(direction)
     local perpendicular = Vector3(-direction.y, direction.x, 0) * arrowWidth
     
     local finPoint1 = startPos + perpendicular
@@ -116,7 +117,7 @@ function Visuals.DrawPavement(startPos, endPos, width)
     if not (startPos and endPos) then return nil, nil end
     local direction = endPos - startPos
     if direction:Length() == 0 then return nil, nil end
-    direction = Simulation.Normalize(direction)
+    direction = MathUtils.Normalize(direction)
     
     local perpDir = Vector3(-direction.y, direction.x, 0)
     local leftBase = startPos + perpDir * width
@@ -139,7 +140,7 @@ function Visuals.LLine(startPos, endPos, secondaryLineSize)
     if not (startPos and endPos) then return end
     local direction = endPos - startPos
     if direction:Length() == 0 then return end
-    local normDir = Simulation.Normalize(direction)
+    local normDir = MathUtils.Normalize(direction)
     local perpendicular = Vector3(normDir.y, -normDir.x, 0) * secondaryLineSize
     
     local sStart = client.WorldToScreen(startPos)
@@ -318,7 +319,7 @@ function Visuals.Render(menu, state)
             local ep1, ep2, ep3, ep4 = traceV(rv1), traceV(rv2), traceV(rv3), traceV(rv4)
             local sp1, sp2, sp3, sp4 = client.WorldToScreen(ep1), client.WorldToScreen(ep2), client.WorldToScreen(ep3), client.WorldToScreen(ep4)
 
-            local normal = Simulation.Normalize(rv2 - rv1):Cross(rv3 - rv1)
+            local normal = MathUtils.Normalize(rv2 - rv1):Cross(rv3 - rv1)
             if normal:Dot(playerForward) > 0.1 then
                 if sp1 and sp2 and sp3 and sp4 then
                     draw.Color(255, 255, 255, 25)

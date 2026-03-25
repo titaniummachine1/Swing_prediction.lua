@@ -17,7 +17,7 @@ local _critRefillActive = false
 
 -- --- Tick --------------------------------------------------------------------
 
-function CritManager.Tick(pCmd, pWeapon, hasTarget, menuSettings)
+function CritManager.Tick(pCmd, pWeapon, hasTarget, isCharging, menuSettings)
     assert(pCmd, "CritManager.Tick: pCmd missing")
     assert(pWeapon, "CritManager.Tick: pWeapon missing")
     assert(menuSettings, "CritManager.Tick: menuSettings missing")
@@ -45,7 +45,7 @@ function CritManager.Tick(pCmd, pWeapon, hasTarget, menuSettings)
         if numCrits < 27 then numCrits = 27 end
         if numCrits > 1000 then numCrits = 1000 end
 
-        if not hasTarget and critRefillSettings.Active then
+        if not hasTarget and not isCharging and critRefillSettings.Active then
             -- Check if we need to refill the crit bucket
             if critBucket < numCrits then
                 -- Start crit refill mode if not already active

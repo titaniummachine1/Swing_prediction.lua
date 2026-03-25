@@ -2,6 +2,8 @@
 
 local Simulation = {}
 
+local MathUtils = require("MathUtils")
+
 -- --- Constants --------------------------------------------------------------
 
 local CLASS_MAX_SPEEDS = {
@@ -30,17 +32,17 @@ end
 
 -- --- Module state ------------------------------------------------------------
 
-local _lastAngles = {}
-local _lastDeltas = {}
-local _avgDeltas = {}
-local _strafeAngles = {}
-local _inaccuracy = {}
+local _lastAngles    = {}
+local _lastDeltas    = {}
+local _avgDeltas     = {}
+local _strafeAngles  = {}
+local _inaccuracy    = {}
 
--- Ring buffer for local player past positions (zero-alloc per tick)
+-- Positions of local player for strafe angle calculation (oldest-to-newest list, max 4 entries)
+-- Using table.insert at position 1 to match reference script behaviour exactly.
+-- Allocation is per-tick for ONE player only; acceptable cost.
+local _pastPositions = {}
 local _maxPositions  = 4
-local _posRing       = { [1]=nil, [2]=nil, [3]=nil, [4]=nil }
-local _posRingHead   = 0   -- index of the most recently inserted slot (0 = empty)
-local _posRingCount  = 0   -- how many valid entries (capped at _maxPositions)
 
 -- --- Pure Math Helpers -------------------------------------------------------
 
@@ -52,16 +54,6 @@ function Simulation.Clamp(val, min, max)
     if val < min then return min end
     if val > max then return max end
     return val
-end
-
-function Simulation.Normalize(vec)
-    local length = vec:Length()
-    if length == 0 then return Vector3(0, 0, 0) end
-    return Vector3(vec.x / length, vec.y / length, vec.z / length)
-end
-
-function Simulation.NormalizeVector(vector)
-    return Simulation.Normalize(vector)
 end
 
 function Simulation.CalculateMaxAngleChange(currentVelocity, minVelocity, maxTurnRate)
@@ -165,77 +157,79 @@ end
 
 -- --- Strafe Prediction -------------------------------------------------------
 
-function Simulation.CalcStrafe(players, pLocal)
+function Simulation.CalcStrafe(players, pLocal, getHistoryFunc)
     assert(players, "Simulation.CalcStrafe: players list missing")
     assert(pLocal, "Simulation.CalcStrafe: pLocal missing")
 
-    local autostrafe = gui.GetValue("Auto Strafe")
-    local flags = pLocal:GetPropInt("m_fFlags")
-    local onGroundLocal = (flags & FL_ONGROUND) ~= 0
+    if not getHistoryFunc then return end
 
     for idx, entity in pairs(players) do
         if not entity or not entity:IsValid() then goto continue end
         local entityIndex = entity:GetIndex()
 
         if entity:IsDormant() or not entity:IsAlive() then
-            _lastAngles[entityIndex] = nil
-            _lastDeltas[entityIndex] = nil
-            _avgDeltas[entityIndex] = nil
-            _strafeAngles[entityIndex] = nil
-            _inaccuracy[entityIndex] = nil
+            _strafeAngles[entityIndex] = 0
             goto continue
         end
 
-        local v = entity:EstimateAbsVelocity()
-        if entity:GetIndex() == pLocal:GetIndex() then
-            -- Insert into ring buffer (head wraps around, no heap alloc)
-            _posRingHead                 = (_posRingHead % _maxPositions) + 1
-            _posRing[_posRingHead]       = entity:GetAbsOrigin()
-            if _posRingCount < _maxPositions then _posRingCount = _posRingCount + 1 end
+        local history = getHistoryFunc(entityIndex)
+        if not history or #history < 3 then
+            _strafeAngles[entityIndex] = 0
+            goto continue
+        end
 
-            if not onGroundLocal and autostrafe == 2 and _posRingCount >= _maxPositions then
-                -- Average velocity from ring buffer
-                v = Vector3(0, 0, 0)
-                for k = 1, _maxPositions - 1 do
-                    local idx1 = ((_posRingHead - k  - 1) % _maxPositions) + 1
-                    local idx2 = ((_posRingHead - k      ) % _maxPositions) + 1
-                    v = v + (_posRing[idx2] - _posRing[idx1])
-                end
-                v = v / (_maxPositions - 1)
-            else
-                v = entity:EstimateAbsVelocity()
+        local isGround = history[1].onGround
+        local avgYaw = 0
+        local validStrafes = 0
+        local maxSpeed = 320
+
+        for i = 1, math.min(#history - 1, 14) do
+            local rec1 = history[i]
+            local rec2 = history[i + 1]
+
+            -- Air/Ground isolation
+            if rec1.onGround ~= isGround or rec2.onGround ~= isGround then
+                break
             end
+
+            local yaw1 = rec1.vel:Angles().y
+            local yaw2 = rec2.vel:Angles().y
+
+            local tickDelta = math.max(1, rec1.tick - rec2.tick)
+            local yawDelta = MathUtils.NormalizeYaw(yaw1 - yaw2) / tickDelta
+
+            -- Sign Flip Rejection (Jitter Prevention)
+            local currentSign = yawDelta > 0 and 1 or (yawDelta < 0 and -1 or 0)
+            if i > 1 and currentSign ~= 0 then
+                local prevYaw1 = history[i - 1].vel:Angles().y
+                local prevYaw2 = rec1.vel:Angles().y
+                local prevDelta = MathUtils.NormalizeYaw(prevYaw1 - prevYaw2)
+                local lastSign = prevDelta > 0 and 1 or (prevDelta < 0 and -1 or 0)
+                if lastSign ~= 0 and currentSign ~= lastSign then
+                    break
+                end
+            end
+
+            -- Speed Scaling
+            local speed2D = math.sqrt(rec1.vel.x * rec1.vel.x + rec1.vel.y * rec1.vel.y)
+            yawDelta = yawDelta * MathUtils.Clamp(speed2D / maxSpeed, 0.0, 1.0)
+
+            avgYaw = avgYaw + yawDelta
+            validStrafes = validStrafes + 1
         end
 
-        local angle = v:Angles()
-
-        if _lastAngles[entityIndex] == nil then
-            _lastAngles[entityIndex] = angle
-            goto continue
+        if validStrafes >= 2 then
+            avgYaw = avgYaw / validStrafes
+        else
+            avgYaw = 0
         end
 
-        local delta = angle.y - _lastAngles[entityIndex].y
-        local smoothingFactor = 0.2
-        local avgDelta = (_lastDeltas[entityIndex] or delta) * (1 - smoothingFactor) + delta * smoothingFactor
+        -- Deadzone filtering
+        if math.abs(avgYaw) < 0.36 then
+            avgYaw = 0
+        end
 
-        _avgDeltas[entityIndex] = avgDelta
-
-        local vector1 = Vector3(1, 0, 0)
-        local vector2 = Vector3(1, 0, 0)
-
-        local ang1 = vector1:Angles()
-        ang1.y = ang1.y + (_lastDeltas[entityIndex] or delta)
-        vector1 = ang1:Forward() * vector1:Length()
-
-        local ang2 = vector2:Angles()
-        ang2.y = ang2.y + avgDelta
-        vector2 = ang2:Forward() * vector2:Length()
-
-        local distance = (vector1 - vector2):Length()
-        _strafeAngles[entityIndex] = avgDelta
-        _inaccuracy[entityIndex] = distance
-        _lastDeltas[entityIndex] = delta
-        _lastAngles[entityIndex] = angle
+        _strafeAngles[entityIndex] = avgYaw
 
         ::continue::
     end
@@ -252,10 +246,10 @@ end
 -- --- Pre-allocated Prediction Buffers (zero heap-alloc per tick) ---------------
 -- Two named buffers: one for local player, one for target.
 -- Each slot is a pre-created Vector3 so we can write x/y/z in-place.
-local MAX_SIM_TICKS = 32  -- must be >= any swingTicks used
+local MAX_SIM_TICKS = 32 -- must be >= any swingTicks used
 
 local function allocBuf()
-    local b = { pos = {}, vel = {}, onGround = {} }
+    local b       = { pos = {}, vel = {}, onGround = {} }
     b.pos[0]      = Vector3(0, 0, 0)
     b.vel[0]      = Vector3(0, 0, 0)
     b.onGround[0] = false
@@ -267,15 +261,15 @@ local function allocBuf()
     return b
 end
 
-local _predBufLocal  = allocBuf()  -- reused for local player each tick
-local _predBufTarget = allocBuf()  -- reused for target each tick
+local _predBufLocal     = allocBuf() -- reused for local player each tick
+local _predBufTarget    = allocBuf() -- reused for target each tick
 
 -- Pre-allocated shared constants (never recreated at runtime)
-local _vUp          = Vector3(0, 0, 1)
-local _ignoreEnts   = { "CTFAmmoPack", "CTFDroppedWeapon" }
-local _defVHitboxMin = Vector3(-24, -24, 0)
-local _defVHitboxMax = Vector3( 24,  24, 82)
-local _downStep     = Vector3(0, 0, 0)  -- mutated each tick step (onGround branch)
+local _vUp              = Vector3(0, 0, 1)
+local _ignoreEnts       = { "CTFAmmoPack", "CTFDroppedWeapon" }
+local _defVHitboxMin    = Vector3(-24, -24, 0)
+local _defVHitboxMax    = Vector3(24, 24, 82)
+local _downStep         = Vector3(0, 0, 0) -- mutated each tick step (onGround branch)
 
 -- The shouldHitEntity closure is created once per PredictPlayer call (captures player arg).
 -- We keep a module-level reference so Lua doesn't allocate a fresh upvalue table
@@ -297,49 +291,49 @@ end
 -- --- Player Prediction -------------------------------------------------------
 
 function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params, outBuf)
-    assert(player,  "Simulation.PredictPlayer: player missing")
-    assert(params,  "Simulation.PredictPlayer: params missing")
-    assert(outBuf,  "Simulation.PredictPlayer: outBuf missing — pass Simulation.BufLocal or Simulation.BufTarget")
+    assert(player, "Simulation.PredictPlayer: player missing")
+    assert(params, "Simulation.PredictPlayer: params missing")
+    assert(outBuf, "Simulation.PredictPlayer: outBuf missing — pass Simulation.BufLocal or Simulation.BufTarget")
     assert(t <= MAX_SIM_TICKS, "Simulation.PredictPlayer: t exceeds MAX_SIM_TICKS")
 
     -- chargeMode:
     -- 0 = no charge simulated
     -- 1 = full charge simulated (all ticks)
     -- 2 = exploit charge simulated (only starts on second-to-last tick: i >= t - 1)
-    chargeMode = chargeMode or 0
+    chargeMode       = chargeMode or 0
 
-    local gravity  = params.gravity  or 800
-    local stepSize = params.stepSize or 18
+    local gravity    = params.gravity or 800
+    local stepSize   = params.stepSize or 18
     local vHitboxMin = params.vHitboxMin or _defVHitboxMin
     local vHitboxMax = params.vHitboxMax or _defVHitboxMax
 
-    local vStep = Vector3(0, 0, stepSize)  -- stepSize rarely changes so small alloc is fine here
+    local vStep      = Vector3(0, 0, stepSize) -- stepSize rarely changes so small alloc is fine here
 
-    local pLocal = entities.GetLocalPlayer()
+    local pLocal     = entities.GetLocalPlayer()
     if not pLocal then return nil end
 
-    _playerForHitTest = player  -- swap capture for shared closure
-    local shouldHitEntity = shouldHitEntityShared
+    _playerForHitTest                                 = player -- swap capture for shared closure
+    local shouldHitEntity                             = shouldHitEntityShared
 
-    local playerClass = player:GetPropInt("m_iClass")
-    local maxSpeed = CLASS_MAX_SPEEDS[playerClass] or 240
+    local playerClass                                 = player:GetPropInt("m_iClass")
+    local maxSpeed                                    = CLASS_MAX_SPEEDS[playerClass] or 240
 
-    local isChargeReachEnabled = params.isChargeReachEnabled or false
-    local lastAttackTick       = params.lastAttackTick or -1000
-    local swingTime            = params.swingTime or 13
-    local isChargeReachExploit = isChargeReachEnabled
+    local isChargeReachEnabled                        = params.isChargeReachEnabled or false
+    local lastAttackTick                              = params.lastAttackTick or -1000
+    local swingTime                                   = params.swingTime or 13
+    local isChargeReachExploit                        = isChargeReachEnabled
         and player:GetIndex() == pLocal:GetIndex()
         and ((globals.TickCount() - lastAttackTick) <= swingTime)
         and player:InCond(17)
 
     -- Write initial state directly into pre-allocated slots (no table creation)
-    local p0 = player:GetAbsOrigin()
-    local v0 = player:EstimateAbsVelocity()
-    outBuf.pos[0].x,      outBuf.pos[0].y,      outBuf.pos[0].z      = p0.x, p0.y, p0.z
-    outBuf.vel[0].x,      outBuf.vel[0].y,      outBuf.vel[0].z      = v0.x, v0.y, v0.z
-    outBuf.onGround[0] = (player:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0
+    local p0                                          = player:GetAbsOrigin()
+    local v0                                          = player:EstimateAbsVelocity()
+    outBuf.pos[0].x, outBuf.pos[0].y, outBuf.pos[0].z = p0.x, p0.y, p0.z
+    outBuf.vel[0].x, outBuf.vel[0].y, outBuf.vel[0].z = v0.x, v0.y, v0.z
+    outBuf.onGround[0]                                = (player:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0
 
-    local dt = globals.TickInterval()
+    local dt                                          = globals.TickInterval()
 
     for i = 1, t do
         local lPos = outBuf.pos[i - 1]
@@ -353,12 +347,13 @@ function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params,
         local vx, vy, vz = lVel.x, lVel.y, lVel.z
         local onGround1 = lGnd
 
-        -- Strafe deviation
+        -- Strafe deviation: rotate velocity by d degrees (matches reference exactly)
         if d and d ~= 0 then
-            local tmp = Vector3(vx, vy, vz):Angles()
-            tmp.y = tmp.y + d
-            local fwd = tmp:Forward()
-            local spd = math.sqrt(vx*vx + vy*vy + vz*vz)
+            local vel3 = Vector3(vx, vy, vz)
+            local ang  = vel3:Angles()
+            ang.y      = ang.y + d
+            local fwd  = ang:Forward()
+            local spd  = vel3:Length()
             vx, vy, vz = fwd.x * spd, fwd.y * spd, fwd.z * spd
         end
 
@@ -376,8 +371,10 @@ function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params,
             local useAngles = fixedAngles or engine.GetViewAngles()
             local fwd = useAngles:Forward()
             fwd.z = 0
-            local flen = math.sqrt(fwd.x*fwd.x + fwd.y*fwd.y)
-            if flen > 0 then fwd.x = fwd.x/flen ; fwd.y = fwd.y/flen end
+            local flen = math.sqrt(fwd.x * fwd.x + fwd.y * fwd.y)
+            if flen > 0 then
+                fwd.x = fwd.x / flen; fwd.y = fwd.y / flen
+            end
 
             -- If moving backwards, wipe horizontal vel
             local dot = vx * fwd.x + vy * fwd.y
@@ -392,7 +389,7 @@ function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params,
         if onGround1 then
             local bypass = isChargeReachExploit or applyCharge
             if not bypass then
-                local hspd = math.sqrt(vx*vx + vy*vy)
+                local hspd = math.sqrt(vx * vx + vy * vy)
                 if hspd > maxSpeed and hspd > 0 then
                     local scale = maxSpeed / hspd
                     vx, vy = vx * scale, vy * scale
@@ -401,7 +398,7 @@ function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params,
         end
 
         -- Wall collision
-        outBuf.pos[i].x, outBuf.pos[i].y, outBuf.pos[i].z = lPos.x, lPos.y, lPos.z  -- temp: prev pos + step
+        outBuf.pos[i].x, outBuf.pos[i].y, outBuf.pos[i].z = lPos.x, lPos.y, lPos.z -- temp: prev pos + step
         local wallTrace = engine.TraceHull(
             Vector3(lPos.x, lPos.y, lPos.z + stepSize),
             Vector3(px, py, pz + stepSize),
@@ -456,9 +453,9 @@ function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params,
         if not onGround1 then vz = vz - gravity * dt end
 
         -- Write results directly into pre-allocated Vector3 slots
-        outBuf.pos[i].x,      outBuf.pos[i].y,      outBuf.pos[i].z      = px, py, pz
-        outBuf.vel[i].x,      outBuf.vel[i].y,      outBuf.vel[i].z      = vx, vy, vz
-        outBuf.onGround[i] = onGround1
+        outBuf.pos[i].x, outBuf.pos[i].y, outBuf.pos[i].z = px, py, pz
+        outBuf.vel[i].x, outBuf.vel[i].y, outBuf.vel[i].z = vx, vy, vz
+        outBuf.onGround[i]                                = onGround1
     end
     return outBuf
 end
@@ -484,7 +481,7 @@ function Simulation.ClosestPointOnHitbox(targetPos, spherePos, vHitbox)
 end
 
 function Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, swingRange, halfHull, pLocal)
-    local direction = Simulation.Normalize(closestPoint - spherePos)
+    local direction = MathUtils.Normalize(closestPoint - spherePos)
     local swingTraceEnd = spherePos + direction * swingRange
     local swingHullMin = Vector3(-halfHull, -halfHull, -halfHull)
     local swingHullMax = Vector3(halfHull, halfHull, halfHull)
@@ -530,7 +527,8 @@ function Simulation.CheckInRange(targetPos, spherePos, sphereRadius, targetEntit
     return false, nil
 end
 
-function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture, targetEntity, params)
+function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture,
+                                       targetEntity, params)
     local inRange, point = Simulation.CheckInRange(vPlayerOrigin, pLocalPos, swingRange, targetEntity, params)
     if inRange then return true, point, nil end
 

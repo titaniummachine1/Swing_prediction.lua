@@ -205,7 +205,7 @@ function ChargeBot.ArmChargeReach(pLocalClass, chargeMeter)
     end
 end
 
-function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, onGround, inRangePoint, vPlayerFuture, pLocalOrigin)
+function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, onGround, inRangePoint, vPlayerFuture, pLocalOrigin, isRefilling)
     if not _menu or not _menu.Charge.ChargeReach or pLocalClass ~= 4 then 
         _chargeState = "idle"
         _attackStarted = false
@@ -213,23 +213,20 @@ function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, on
     end
 
     -- Update last attack tick if IN_ATTACK is set
-    if (pCmd:GetButtons() & IN_ATTACK) ~= 0 then
+    -- IMPORTANT: Ignore attacks triggered by CritManager (refilling) so we don't accidentally charge
+    if (pCmd:GetButtons() & IN_ATTACK) ~= 0 and not isRefilling then
         _lastAttackTick = globals.TickCount()
         
         -- Start tracking attack ticks for charge reach exploit
-        if chargeMeter == 100 and not _attackStarted then
+        -- ONLY start if there's actually a target in range (inRangePoint is valid).
+        -- This prevents wasting charge when swinging at the air.
+        if chargeMeter == 100 and not _attackStarted and inRangePoint then
             _attackStarted = true
             _attackTickCount = 0
             
             -- Store aim direction to target future position so charge travels correctly
-            -- :Angles() on a Vector3 returns a Vector3, convert to EulerAngles for SetViewAngles
-            if inRangePoint then
-                local a = (inRangePoint - pLocalOrigin):Angles()
-                _chargeAimAngles = EulerAngles(a.x, a.y, 0)
-            elseif vPlayerFuture then
-                local a = (vPlayerFuture - pLocalOrigin):Angles()
-                _chargeAimAngles = EulerAngles(a.x, a.y, 0)
-            end
+            local a = (inRangePoint - pLocalOrigin):Angles()
+            _chargeAimAngles = EulerAngles(a.x, a.y, 0)
         end
     end
 

@@ -68,12 +68,17 @@ function TargetSelector.UpdateHistory(players, pCmd)
         local headCenter  = aHead  and ((aHead[1]  + aHead[2])  * 0.5) or (player:GetAbsOrigin() + Vector3(0, 0, 75))
         local chestCenter = aChest and ((aChest[1] + aChest[2]) * 0.5) or (player:GetAbsOrigin() + Vector3(0, 0, 50))
 
+        local flags = player:GetPropInt("m_fFlags") or 0
+        local onGround = (flags & FL_ONGROUND) ~= 0
+
         table.insert(hist, 1, {
             tick  = iTick,
             pos   = player:GetAbsOrigin(),  -- feet origin for AABB range check
             head  = headCenter,
             chest = chestCenter,
             latencyTicks = iLatencyTicks,
+            vel   = player:EstimateAbsVelocity(),
+            onGround = onGround
         })
 
         -- Keep max 80 records
@@ -105,7 +110,7 @@ end
 
 function TargetSelector.CalcStrafe()
     if not _players or not _me then return end
-    Simulation.CalcStrafe(_players, _me)
+    Simulation.CalcStrafe(_players, _me, TargetSelector.GetHistory)
 end
 
 function TargetSelector.GetStrafeAngle(entityIndex)

@@ -1,6 +1,6 @@
 --[[ Imported by: Main, ChargeBot, CritManager, Visuals ]]
 -- Shared script-wide state table. Avoids _G pollution.
--- Modules require("Shared") and read/write fields here instead of using globals.
+-- Modules get this table and read/write fields here instead of using globals.
 
 local Shared = {
     -- Per-tick state written by Main, read by modules

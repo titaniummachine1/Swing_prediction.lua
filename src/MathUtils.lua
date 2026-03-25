@@ -12,5 +12,9 @@ function MathUtils.Clamp(val, min, max)
     return val
 end
 
+function MathUtils.Normalize(vec)
+    return vec / vec:Length()
+end
+
 return MathUtils
 --X

@@ -189,8 +189,12 @@ local function OnCreateMove(pCmd)
         fixedAnglesLocal = EulerAngles(a.x, a.y, 0)
     end
 
+    local useStrafePred = menuSettings.Misc.strafePred
+    -- Could add warp/instant attack conditions here if required, but for basic strafe pred:
+    local localStrafe = useStrafePred and TargetSelector.GetStrafeAngle(pLocal:GetIndex()) or 0
+
     local localPred        = Simulation.PredictPlayer(
-        pLocal, swingTicks, 0, chargeModeLocal, fixedAnglesLocal,
+        pLocal, swingTicks, localStrafe, chargeModeLocal, fixedAnglesLocal,
         { gravity = client.GetConVar("sv_gravity") },
         Simulation.BufLocal)
     _state.pLocalOrigin    = pLocal:GetAbsOrigin()
