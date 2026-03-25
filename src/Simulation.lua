@@ -530,17 +530,38 @@ function Simulation.CheckInRange(targetPos, spherePos, sphereRadius, targetEntit
     return false, nil
 end
 
-function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture,
-                                       targetEntity, params)
+function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture, targetEntity, params)
     local inRange, point = Simulation.CheckInRange(vPlayerOrigin, pLocalPos, swingRange, targetEntity, params)
-    if inRange then return true, point, false end
+    if inRange then return true, point, nil end
 
-    if params.instantAttackReady then return false, nil, false end
+    if params.instantAttackReady then return false, nil, nil end
 
     inRange, point = Simulation.CheckInRange(vPlayerFuture, pLocalFuture, swingRange, targetEntity, params)
-    if inRange then return true, point, false end
+    if inRange then return true, point, nil end
 
-    return false, nil, false
+    if params.history then
+        local curTick = globals.TickCount()
+        local remainingSmackTicks = params.swingTicks or 13
+        local maxBacktrack = 14
+        
+        -- If we are using instant attack / warp, the smack happens IMMEDIATELY (0 remaining ticks)
+        if params.instantAttackReady then remainingSmackTicks = 0 end
+
+        for _, record in ipairs(params.history) do
+            local hitTick = curTick + remainingSmackTicks
+            local ageAtSmack = hitTick - record.tick
+            
+            -- The server rejects records older than ~200ms (14-16 ticks depending on interp)
+            if ageAtSmack >= 0 and ageAtSmack <= maxBacktrack then
+                inRange, point = Simulation.CheckInRange(record.pos, pLocalFuture, swingRange, targetEntity, params)
+                if inRange then
+                    return true, point, record.tick
+                end
+            end
+        end
+    end
+
+    return false, nil, nil
 end
 
 return Simulation

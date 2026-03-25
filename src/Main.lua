@@ -42,7 +42,7 @@ CritManager.Init(_menuSettings)
 -- Pre-allocated ring for range circle world-space points (32 slots, no alloc per tick)
 local CIRCLE_SEGMENTS = 32
 local _circlePoints = {}
-for _i = 1, CIRCLE_SEGMENTS do _circlePoints[_i] = nil end
+for i = 1, CIRCLE_SEGMENTS do _circlePoints[i] = Vector3(0, 0, 0) end
 
 local function applySilentAttackTick(pCmd, aimAngles, settings)
     if not settings.Aimbot.Silent or not aimAngles then return end
@@ -59,7 +59,8 @@ local function updateRangeCircle(pLocalOrigin, pLocalFuture, totalSwingRange, vH
         local angle = angleStep * i
         local circlePoint = center + Vector3(math.cos(angle), math.sin(angle), 0) * radius
         local trace = engine.TraceLine(eyePos, circlePoint, MASK_SHOT_HULL)
-        _circlePoints[i] = trace.fraction < 1.0 and trace.endpos or circlePoint
+        local endp = trace.fraction < 1.0 and trace.endpos or circlePoint
+        _circlePoints[i].x, _circlePoints[i].y, _circlePoints[i].z = endp.x, endp.y, endp.z
     end
 end
 
@@ -96,13 +97,33 @@ local function OnCreateMove(pCmd)
     local swingRange, hullSize = Simulation.ResolveMeleeParams(pWeapon)
     local isCharging = pLocal:InCond(17)
     local chargeMeter = pLocal:GetPropFloat("m_flChargeMeter")
+    -- Dynamic Prediction Timing (Remaining ticks for active swings)
+    local weaponData = pWeapon:GetWeaponData()
+    local baseSwingTicks = menuSettings.Aimbot.SwingTime or 13
+    local smackDelay = weaponData and weaponData.smackDelay or (baseSwingTicks * globals.TickInterval())
+    local timeFireDelay = weaponData and weaponData.timeFireDelay or 0.8
+    local swingTicks = math.floor(smackDelay / globals.TickInterval())
+
+    local curTime = pLocal:GetPropInt("m_nTickBase") * globals.TickInterval()
+    local nextPrimary = pWeapon:GetPropFloat("m_flNextPrimaryAttack") or 0
+    local isMidSwing = false
+
+    if nextPrimary > curTime then
+        local swingStartTime = nextPrimary - timeFireDelay
+        local smackTime = swingStartTime + smackDelay
+        local remainingTime = smackTime - curTime
+        if remainingTime > 0 and remainingTime <= smackDelay then
+            local remainingTicks = math.floor(remainingTime / globals.TickInterval())
+            swingTicks = math.max(1, math.min(swingTicks, remainingTicks))
+            isMidSwing = true
+        end
+    end
 
     -- Charge Reach Range Logic
     local Charge_Range = 128
     local isExploitReady = menuSettings.Charge.ChargeReach and chargeMeter == 100 and isDemoman
     local lastAttackTick = ChargeBot.GetLastAttackTick()
-    local withinAttackWindow = (globals.TickCount() - lastAttackTick) <= 13
-
+    local withinAttackWindow = isMidSwing or ((globals.TickCount() - lastAttackTick) <= swingTicks)
     if isCharging then
         local isDoingExploit = menuSettings.Charge.ChargeReach and withinAttackWindow
         if isDoingExploit then
@@ -119,6 +140,7 @@ local function OnCreateMove(pCmd)
     end
 
     TargetSelector.SetTickState(players, pLocal, _state.vHeight, _state.totalSwingRange)
+    TargetSelector.UpdateHistory(players, pCmd)
     TargetSelector.CalcStrafe()
 
     -- 2. Activation Check
@@ -129,15 +151,26 @@ local function OnCreateMove(pCmd)
     Combat.TroldierAssist(pCmd, pLocal, menuSettings.Misc)
 
     -- 4. Target Selection
-    local target = aimActive and TargetSelector.GetBestTarget(pLocal) or nil
-    _state.currentTarget = target
+    local potentialTarget = TargetSelector.GetBestTarget(pLocal)
+    local target = (aimActive and potentialTarget) or nil
+    _state.currentTarget = target -- Locked target for green visuals
+
+    -- 4.5. Combat Distance Check (for CritManager Refill)
+    local inCombat = false
+    if potentialTarget then
+        -- AABB sphere collision check to see if target is within 5x our attack range (including charge reach)
+        local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
+        local pTargetOrigin = potentialTarget:GetAbsOrigin()
+        local closestPoint = Simulation.ClosestPointOnHitbox(pTargetOrigin, pLocalOrigin, { Vector3(-24, -24, 0), Vector3(24, 24, 82) })
+        local distance = (closestPoint - pLocalOrigin):Length()
+        
+        if distance <= (_state.totalSwingRange * 5) then
+            inCombat = true
+        end
+    end
 
     -- 5. Prediction & Aimbot
-    local weaponData = pWeapon:GetWeaponData()
-    local swingTicks = menuSettings.Aimbot.SwingTime or 13
-    if weaponData and weaponData.smackDelay then
-        swingTicks = math.floor(weaponData.smackDelay / globals.TickInterval())
-    end
+    -- (swingTicks is now computed dynamically at the start of the tick for mid-swing accuracy)
 
     -- Always predict local player (needed for range circle even without a target)
     local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
@@ -162,6 +195,7 @@ local function OnCreateMove(pCmd)
     _state.pLocalOrigin = pLocal:GetAbsOrigin()
     _state.pLocalFuture = localPred.pos[swingTicks]
     _state.pLocalPath   = localPred.pos
+    _state.pLocalPathCount = swingTicks
 
     -- Pre-compute range circle world positions once per tick (tick-rate, not frame-rate)
     if menuSettings.Visuals and menuSettings.Visuals.Local and menuSettings.Visuals.Local.RangeCircle then
@@ -184,18 +218,44 @@ local function OnCreateMove(pCmd)
         _state.vPlayerOrigin = vPlayerOrigin
         _state.vPlayerFuture = targetPred.pos[swingTicks]
         _state.vPlayerPath = targetPred.pos
+        _state.vPlayerPathCount = swingTicks
 
         -- Range & Attack
-        local inRange, point = Simulation.CheckInRangeSimple(
+        local TargetSelector = package.loaded["TargetSelector"] or _G["TargetSelector"]
+        local historyBuffer = TargetSelector and TargetSelector.GetHistory(target:GetIndex()) or nil
+        
+        local inRange, point, bTick = Simulation.CheckInRangeSimple(
             target:GetIndex(), _state.totalSwingRange, pLocalOrigin, _state.pLocalFuture + _state.vHeight,
             _state.vPlayerOrigin, _state.vPlayerFuture, target, {
                 advancedHitreg = menuSettings.Misc.advancedHitreg,
-                vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+                vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) },
+                swingTicks = swingTicks,
+                history = historyBuffer
             }
         )
 
         if inRange then
             _state.aimposVis = point
+            -- Resolve the actual world position we're targeting (current, future, or backtrack)
+            if bTick then
+                pCmd.tick_count = bTick
+                _state.aimBacktrack = true
+                -- bTick means we hit a history record - find that record's pos
+                if historyBuffer then
+                    for _, record in ipairs(historyBuffer) do
+                        if record.tick == bTick then
+                            _state.vTargetHitboxPos = record.pos
+                            break
+                        end
+                    end
+                end
+            elseif _state.vPlayerFuture then
+                _state.aimBacktrack = false
+                _state.vTargetHitboxPos = _state.vPlayerFuture
+            else
+                _state.aimBacktrack = false
+                _state.vTargetHitboxPos = _state.vPlayerOrigin
+            end
             local aimAngles = (point - pLocalOrigin):Angles()
 
             local handledWarp = Combat.HandleWarp(pCmd, pLocal, pWeapon, swingTicks, menuSettings.Misc)
@@ -216,8 +276,10 @@ local function OnCreateMove(pCmd)
             (vPlayerOrigin - pLocalOrigin):Length(), { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
         )
     else
-        _state.vPlayerFuture = nil
-        _state.vPlayerPath   = nil
+        _state.vPlayerFuture    = nil
+        _state.vPlayerPath      = nil
+        _state.vPlayerPathCount = 0
+        _state.vTargetHitboxPos = nil
     end
 
     -- 6. Charge Control & Reach
@@ -226,10 +288,11 @@ local function OnCreateMove(pCmd)
     end
     ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, 
         (pLocal:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0, 
-        _state.aimposVis, _state.vPlayerFuture, pLocal:GetAbsOrigin() + _state.vHeight)
+        _state.aimposVis, _state.vPlayerFuture, pLocal:GetAbsOrigin() + _state.vHeight,
+        CritManager.IsRefilling())
 
     -- 7. Crit Management
-    CritManager.Tick(pCmd, pWeapon, target ~= nil, menuSettings.Misc)
+    CritManager.Tick(pCmd, pWeapon, inCombat, isCharging, menuSettings.Misc)
 end
 
 local function OnDraw()

@@ -16,6 +16,10 @@ local _vHeight = nil
 local _swingRange = nil
 local _bestTarget = nil
 
+-- Rolling buffer for backtrack: _targetHistory[idx] = { {pos = Vector3, tick = number}, ... }
+local _targetHistory = {}
+local _maxBacktrackRecords = 14
+
 -- --- Initialization ----------------------------------------------------------
 
 function TargetSelector.Init(menu)
@@ -30,6 +34,37 @@ function TargetSelector.SetTickState(players, me, vHeight, swingRange)
     _vHeight = vHeight or Vector3(0, 0, 72)
     _swingRange = swingRange or 48
     _bestTarget = nil
+end
+
+function TargetSelector.UpdateHistory(players, pCmd)
+    if not players or not pCmd then return end
+    local currentTick = pCmd.tick_count
+    
+    for _, player in pairs(players) do
+        if not player or not player:IsValid() or not player:IsAlive() or player:IsDormant() then
+            goto continue
+        end
+        local idx = player:GetIndex()
+        if not _targetHistory[idx] then _targetHistory[idx] = {} end
+        
+        local hist = _targetHistory[idx]
+        -- insert newest state at the front (index 1)
+        table.insert(hist, 1, {
+            pos = player:GetAbsOrigin(),
+            tick = currentTick
+        })
+        
+        -- maintain buffer size (pop oldest)
+        while #hist > _maxBacktrackRecords do
+            table.remove(hist)
+        end
+        
+        ::continue::
+    end
+end
+
+function TargetSelector.GetHistory(entityIndex)
+    return _targetHistory[entityIndex]
 end
 
 function TargetSelector.CalcStrafe()

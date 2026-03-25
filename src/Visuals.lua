@@ -155,12 +155,16 @@ end
 
 -- --- Style Dispatcher --------------------------------------------------------
 
-local function renderPathStyle(path, style, width)
-    if not path or #path < 2 then return end
+local function renderPathStyle(path, style, width, count)
+    if not path or not path[1] then return end
+    
+    -- If count is not provided, use #path (fallback)
+    local n = count or #path
+    if n < 2 then return end
 
     if style == 1 then -- Pavement
         local lastLeft, lastRight = nil, nil
-        for i = 1, #path - 1 do
+        for i = 1, n - 1 do
             local left, right = Visuals.DrawPavement(path[i], path[i+1], width)
             if left and right then
                 local sL = client.WorldToScreen(left)
@@ -175,7 +179,7 @@ local function renderPathStyle(path, style, width)
             end
         end
         if lastLeft and lastRight then
-            local sFinal = client.WorldToScreen(path[#path])
+            local sFinal = client.WorldToScreen(path[n])
             if sFinal then
                 draw.Line(lastLeft[1], lastLeft[2], sFinal[1], sFinal[2])
                 draw.Line(lastRight[1], lastRight[2], sFinal[1], sFinal[2])
@@ -183,7 +187,7 @@ local function renderPathStyle(path, style, width)
         end
     elseif style == 2 then -- ArrowPath
         local lastLeft, lastRight = nil, nil
-        for i = 2, #path - 1 do
+        for i = 2, n - 1 do
             local left, right = Visuals.ArrowPathArrow2(path[i], path[i+1], width)
             if left and right then
                 local sL = client.WorldToScreen(left)
@@ -198,15 +202,15 @@ local function renderPathStyle(path, style, width)
             end
         end
     elseif style == 3 then -- Arrows
-        for i = 1, #path - 1 do
+        for i = 1, n - 1 do
             Visuals.ArrowPathArrow(path[i], path[i+1], width)
         end
     elseif style == 4 then -- L Line
-        for i = 1, #path - 1 do
+        for i = 1, n - 1 do
             Visuals.LLine(path[i], path[i+1], width)
         end
     elseif style == 5 then -- Dashed
-        for i = 1, #path - 1 do
+        for i = 1, n - 1 do
             local s1 = client.WorldToScreen(path[i])
             local s2 = client.WorldToScreen(path[i+1])
             if s1 and s2 and i % 2 == 1 then
@@ -214,7 +218,7 @@ local function renderPathStyle(path, style, width)
             end
         end
     elseif style == 6 then -- Line
-        for i = 1, #path - 1 do
+        for i = 1, n - 1 do
             local s1 = client.WorldToScreen(path[i])
             local s2 = client.WorldToScreen(path[i+1])
             if s1 and s2 then
@@ -281,7 +285,7 @@ function Visuals.Render(menu, state)
     -- 3. Path (Local)
     if menu.Visuals.Local.path.enable and state.pLocalPath then
         draw.Color(table.unpack(menu.Visuals.Local.path.Color))
-        renderPathStyle(state.pLocalPath, menu.Visuals.Local.path.Style, menu.Visuals.Local.path.width)
+        renderPathStyle(state.pLocalPath, menu.Visuals.Local.path.Style, menu.Visuals.Local.path.width, state.pLocalPathCount)
     end
 
     -- 4. Range Sphere (Experimental)
@@ -332,7 +336,7 @@ function Visuals.Render(menu, state)
     -- 5. Path (Target)
     if menu.Visuals.Target.path.enable and state.vPlayerPath then
         draw.Color(table.unpack(menu.Visuals.Target.path.Color))
-        renderPathStyle(state.vPlayerPath, menu.Visuals.Target.path.Style, menu.Visuals.Target.path.width)
+        renderPathStyle(state.vPlayerPath, menu.Visuals.Target.path.Style, menu.Visuals.Target.path.width, state.vPlayerPathCount)
     end
 
     -- 6. Aim Cross (Target)
@@ -345,23 +349,47 @@ function Visuals.Render(menu, state)
         end
     end
 
-    -- 7. Hitbox Box (Target)
-    if state.drawVhitbox and state.drawVhitbox[1] and state.drawVhitbox[2] then
-        local mn, mx = state.drawVhitbox[1], state.drawVhitbox[2]
-        local pts = {
-            Vector3(mn.x, mn.y, mn.z), Vector3(mn.x, mx.y, mn.z), Vector3(mx.x, mx.y, mn.z), Vector3(mx.x, mn.y, mn.z),
-            Vector3(mn.x, mn.y, mx.z), Vector3(mn.x, mx.y, mx.z), Vector3(mx.x, mx.y, mx.z), Vector3(mx.x, mn.y, mx.z)
+    -- 7. AABB Hitbox (Target / Backtrack position)
+    if state.vTargetHitboxPos then
+        local origin = state.vTargetHitboxPos
+        local vHMin = Vector3(-24, -24, 0)
+        local vHMax = Vector3( 24,  24, 82)
+        local bMin = origin + vHMin
+        local bMax = origin + vHMax
+
+        -- Green for current/future, orange for a backtrack history record
+        if state.aimBacktrack then
+            draw.Color(255, 165, 0, 200)
+        else
+            draw.Color(0, 255, 0, 200)
+        end
+
+        local v = {
+            client.WorldToScreen(Vector3(bMin.x, bMin.y, bMin.z)),
+            client.WorldToScreen(Vector3(bMin.x, bMax.y, bMin.z)),
+            client.WorldToScreen(Vector3(bMax.x, bMax.y, bMin.z)),
+            client.WorldToScreen(Vector3(bMax.x, bMin.y, bMin.z)),
+            client.WorldToScreen(Vector3(bMin.x, bMin.y, bMax.z)),
+            client.WorldToScreen(Vector3(bMin.x, bMax.y, bMax.z)),
+            client.WorldToScreen(Vector3(bMax.x, bMax.y, bMax.z)),
+            client.WorldToScreen(Vector3(bMax.x, bMin.y, bMax.z)),
         }
-        local s = {}
-        for i, p in ipairs(pts) do s[i] = client.WorldToScreen(p) end
-        if s[1] and s[2] and s[3] and s[4] and s[5] and s[6] and s[7] and s[8] then
-            draw.Color(255, 255, 255, 255)
-            draw.Line(s[1][1], s[1][2], s[2][1], s[2][2]) draw.Line(s[2][1], s[2][2], s[3][1], s[3][2])
-            draw.Line(s[3][1], s[3][2], s[4][1], s[4][2]) draw.Line(s[4][1], s[4][2], s[1][1], s[1][2])
-            draw.Line(s[5][1], s[5][2], s[6][1], s[6][2]) draw.Line(s[6][1], s[6][2], s[7][1], s[7][2])
-            draw.Line(s[7][1], s[7][2], s[8][1], s[8][2]) draw.Line(s[8][1], s[8][2], s[5][1], s[5][2])
-            draw.Line(s[1][1], s[1][2], s[5][1], s[5][2]) draw.Line(s[2][1], s[2][2], s[6][1], s[6][2])
-            draw.Line(s[3][1], s[3][2], s[7][1], s[7][2]) draw.Line(s[4][1], s[4][2], s[8][1], s[8][2])
+        if v[1] and v[2] and v[3] and v[4] and v[5] and v[6] and v[7] and v[8] then
+            -- Bottom face
+            draw.Line(v[1][1], v[1][2], v[2][1], v[2][2])
+            draw.Line(v[2][1], v[2][2], v[3][1], v[3][2])
+            draw.Line(v[3][1], v[3][2], v[4][1], v[4][2])
+            draw.Line(v[4][1], v[4][2], v[1][1], v[1][2])
+            -- Top face
+            draw.Line(v[5][1], v[5][2], v[6][1], v[6][2])
+            draw.Line(v[6][1], v[6][2], v[7][1], v[7][2])
+            draw.Line(v[7][1], v[7][2], v[8][1], v[8][2])
+            draw.Line(v[8][1], v[8][2], v[5][1], v[5][2])
+            -- Vertical edges
+            draw.Line(v[1][1], v[1][2], v[5][1], v[5][2])
+            draw.Line(v[2][1], v[2][2], v[6][1], v[6][2])
+            draw.Line(v[3][1], v[3][2], v[7][1], v[7][2])
+            draw.Line(v[4][1], v[4][2], v[8][1], v[8][2])
         end
     end
 end
