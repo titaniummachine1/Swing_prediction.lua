@@ -210,24 +210,17 @@ local function OnCreateMove(pCmd)
     end
 
     -- Always show white AABB box at simulated future target position
-    -- Use linear prediction for far targets (cheap), full simulation only when close
+    -- Predict the nearest target using full simulation so the visual box always shows strafe curvature
     if potentialTarget then
         local vVisOrigin = potentialTarget:GetAbsOrigin()
-        local vVisVelocity = potentialTarget:EstimateAbsVelocity()
-        local distToPot = (vVisOrigin - pLocal:GetAbsOrigin()):Length()
-        local nearThreshold = _state.totalSwingRange * 2
-
-        if distToPot <= nearThreshold then
-            local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
-            local potPred = Simulation.PredictPlayer(
-                potentialTarget, swingTicks, potStrafe, 0, nil,
-                { gravity = client.GetConVar("sv_gravity") },
-                Simulation.BufTarget)
-            _state.vTargetHitboxPos = potPred.pos[swingTicks] or vVisOrigin
-        else
-            local dt = swingTicks * globals.TickInterval()
-            _state.vTargetHitboxPos = vVisOrigin + vVisVelocity * dt
-        end
+        
+        local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
+        local potPred = Simulation.PredictPlayer(
+            potentialTarget, swingTicks, potStrafe, 0, nil,
+            { gravity = client.GetConVar("sv_gravity") },
+            Simulation.BufTarget)
+        
+        _state.vTargetHitboxPos = potPred.pos[swingTicks] or vVisOrigin
         -- vTargetAimPos starts as the same as HitboxPos; overridden during attack
         _state.vTargetAimPos = _state.vTargetHitboxPos
         _state.aimBacktrack = false
