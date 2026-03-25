@@ -78,11 +78,14 @@ local function OnCreateMove(pCmd)
         return
     end
 
-    local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
-    if not pWeapon or not pWeapon:IsMeleeWeapon() then return end
-
     local menuSettings = _menuSettings
     if not menuSettings.Aimbot.Aimbot then return end
+
+    -- 3. Troldier & Combat Assists (Call before melee check to allow switching)
+    local isTrolldierActive = Combat.TroldierAssist(pCmd, pLocal, menuSettings.Misc)
+
+    local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
+    if not pWeapon or not pWeapon:IsMeleeWeapon() then return end
 
     -- 1. Updates & State
     local players = entities.FindByClass("CTFPlayer")
@@ -147,9 +150,6 @@ local function OnCreateMove(pCmd)
     local aimActive = Input.IsKeybindActive(menuSettings.Aimbot.Keybind)
     local chargeActive = Input.IsKeybindActive(menuSettings.Charge.Keybind)
 
-    -- 3. Troldier & Combat Assists
-    Combat.TroldierAssist(pCmd, pLocal, menuSettings.Misc)
-
     -- 4. Target Selection
     local potentialTarget = TargetSelector.GetBestTarget(pLocal)
     local target = (aimActive and potentialTarget) or nil
@@ -193,14 +193,23 @@ local function OnCreateMove(pCmd)
     -- Could add warp/instant attack conditions here if required, but for basic strafe pred:
     local localStrafe = useStrafePred and TargetSelector.GetStrafeAngle(pLocal:GetIndex()) or 0
 
+    local localSimTicks = swingTicks
+    if isTrolldierActive then
+        localSimTicks = swingTicks + 1
+    end
+
     local localPred        = Simulation.PredictPlayer(
-        pLocal, swingTicks, localStrafe, chargeModeLocal, fixedAnglesLocal,
+        pLocal, localSimTicks, localStrafe, chargeModeLocal, fixedAnglesLocal,
         { gravity = client.GetConVar("sv_gravity") },
         Simulation.BufLocal)
     _state.pLocalOrigin    = pLocal:GetAbsOrigin()
     _state.pLocalFuture    = localPred.pos[swingTicks] or pLocal:GetAbsOrigin()
     _state.pLocalPath      = localPred.pos
     _state.pLocalPathCount = swingTicks
+
+    if isTrolldierActive and localPred and localPred.onGround[swingTicks + 1] and not localPred.onGround[swingTicks] then
+        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
+    end
 
     -- Backtrack window (latency-aware) used by CheckInRangeSimple and for AABB coloring
     local btOldest, btLatest = TargetSelector.GetBacktrackWindow()
