@@ -96,8 +96,15 @@ function TargetSelector.GetBacktrackWindow()
     local iTick       = globals.TickCount()
     local pNetChan    = clientstate.GetNetChannel()
     local flIncoming  = pNetChan and pNetChan:GetLatency(1) or 0
-    local iLatTicks   = math.floor(0.5 + flIncoming / globals.TickInterval())
-    local maxBT       = math.floor(0.5 + 0.2 / globals.TickInterval())  -- 200 ms in ticks
+    local flOutgoing  = pNetChan and pNetChan:GetLatency(0) or 0
+    local sv_maxunlag = client.GetConVar("sv_maxunlag") or 0.2
+    local cl_interp   = client.GetConVar("cl_interp") or 0.015
+    local maxBT       = math.floor(0.5 + sv_maxunlag / globals.TickInterval())
+
+    -- Replicate C++: std::clamp(flIncoming + flOutgoing + cl_interp, 0.f, sv_maxunlag)
+    local flCorrect   = math.max(0, math.min(sv_maxunlag, (flIncoming + flOutgoing) + cl_interp))
+    local iLatTicks   = math.floor(0.5 + flCorrect / globals.TickInterval())
+    
     local iCurrent    = iTick - iLatTicks
     local iLatest     = iCurrent + math.min(iLatTicks, maxBT)
     local iOldest     = iCurrent - maxBT

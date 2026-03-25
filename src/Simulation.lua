@@ -290,7 +290,7 @@ end
 
 -- --- Player Prediction -------------------------------------------------------
 
-function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params, outBuf)
+function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params, outBuf, targetBuf)
     assert(player, "Simulation.PredictPlayer: player missing")
     assert(params, "Simulation.PredictPlayer: params missing")
     assert(outBuf, "Simulation.PredictPlayer: outBuf missing — pass Simulation.BufLocal or Simulation.BufTarget")
@@ -451,6 +451,34 @@ function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params,
 
         -- Gravity
         if not onGround1 then vz = vz - gravity * dt end
+
+        -- AFTER physics update: target AABB collision check
+        if targetBuf and targetBuf.pos and i >= 1 then
+            local targetPos = targetBuf.pos[i] or targetBuf.pos[#targetBuf.pos]
+            if targetPos then
+                local txMin = targetPos.x + vHitboxMin.x
+                local txMax = targetPos.x + vHitboxMax.x
+                local tyMin = targetPos.y + vHitboxMin.y
+                local tyMax = targetPos.y + vHitboxMax.y
+                local tzTop = targetPos.z + vHitboxMax.z
+
+                local pxMin = px + vHitboxMin.x
+                local pxMax = px + vHitboxMax.x
+                local pyMin = py + vHitboxMin.y
+                local pyMax = py + vHitboxMax.y
+
+                local intersectsXY = (pxMax >= txMin and pxMin <= txMax and pyMax >= tyMin and pyMin <= tyMax)
+                
+                if intersectsXY and vz <= 0.0 then
+                    local oldZ = (i == 1) and (player:GetAbsOrigin().z) or (outBuf.pos[i-1].z)
+                    if oldZ >= tzTop and pz <= tzTop then
+                        pz = tzTop
+                        vz = 0.0
+                        onGround1 = true
+                    end
+                end
+            end
+        end
 
         -- Write results directly into pre-allocated Vector3 slots
         outBuf.pos[i].x, outBuf.pos[i].y, outBuf.pos[i].z = px, py, pz

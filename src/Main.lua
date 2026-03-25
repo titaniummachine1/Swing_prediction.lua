@@ -171,9 +171,27 @@ local function OnCreateMove(pCmd)
     end
 
     -- 5. Prediction & Aimbot
-    -- (swingTicks is now computed dynamically at the start of the tick for mid-swing accuracy)
+    
+    local targetPredResult = nil
+    
+    -- Always predict potential target first, so we can use its future positions as a collidable AABB for the local player
+    if potentialTarget then
+        local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
+        targetPredResult = Simulation.PredictPlayer(
+            potentialTarget, swingTicks, potStrafe, 0, nil,
+            { gravity = client.GetConVar("sv_gravity") },
+            Simulation.BufTarget)
+            
+        _state.vTargetHitboxPos = targetPredResult.pos[swingTicks] or potentialTarget:GetAbsOrigin()
+        _state.vTargetAimPos = _state.vTargetHitboxPos
+        _state.aimBacktrack = false
+    else
+        _state.vTargetHitboxPos = nil
+        _state.vTargetAimPos = nil
+        _state.aimBacktrack = false
+    end
 
-    -- Always predict local player (needed for range circle even without a target)
+    -- Predict local player (needed for range circle even without a target)
     local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
     local chargeModeLocal = 0
     if isCharging then
@@ -190,18 +208,18 @@ local function OnCreateMove(pCmd)
     end
 
     local useStrafePred = menuSettings.Misc.strafePred
-    -- Could add warp/instant attack conditions here if required, but for basic strafe pred:
     local localStrafe = useStrafePred and TargetSelector.GetStrafeAngle(pLocal:GetIndex()) or 0
 
-    local localSimTicks = swingTicks
-    if isTrolldierActive then
-        localSimTicks = swingTicks + 1
-    end
+    -- We ALWAYS simulate +1 tick so we can check if we hit the ground or the target's head exactly 1 tick after the swing ends
+    local localSimTicks = swingTicks + 1
+    
+    local targetBufferToPass = potentialTarget and Simulation.BufTarget or nil
 
-    local localPred        = Simulation.PredictPlayer(
+    local localPred = Simulation.PredictPlayer(
         pLocal, localSimTicks, localStrafe, chargeModeLocal, fixedAnglesLocal,
         { gravity = client.GetConVar("sv_gravity") },
-        Simulation.BufLocal)
+        Simulation.BufLocal, targetBufferToPass)
+        
     _state.pLocalOrigin    = pLocal:GetAbsOrigin()
     _state.pLocalFuture    = localPred.pos[swingTicks] or pLocal:GetAbsOrigin()
     _state.pLocalPath      = localPred.pos
@@ -222,40 +240,12 @@ local function OnCreateMove(pCmd)
         _state.rangeCirclePoints = nil
     end
 
-    -- Always show white AABB box at simulated future target position
-    -- Predict the nearest target using full simulation so the visual box always shows exactly where we will aim
-    if potentialTarget then
-        local vVisOrigin = potentialTarget:GetAbsOrigin()
-        
-        local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
-        local potPred = Simulation.PredictPlayer(
-            potentialTarget, swingTicks, potStrafe, 0, nil,
-            { gravity = client.GetConVar("sv_gravity") },
-            Simulation.BufTarget)
-        
-        _state.vTargetHitboxPos = potPred.pos[swingTicks] or vVisOrigin
-        -- vTargetAimPos starts as the same as HitboxPos; overridden during attack
-        _state.vTargetAimPos = _state.vTargetHitboxPos
-        _state.aimBacktrack = false
-    else
-        _state.vTargetHitboxPos = nil
-        _state.vTargetAimPos = nil
-        _state.aimBacktrack = false
-    end
-
     if target then
         local vPlayerOrigin = target:GetAbsOrigin()
-
-        -- Predict target (targets never use charge physics)
-        local targetStrafe = TargetSelector.GetStrafeAngle(target:GetIndex())
-        local targetPred = Simulation.PredictPlayer(
-            target, swingTicks, targetStrafe, 0, nil,
-            { gravity = client.GetConVar("sv_gravity") },
-            Simulation.BufTarget)
-
+        
         _state.vPlayerOrigin = vPlayerOrigin
-        _state.vPlayerFuture = targetPred.pos[swingTicks]
-        _state.vPlayerPath = targetPred.pos
+        _state.vPlayerFuture = targetPredResult.pos[swingTicks]
+        _state.vPlayerPath = targetPredResult.pos
         _state.vPlayerPathCount = swingTicks
 
         -- Range & Attack
