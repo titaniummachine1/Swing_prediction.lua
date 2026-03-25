@@ -205,6 +205,36 @@ local function OnCreateMove(pCmd)
         _state.rangeCirclePoints = nil
     end
 
+    -- Always show AABB box for the nearest potential target
+    -- Use linear prediction for far targets (cheap), full simulation only when close
+    if potentialTarget then
+        local vVisOrigin = potentialTarget:GetAbsOrigin()
+        local vVisVelocity = potentialTarget:EstimateAbsVelocity()
+        local distToPot = (vVisOrigin - pLocal:GetAbsOrigin()):Length()
+        local nearThreshold = _state.totalSwingRange * 2
+
+        if distToPot <= nearThreshold then
+            -- Full simulation (accurate strafe-aware prediction)
+            local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
+            local potPred = Simulation.PredictPlayer(
+                potentialTarget, swingTicks, potStrafe, 0, nil,
+                { gravity = client.GetConVar("sv_gravity") },
+                Simulation.BufTarget)
+            _state.vTargetHitboxPos = potPred.pos[swingTicks] or vVisOrigin
+        else
+            -- Linear extrapolation only (cheap, no full sim)
+            local dt = swingTicks * globals.TickInterval()
+            _state.vTargetHitboxPos = vVisOrigin + vVisVelocity * dt
+        end
+        -- Only override with aimBacktrack/attack-specific pos when actually targeting
+        if not target then
+            _state.aimBacktrack = false
+        end
+    else
+        _state.vTargetHitboxPos = nil
+        _state.aimBacktrack = false
+    end
+
     if target then
         local vPlayerOrigin = target:GetAbsOrigin()
 
@@ -279,7 +309,7 @@ local function OnCreateMove(pCmd)
         _state.vPlayerFuture    = nil
         _state.vPlayerPath      = nil
         _state.vPlayerPathCount = 0
-        _state.vTargetHitboxPos = nil
+        -- Note: vTargetHitboxPos is kept from potentialTarget block above for AABB visuals
     end
 
     -- 6. Charge Control & Reach

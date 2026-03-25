@@ -107,8 +107,9 @@ function TargetSelector.GetBestTarget(me)
         local playerOrigin = player:GetAbsOrigin()
         local distance = (playerOrigin - _me:GetAbsOrigin()):Length()
         
-        -- Range Check: Max effective range (swing + buffer)
-        if distance > (_swingRange + 100) and not _me:InCond(17) then
+        -- Range Check: Expand to 4x swing range so far targets stay tracked for backtrack history
+        local maxRange = _swingRange * 4
+        if distance > maxRange and not _me:InCond(17) then
             goto continue
         end
 
@@ -126,8 +127,9 @@ function TargetSelector.GetBestTarget(me)
                 foundTargetInMeleeRange = true
                 local fovFactor = Math.RemapValClamped(fov, 0, 360, 1, 0.7)
                 table.insert(meleeCandidates, { player = player, factor = fovFactor * visibilityFactor })
-            elseif distance <= 770 then
-                local distanceFactor = Math.RemapValClamped(distance, 0, 770, 1, 0.9)
+            else
+                -- Far candidate - tracked but lower priority (for backtrack + visuals)
+                local distanceFactor = Math.RemapValClamped(distance, 0, maxRange, 1, 0.5)
                 local fovFactor = Math.RemapValClamped(fov, 0, 360, 1, 0.1)
                 table.insert(normalCandidates, { player = player, factor = distanceFactor * fovFactor * visibilityFactor })
             end
