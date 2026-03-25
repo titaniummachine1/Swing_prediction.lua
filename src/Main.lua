@@ -209,39 +209,18 @@ local function OnCreateMove(pCmd)
         _state.rangeCirclePoints = nil
     end
 
-    -- Predict the nearest target using full simulation when close, 
-    -- or a 1-tick arc approximation when far (to save CPU)
+    -- Always show white AABB box at simulated future target position
+    -- Predict the nearest target using full simulation so the visual box always shows exactly where we will aim
     if potentialTarget then
         local vVisOrigin = potentialTarget:GetAbsOrigin()
         
         local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
-        local nearThreshold = _state.totalSwingRange * 2
-        local distToPot = (vVisOrigin - pLocal:GetAbsOrigin()):Length()
-
-        if distToPot <= nearThreshold then
-            local potPred = Simulation.PredictPlayer(
-                potentialTarget, swingTicks, potStrafe, 0, nil,
-                { gravity = client.GetConVar("sv_gravity") },
-                Simulation.BufTarget)
-            _state.vTargetHitboxPos = potPred.pos[swingTicks] or vVisOrigin
-        else
-            -- 1-tick simulation with strafe (arc approximation)
-            local vVisVelocity = potentialTarget:EstimateAbsVelocity()
-            local speed = vVisVelocity:Length()
-            local dt = swingTicks * globals.TickInterval()
-            local totalDistance = speed * dt
-            
-            if potStrafe and potStrafe ~= 0 and speed > 1 then
-                local currentAngles = vVisVelocity:Angles()
-                -- Rotate by half the total accumulated strafe angle to get the chord of the arc
-                local totalStrafe = potStrafe * swingTicks
-                currentAngles.y = currentAngles.y + (totalStrafe * 0.5)
-                local arcDir = currentAngles:Forward()
-                _state.vTargetHitboxPos = vVisOrigin + (arcDir * totalDistance)
-            else
-                _state.vTargetHitboxPos = vVisOrigin + vVisVelocity * dt
-            end
-        end
+        local potPred = Simulation.PredictPlayer(
+            potentialTarget, swingTicks, potStrafe, 0, nil,
+            { gravity = client.GetConVar("sv_gravity") },
+            Simulation.BufTarget)
+        
+        _state.vTargetHitboxPos = potPred.pos[swingTicks] or vVisOrigin
         -- vTargetAimPos starts as the same as HitboxPos; overridden during attack
         _state.vTargetAimPos = _state.vTargetHitboxPos
         _state.aimBacktrack = false
