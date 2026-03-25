@@ -508,30 +508,43 @@ function Simulation.ClosestPointOnHitbox(targetPos, spherePos, vHitbox)
     )
 end
 
-function Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, swingRange, halfHull, pLocal)
-    local distance = (closestPoint - spherePos):Length()
-    if distance > swingRange then return false end
-
+function Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, swingRange, halfHull, pLocal, isCurrentEntity)
     local swingHullMin = Vector3(-halfHull, -halfHull, -halfHull)
     local swingHullMax = Vector3(halfHull, halfHull, halfHull)
 
-    -- Try hull trace first (more accurate for melee)
-    -- We trace to closestPoint. If it's clear (fraction == 1), we hit the predicted AABB successfully.
-    local trace = engine.TraceHull(spherePos, closestPoint, swingHullMin, swingHullMax, MASK_SHOT_HULL)
-    if trace.fraction == 1 or (trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex()) then
-        return true
-    end
+    if isCurrentEntity then
+        local direction = MathUtils.Normalize(closestPoint - spherePos)
+        local swingTraceEnd = spherePos + direction * swingRange
 
-    -- Fallback to line trace
-    trace = engine.TraceLine(spherePos, closestPoint, MASK_SHOT_HULL)
-    if trace.fraction == 1 or (trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex()) then
-        return true
-    end
+        local trace = engine.TraceHull(spherePos, swingTraceEnd, swingHullMin, swingHullMax, MASK_SHOT_HULL)
+        if trace.fraction < 1 and trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex() then
+            return true
+        end
 
-    return false
+        trace = engine.TraceLine(spherePos, swingTraceEnd, MASK_SHOT_HULL)
+        if trace.fraction < 1 and trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex() then
+            return true
+        end
+        return false
+    else
+        local function shouldHitEntity(ent)
+            if targetEntity and ent:GetIndex() == targetEntity:GetIndex() then
+                return false
+            end
+            return true
+        end
+
+        local trace = engine.TraceHull(spherePos, closestPoint, swingHullMin, swingHullMax, MASK_SHOT_HULL, shouldHitEntity)
+        if trace.fraction == 1 then return true end
+
+        trace = engine.TraceLine(spherePos, closestPoint, MASK_SHOT_HULL, shouldHitEntity)
+        if trace.fraction == 1 then return true end
+
+        return false
+    end
 end
 
-function Simulation.CheckInRange(targetPos, spherePos, sphereRadius, targetEntity, params)
+function Simulation.CheckInRange(targetPos, spherePos, sphereRadius, targetEntity, params, isCurrentEntity)
     assert(targetPos, "Simulation.CheckInRange: targetPos missing")
     assert(spherePos, "Simulation.CheckInRange: spherePos missing")
     assert(params, "Simulation.CheckInRange: params missing")
@@ -543,44 +556,49 @@ function Simulation.CheckInRange(targetPos, spherePos, sphereRadius, targetEntit
     local closestPoint = Simulation.ClosestPointOnHitbox(targetPos, spherePos, vHitbox)
     local distanceAlongVector = (spherePos - closestPoint):Length()
 
-    if sphereRadius > distanceAlongVector then
+    if isCurrentEntity then
         if advancedHitreg then
-            if Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, sphereRadius, swingHalfhullSize) then
+            if Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, sphereRadius, swingHalfhullSize, nil, true) then
                 return true, closestPoint
-            else
+            end
+            return false, nil
+        else
+            if sphereRadius > distanceAlongVector then return true, closestPoint end
+            return false, nil
+        end
+    else
+        if sphereRadius > distanceAlongVector then
+            if advancedHitreg then
+                if Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, sphereRadius, swingHalfhullSize, nil, false) then
+                    return true, closestPoint
+                end
                 return false, nil
             end
+            return true, closestPoint
         end
-        return true, closestPoint
+        return false, nil
     end
-
-    return false, nil
 end
 
-function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture,
-                                       targetEntity, params)
-    local inRange, point = Simulation.CheckInRange(vPlayerOrigin, pLocalPos, swingRange, targetEntity, params)
+function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalFuture, vPlayerOrigin, vPlayerFuture, targetEntity, params)
+    local inRange, point = Simulation.CheckInRange(vPlayerOrigin, pLocalPos, swingRange, targetEntity, params, true)
     if inRange then return true, point, nil end
 
     if params.instantAttackReady then return false, nil, nil end
 
-    inRange, point = Simulation.CheckInRange(vPlayerFuture, pLocalFuture, swingRange, targetEntity, params)
+    inRange, point = Simulation.CheckInRange(vPlayerFuture, pLocalFuture, swingRange, targetEntity, params, false)
     if inRange then return true, point, nil end
 
     if params.history then
-        -- Latency-aware backtrack window passed in from Main via params
         local iOldest = params.btOldest
         local iLatest = params.btLatest
 
         if iOldest and iLatest then
-            -- The smack happens `swingTicks` in the future. We must only target records
-            -- that will STILL be valid (within the 200ms window) at the moment of the smack.
             local hitOldest = iOldest + (params.swingTicks or 0)
 
             for _, record in ipairs(params.history) do
-                -- Only use records the server will still accept when the swing finishes
                 if record.tick >= hitOldest and record.tick <= iLatest then
-                    inRange, point = Simulation.CheckInRange(record.pos, pLocalFuture, swingRange, targetEntity, params)
+                    inRange, point = Simulation.CheckInRange(record.pos, pLocalFuture, swingRange, targetEntity, params, false)
                     if inRange then
                         return true, point, record.tick
                     end
