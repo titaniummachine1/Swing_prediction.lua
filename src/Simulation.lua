@@ -509,20 +509,22 @@ function Simulation.ClosestPointOnHitbox(targetPos, spherePos, vHitbox)
 end
 
 function Simulation.MeleeSwingCanHit(spherePos, closestPoint, targetEntity, swingRange, halfHull, pLocal)
-    local direction = MathUtils.Normalize(closestPoint - spherePos)
-    local swingTraceEnd = spherePos + direction * swingRange
+    local distance = (closestPoint - spherePos):Length()
+    if distance > swingRange then return false end
+
     local swingHullMin = Vector3(-halfHull, -halfHull, -halfHull)
     local swingHullMax = Vector3(halfHull, halfHull, halfHull)
 
     -- Try hull trace first (more accurate for melee)
-    local trace = engine.TraceHull(spherePos, swingTraceEnd, swingHullMin, swingHullMax, MASK_SHOT_HULL)
-    if trace.fraction < 1 and trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex() then
+    -- We trace to closestPoint. If it's clear (fraction == 1), we hit the predicted AABB successfully.
+    local trace = engine.TraceHull(spherePos, closestPoint, swingHullMin, swingHullMax, MASK_SHOT_HULL)
+    if trace.fraction == 1 or (trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex()) then
         return true
     end
 
     -- Fallback to line trace
-    trace = engine.TraceLine(spherePos, swingTraceEnd, MASK_SHOT_HULL)
-    if trace.fraction < 1 and trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex() then
+    trace = engine.TraceLine(spherePos, closestPoint, MASK_SHOT_HULL)
+    if trace.fraction == 1 or (trace.entity and targetEntity and trace.entity:GetIndex() == targetEntity:GetIndex()) then
         return true
     end
 
