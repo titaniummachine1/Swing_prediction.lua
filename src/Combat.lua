@@ -40,20 +40,16 @@ function Combat.TroldierAssist(pCmd, pLocal, menuSettings)
         -- Landing prediction for Market Gardener
         local weaponData = meleeWeapon:GetWeaponData()
         local smackDelay = weaponData and weaponData.smackDelay or (13 * globals.TickInterval())
-        local S = math.floor(smackDelay / globals.TickInterval())
+        local S = math.floor(smackDelay / globals.TickInterval()) + 1
         
-        -- Grounding prediction (up to 2 seconds)
-        local maxTicks = 132 -- ~2 seconds at 66 tick
-        local groundedTick = Simulation.PredictGroundedTick(pLocal, maxTicks, { gravity = client.GetConVar("sv_gravity") })
-        
-        if groundedTick then
-            -- We want to smack at G - 1.
-            -- So we start swing at G - 1 - S.
-            local startTick = groundedTick - 1 - S
-            if startTick <= 0 then
-                -- Already within the window or impact is immediate
-                pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-            end
+        -- Lightweight prediction (only swing duration + 1)
+        local localPred = Simulation.PredictPlayer(
+            pLocal, S, 0, 0, nil, 
+            { gravity = client.GetConVar("sv_gravity") },
+            Simulation.BufLocal)
+            
+        if localPred and localPred.onGround[S] and not localPred.onGround[S-1] then
+            pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
         end
     else
         if activeWeapon and activeWeapon:IsValid() and activeWeapon:GetIndex() ~= primaryWeapon:GetIndex() then
