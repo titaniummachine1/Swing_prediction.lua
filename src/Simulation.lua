@@ -545,9 +545,13 @@ function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalF
         local iLatest = params.btLatest
 
         if iOldest and iLatest then
+            -- The smack happens `swingTicks` in the future. We must only target records
+            -- that will STILL be valid (within the 200ms window) at the moment of the smack.
+            local hitOldest = iOldest + (params.swingTicks or 0)
+
             for _, record in ipairs(params.history) do
-                -- Only use records the server will still accept
-                if record.tick >= iOldest and record.tick <= iLatest then
+                -- Only use records the server will still accept when the swing finishes
+                if record.tick >= hitOldest and record.tick <= iLatest then
                     inRange, point = Simulation.CheckInRange(record.pos, pLocalFuture, swingRange, targetEntity, params)
                     if inRange then
                         return true, point, record.tick
