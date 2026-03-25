@@ -24,11 +24,11 @@ local Combat         = require("Combat")
 printc(100, 255, 200, 255, "[Main] Script starting...")
 
 -- Menu settings loaded from config
-local _menuSettings = Config.LoadCFG(DefaultConfig.Menu, "A_Swing_Prediction")
+local _menuSettings    = Config.LoadCFG(DefaultConfig.Menu, "A_Swing_Prediction")
 
 -- _state is aliased to Shared so all modules can see the same object
-local _state = Shared
-_state.vHeight        = Vector3(0, 0, 75)
+local _state           = Shared
+_state.vHeight         = Vector3(0, 0, 75)
 _state.totalSwingRange = 48
 
 
@@ -52,7 +52,7 @@ end
 
 local function updateRangeCircle(pLocalOrigin, pLocalFuture, totalSwingRange, vHeight)
     local eyePos = pLocalOrigin + vHeight
-    local center = pLocalFuture  -- feet
+    local center = pLocalFuture -- feet
     local radius = totalSwingRange
     local angleStep = (2 * math.pi) / CIRCLE_SEGMENTS
     for i = 1, CIRCLE_SEGMENTS do
@@ -69,10 +69,10 @@ end
 local function OnCreateMove(pCmd)
     -- Reset transient per-tick visual state
     _state.aimposVis     = nil
-    _state.currentTarget  = nil
-    _state.drawVhitbox    = nil
+    _state.currentTarget = nil
+    _state.drawVhitbox   = nil
 
-    local pLocal = entities.GetLocalPlayer()
+    local pLocal         = entities.GetLocalPlayer()
     if not pLocal or not pLocal:IsAlive() then
         ChargeBot.Reset()
         return
@@ -161,9 +161,10 @@ local function OnCreateMove(pCmd)
         -- AABB sphere collision check to see if target is within 5x our attack range (including charge reach)
         local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
         local pTargetOrigin = potentialTarget:GetAbsOrigin()
-        local closestPoint = Simulation.ClosestPointOnHitbox(pTargetOrigin, pLocalOrigin, { Vector3(-24, -24, 0), Vector3(24, 24, 82) })
+        local closestPoint = Simulation.ClosestPointOnHitbox(pTargetOrigin, pLocalOrigin,
+            { Vector3(-24, -24, 0), Vector3(24, 24, 82) })
         local distance = (closestPoint - pLocalOrigin):Length()
-        
+
         if distance <= (_state.totalSwingRange * 5) then
             inCombat = true
         end
@@ -188,14 +189,17 @@ local function OnCreateMove(pCmd)
         fixedAnglesLocal = EulerAngles(a.x, a.y, 0)
     end
 
-    local localPred = Simulation.PredictPlayer(
+    local localPred        = Simulation.PredictPlayer(
         pLocal, swingTicks, 0, chargeModeLocal, fixedAnglesLocal,
         { gravity = client.GetConVar("sv_gravity") },
         Simulation.BufLocal)
-    _state.pLocalOrigin = pLocal:GetAbsOrigin()
-    _state.pLocalFuture = localPred.pos[swingTicks]
-    _state.pLocalPath   = localPred.pos
+    _state.pLocalOrigin    = pLocal:GetAbsOrigin()
+    _state.pLocalFuture    = localPred.pos[swingTicks] or pLocal:GetAbsOrigin()
+    _state.pLocalPath      = localPred.pos
     _state.pLocalPathCount = swingTicks
+
+    -- Backtrack window (latency-aware) used by CheckInRangeSimple and for AABB coloring
+    local btOldest, btLatest = TargetSelector.GetBacktrackWindow()
 
     -- Pre-compute range circle world positions once per tick (tick-rate, not frame-rate)
     if menuSettings.Visuals and menuSettings.Visuals.Local and menuSettings.Visuals.Local.RangeCircle then
@@ -205,7 +209,7 @@ local function OnCreateMove(pCmd)
         _state.rangeCirclePoints = nil
     end
 
-    -- Always show AABB box for the nearest potential target
+    -- Always show white AABB box at simulated future target position
     -- Use linear prediction for far targets (cheap), full simulation only when close
     if potentialTarget then
         local vVisOrigin = potentialTarget:GetAbsOrigin()
@@ -214,7 +218,6 @@ local function OnCreateMove(pCmd)
         local nearThreshold = _state.totalSwingRange * 2
 
         if distToPot <= nearThreshold then
-            -- Full simulation (accurate strafe-aware prediction)
             local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
             local potPred = Simulation.PredictPlayer(
                 potentialTarget, swingTicks, potStrafe, 0, nil,
@@ -222,16 +225,15 @@ local function OnCreateMove(pCmd)
                 Simulation.BufTarget)
             _state.vTargetHitboxPos = potPred.pos[swingTicks] or vVisOrigin
         else
-            -- Linear extrapolation only (cheap, no full sim)
             local dt = swingTicks * globals.TickInterval()
             _state.vTargetHitboxPos = vVisOrigin + vVisVelocity * dt
         end
-        -- Only override with aimBacktrack/attack-specific pos when actually targeting
-        if not target then
-            _state.aimBacktrack = false
-        end
+        -- vTargetAimPos starts as the same as HitboxPos; overridden during attack
+        _state.vTargetAimPos = _state.vTargetHitboxPos
+        _state.aimBacktrack = false
     else
         _state.vTargetHitboxPos = nil
+        _state.vTargetAimPos = nil
         _state.aimBacktrack = false
     end
 
@@ -253,38 +255,36 @@ local function OnCreateMove(pCmd)
         -- Range & Attack
         local TargetSelector = package.loaded["TargetSelector"] or _G["TargetSelector"]
         local historyBuffer = TargetSelector and TargetSelector.GetHistory(target:GetIndex()) or nil
-        
+
         local inRange, point, bTick = Simulation.CheckInRangeSimple(
             target:GetIndex(), _state.totalSwingRange, pLocalOrigin, _state.pLocalFuture + _state.vHeight,
             _state.vPlayerOrigin, _state.vPlayerFuture, target, {
                 advancedHitreg = menuSettings.Misc.advancedHitreg,
                 vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) },
                 swingTicks = swingTicks,
-                history = historyBuffer
+                history = historyBuffer,
+                btOldest = btOldest,
+                btLatest = btLatest
             }
         )
 
         if inRange then
             _state.aimposVis = point
-            -- Resolve the actual world position we're targeting (current, future, or backtrack)
             if bTick then
                 pCmd.tick_count = bTick
                 _state.aimBacktrack = true
-                -- bTick means we hit a history record - find that record's pos
+                -- Show green box at the backtrack record's origin
                 if historyBuffer then
                     for _, record in ipairs(historyBuffer) do
                         if record.tick == bTick then
-                            _state.vTargetHitboxPos = record.pos
+                            _state.vTargetAimPos = record.pos
                             break
                         end
                     end
                 end
-            elseif _state.vPlayerFuture then
-                _state.aimBacktrack = false
-                _state.vTargetHitboxPos = _state.vPlayerFuture
             else
                 _state.aimBacktrack = false
-                _state.vTargetHitboxPos = _state.vPlayerOrigin
+                _state.vTargetAimPos = _state.vPlayerFuture or _state.vPlayerOrigin
             end
             local aimAngles = (point - pLocalOrigin):Angles()
 
@@ -316,8 +316,8 @@ local function OnCreateMove(pCmd)
     if chargeActive then
         ChargeBot.ChargeControl(pCmd, pLocal)
     end
-    ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, 
-        (pLocal:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0, 
+    ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass,
+        (pLocal:GetPropInt("m_fFlags") & FL_ONGROUND) ~= 0,
         _state.aimposVis, _state.vPlayerFuture, pLocal:GetAbsOrigin() + _state.vHeight,
         CritManager.IsRefilling())
 

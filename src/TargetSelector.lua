@@ -37,30 +37,66 @@ function TargetSelector.SetTickState(players, me, vHeight, swingRange)
 end
 
 function TargetSelector.UpdateHistory(players, pCmd)
-    if not players or not pCmd then return end
-    local currentTick = pCmd.tick_count
-    
+    if not players then return end
+    local iTick    = globals.TickCount()
+    local pNetChan = clientstate.GetNetChannel()
+    local flIncoming    = pNetChan and pNetChan:GetLatency(1) or 0
+    local iLatencyTicks = math.floor(0.5 + flIncoming / globals.TickInterval())
+
     for _, player in pairs(players) do
-        if not player or not player:IsValid() or not player:IsAlive() or player:IsDormant() then
-            goto continue
-        end
+        if not player or not player:IsValid() then goto continueH end
         local idx = player:GetIndex()
+
+        if not player:IsAlive() or player:IsDormant() then
+            _targetHistory[idx] = nil
+            goto continueH
+        end
+
         if not _targetHistory[idx] then _targetHistory[idx] = {} end
-        
         local hist = _targetHistory[idx]
-        -- insert newest state at the front (index 1)
+
+        -- Prune stale history (older than 660 ticks, same as reference)
+        if hist[1] and math.abs(hist[1].tick - iTick) >= 660 then
+            _targetHistory[idx] = nil
+            goto continueH
+        end
+
+        -- Capture actual hitbox centers for precision aim
+        local hitboxes = player:GetHitboxes()
+        local aHead  = hitboxes and hitboxes[1]
+        local aChest = hitboxes and hitboxes[4]
+        local headCenter  = aHead  and ((aHead[1]  + aHead[2])  * 0.5) or (player:GetAbsOrigin() + Vector3(0, 0, 75))
+        local chestCenter = aChest and ((aChest[1] + aChest[2]) * 0.5) or (player:GetAbsOrigin() + Vector3(0, 0, 50))
+
         table.insert(hist, 1, {
-            pos = player:GetAbsOrigin(),
-            tick = currentTick
+            tick  = iTick,
+            pos   = player:GetAbsOrigin(),  -- feet origin for AABB range check
+            head  = headCenter,
+            chest = chestCenter,
+            latencyTicks = iLatencyTicks,
         })
-        
-        -- maintain buffer size (pop oldest)
-        while #hist > _maxBacktrackRecords do
+
+        -- Keep max 80 records
+        while #hist > 80 do
             table.remove(hist)
         end
-        
-        ::continue::
+
+        ::continueH::
     end
+end
+
+-- Returns the valid [oldestTick, latestTick] window for backtrack,
+-- based on current server-estimated latency, mirroring reference implementation logic.
+function TargetSelector.GetBacktrackWindow()
+    local iTick       = globals.TickCount()
+    local pNetChan    = clientstate.GetNetChannel()
+    local flIncoming  = pNetChan and pNetChan:GetLatency(1) or 0
+    local iLatTicks   = math.floor(0.5 + flIncoming / globals.TickInterval())
+    local maxBT       = math.floor(0.5 + 0.2 / globals.TickInterval())  -- 200 ms in ticks
+    local iCurrent    = iTick - iLatTicks
+    local iLatest     = iCurrent + math.min(iLatTicks, maxBT)
+    local iOldest     = iCurrent - maxBT
+    return iOldest, iLatest
 end
 
 function TargetSelector.GetHistory(entityIndex)

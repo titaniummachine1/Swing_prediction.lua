@@ -153,6 +153,16 @@ function runBundle() {
 		return true;
 	} catch (err) {
 		console.error("Bundle failed:", err.message);
+		// Deploy a Lua error stub so the script fails loudly in-game
+		const errMsg = err.message.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+		const errorStub = `-- BUNDLE ERROR: This file was not deployed correctly.\nerror("[BundleError] ${errMsg}")\n`;
+		try {
+			if (!fs.existsSync(deployDir)) fs.mkdirSync(deployDir, { recursive: true });
+			fs.writeFileSync(deployPath, errorStub, { encoding: "utf8", flag: "w" });
+			console.error("Error stub deployed to:", deployPath);
+		} catch (e2) {
+			console.error("Could not deploy error stub:", e2.message);
+		}
 		return false;
 	}
 }

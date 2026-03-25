@@ -349,21 +349,15 @@ function Visuals.Render(menu, state)
         end
     end
 
-    -- 7. AABB Hitbox (Target / Backtrack position)
-    if state.vTargetHitboxPos then
-        local origin = state.vTargetHitboxPos
+    -- 7. AABB Hitbox Visualization
+    -- White box = simulated future (end of swing delay)
+    -- Green box = actual aim target (current pos or backtrack record)
+    local function drawAABB(origin, r, g, b)
         local vHMin = Vector3(-24, -24, 0)
         local vHMax = Vector3( 24,  24, 82)
         local bMin = origin + vHMin
         local bMax = origin + vHMax
-
-        -- Green for current/future, orange for a backtrack history record
-        if state.aimBacktrack then
-            draw.Color(255, 165, 0, 200)
-        else
-            draw.Color(0, 255, 0, 200)
-        end
-
+        draw.Color(r, g, b, 180)
         local v = {
             client.WorldToScreen(Vector3(bMin.x, bMin.y, bMin.z)),
             client.WorldToScreen(Vector3(bMin.x, bMax.y, bMin.z)),
@@ -375,22 +369,23 @@ function Visuals.Render(menu, state)
             client.WorldToScreen(Vector3(bMax.x, bMin.y, bMax.z)),
         }
         if v[1] and v[2] and v[3] and v[4] and v[5] and v[6] and v[7] and v[8] then
-            -- Bottom face
-            draw.Line(v[1][1], v[1][2], v[2][1], v[2][2])
-            draw.Line(v[2][1], v[2][2], v[3][1], v[3][2])
-            draw.Line(v[3][1], v[3][2], v[4][1], v[4][2])
-            draw.Line(v[4][1], v[4][2], v[1][1], v[1][2])
-            -- Top face
-            draw.Line(v[5][1], v[5][2], v[6][1], v[6][2])
-            draw.Line(v[6][1], v[6][2], v[7][1], v[7][2])
-            draw.Line(v[7][1], v[7][2], v[8][1], v[8][2])
-            draw.Line(v[8][1], v[8][2], v[5][1], v[5][2])
-            -- Vertical edges
-            draw.Line(v[1][1], v[1][2], v[5][1], v[5][2])
-            draw.Line(v[2][1], v[2][2], v[6][1], v[6][2])
-            draw.Line(v[3][1], v[3][2], v[7][1], v[7][2])
-            draw.Line(v[4][1], v[4][2], v[8][1], v[8][2])
+            draw.Line(v[1][1],v[1][2],v[2][1],v[2][2]) draw.Line(v[2][1],v[2][2],v[3][1],v[3][2])
+            draw.Line(v[3][1],v[3][2],v[4][1],v[4][2]) draw.Line(v[4][1],v[4][2],v[1][1],v[1][2])
+            draw.Line(v[5][1],v[5][2],v[6][1],v[6][2]) draw.Line(v[6][1],v[6][2],v[7][1],v[7][2])
+            draw.Line(v[7][1],v[7][2],v[8][1],v[8][2]) draw.Line(v[8][1],v[8][2],v[5][1],v[5][2])
+            draw.Line(v[1][1],v[1][2],v[5][1],v[5][2]) draw.Line(v[2][1],v[2][2],v[6][1],v[6][2])
+            draw.Line(v[3][1],v[3][2],v[7][1],v[7][2]) draw.Line(v[4][1],v[4][2],v[8][1],v[8][2])
         end
+    end
+
+    -- White: where the target will be when swing hits (simulated future)
+    if state.vTargetHitboxPos then
+        drawAABB(state.vTargetHitboxPos, 200, 200, 200)
+    end
+
+    -- Green: where we're actually aiming (current or backtrack record)
+    if state.vTargetAimPos then
+        drawAABB(state.vTargetAimPos, 0, 255, 0)
     end
 end
 

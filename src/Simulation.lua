@@ -540,22 +540,18 @@ function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalF
     if inRange then return true, point, nil end
 
     if params.history then
-        local curTick = globals.TickCount()
-        local remainingSmackTicks = params.swingTicks or 13
-        local maxBacktrack = 14
-        
-        -- If we are using instant attack / warp, the smack happens IMMEDIATELY (0 remaining ticks)
-        if params.instantAttackReady then remainingSmackTicks = 0 end
+        -- Latency-aware backtrack window passed in from Main via params
+        local iOldest = params.btOldest
+        local iLatest = params.btLatest
 
-        for _, record in ipairs(params.history) do
-            local hitTick = curTick + remainingSmackTicks
-            local ageAtSmack = hitTick - record.tick
-            
-            -- The server rejects records older than ~200ms (14-16 ticks depending on interp)
-            if ageAtSmack >= 0 and ageAtSmack <= maxBacktrack then
-                inRange, point = Simulation.CheckInRange(record.pos, pLocalFuture, swingRange, targetEntity, params)
-                if inRange then
-                    return true, point, record.tick
+        if iOldest and iLatest then
+            for _, record in ipairs(params.history) do
+                -- Only use records the server will still accept
+                if record.tick >= iOldest and record.tick <= iLatest then
+                    inRange, point = Simulation.CheckInRange(record.pos, pLocalFuture, swingRange, targetEntity, params)
+                    if inRange then
+                        return true, point, record.tick
+                    end
                 end
             end
         end
