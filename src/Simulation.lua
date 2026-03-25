@@ -460,6 +460,74 @@ function Simulation.PredictPlayer(player, t, d, chargeMode, fixedAngles, params,
     return outBuf
 end
 
+--- PredictSimplified: Coarse-grained segment-based simulation with sliding
+-- Useful for long distances (e.g. 1-2s) where tick-by-tick is too slow/unnecessary.
+-- slides along walls.
+function Simulation.PredictSimplified(startPos, velocity, duration, params)
+    local maxStep      = params.maxStep or 0.1 -- 100ms segments
+    local gravity      = params.gravity or 800
+    local vHitboxMin   = params.vHitboxMin or _defVHitboxMin
+    local vHitboxMax   = params.vHitboxMax or _defVHitboxMax
+    local stepSize     = params.stepSize or 18
+    
+    local currentPos   = Vector3(startPos.x, startPos.y, startPos.z)
+    local currentVel   = Vector3(velocity.x, velocity.y, velocity.z)
+    local timeRemaining = duration
+    
+    while timeRemaining > 0 do
+        local dt = math.min(timeRemaining, maxStep)
+        local targetPos = currentPos + currentVel * dt
+        
+        -- Trace for walls/floors
+        local trace = engine.TraceHull(currentPos + Vector3(0, 0, stepSize), targetPos + Vector3(0, 0, stepSize), vHitboxMin, vHitboxMax, MASK_PLAYERSOLID, shouldHitEntityShared)
+        
+        if trace.fraction < 1 then
+            -- Hit something, slide along the plane
+            local normal = trace.plane
+            local dot = currentVel:Dot(normal)
+            currentVel = currentVel - normal * dot
+            currentPos = trace.endpos - Vector3(0, 0, stepSize)
+            timeRemaining = timeRemaining - (dt * trace.fraction)
+        else
+            -- Clear path
+            currentPos = targetPos
+            timeRemaining = timeRemaining - dt
+        end
+        
+        -- Simple gravity application between segments
+        local onGround = false
+        local groundTrace = engine.TraceHull(currentPos + Vector3(0, 0, stepSize), currentPos - Vector3(0, 0, 2), vHitboxMin, vHitboxMax, MASK_PLAYERSOLID, shouldHitEntityShared)
+        if groundTrace.fraction < 1 and groundTrace.plane:Dot(_vUp) > 0.7 then
+            onGround = true
+            currentPos = groundTrace.endpos
+            currentVel.z = 0
+        end
+        
+        if not onGround then
+            currentVel.z = currentVel.z - gravity * dt
+        end
+
+        -- If we are barely moving, stop
+        if currentVel:Length() < 10 then break end
+    end
+    
+    return currentPos, currentVel
+end
+
+--- PredictGroundedTick: Finds the tick index where the player hit the ground
+function Simulation.PredictGroundedTick(player, maxTicks, params)
+    local buf = Simulation.PredictPlayer(player, maxTicks, 0, 0, nil, params, _predBufTarget)
+    if not buf then return nil end
+    
+    for i = 1, maxTicks do
+        if buf.onGround[i] and not buf.onGround[i-1] then
+            return i
+        end
+    end
+    
+    return nil
+end
+
 -- Expose the two pre-allocated buffers so Main.lua can pass them in
 Simulation.BufLocal  = _predBufLocal
 Simulation.BufTarget = _predBufTarget

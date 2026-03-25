@@ -172,9 +172,14 @@ function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeMeter, pLocalOrigi
         local targetPos = inRangePoint or vPlayerFuture
         if not targetPos then return end
 
-        local trace = engine.TraceHull(pLocalOrigin, targetPos, Vector3(-18,-18,-18), Vector3(18,18,18), MASK_PLAYERSOLID_BRUSHONLY)
-        
-        if trace.fraction == 1 or (trace.entity and trace.entity:IsPlayer()) then
+        -- Use simplified simulation to check if we can reach the target (allowing for sliding)
+        local duration = (targetPos - pLocalOrigin):Length() / 450 -- approx time to reach
+        local simPos, simVel = Simulation.PredictSimplified(pLocalOrigin, MathUtils.Normalize(targetPos - pLocalOrigin) * 450, duration, {
+            gravity = client.GetConVar("sv_gravity")
+        })
+
+        local distToTarget = (simPos - targetPos):Length()
+        if distToTarget < 50 then -- Allowed error margin for "reaching" the target point
             local aimAngles = (targetPos - pLocalOrigin):Angles()
             local currentAng = engine.GetViewAngles()
             local yawDiff = MathUtils.NormalizeYaw(aimAngles.y - currentAng.y)
