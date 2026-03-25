@@ -594,7 +594,7 @@ function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalF
         local iLatest = params.btLatest
 
         if iOldest and iLatest then
-            local hitOldest = iOldest + (params.swingTicks or 0)
+            local hitOldest = iOldest -- Relax the strict swingTicks shift that was obliterating the array
 
             for _, record in ipairs(params.history) do
                 if record.tick >= hitOldest and record.tick <= iLatest then
