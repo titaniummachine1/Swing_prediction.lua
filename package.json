@@ -1,7 +1,9 @@
 {
+  "name": "swing-prediction",
+  "private": true,
   "type": "module",
-  "dependencies": {
-    "lua-format": "^1.3.4",
-    "luabundle": "^1.6.0"
+  "scripts": {
+    "bundle-deploy": "node bundle-and-deploy.js",
+    "dev": "node bundle-and-deploy.js --watch"
   }
 }

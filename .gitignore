@@ -1,8 +1,2 @@
-# OS files
-.DS_Store
-Thumbs.db
-
-# Temp files
-*.tmp
-*.temp
-temp-config/
+build/
+node_modules/

@@ -1,0 +1,31 @@
+{
+  "Lua.runtime.version": "Lua 5.4",
+  "Lua.workspace.library": [
+    "C:/gitProjects/Lmaobox-Annotations/library"
+  ],
+  "Lua.workspace.checkThirdParty": true,
+  "files.autoSave": "onFocusChange",
+  "achilleshr.runonsave": {
+    "autoSave": true,
+    "onSave": true,
+    "commands": [
+      {
+        "match": ".*\\.lua$",
+        "isAsync": false,
+        "cmd": "node \"${workspaceFolder}\\bundle-and-deploy.js\"",
+        "autoShowOutputPanel": "always"
+      }
+    ]
+  },
+  "emeraldwalk.runonsave": {
+    "autoSave": true,
+    "commands": [
+      {
+        "match": ".*\\.lua$",
+        "isAsync": false,
+        "cmd": "node \"${workspaceFolder}\\bundle-and-deploy.js\"",
+        "autoShowOutputPanel": "always"
+      }
+    ]
+  }
+}

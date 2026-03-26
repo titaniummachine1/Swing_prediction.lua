@@ -1,7 +1,6 @@
 {
-    "recommendations": [
-        "sumneko.lua",
-        "rc.lmaobox-lua-api-snippets",
-        "JohnnyMorganz.stylua"
-    ]
+  "recommendations": [
+    "sumneko.lua",
+    "achilleshr.runonsave"
+  ]
 }

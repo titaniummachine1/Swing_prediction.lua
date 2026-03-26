@@ -1,15 +1,24 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "Run BundleAndDeploy.bat",
-            "type": "shell",
-            "command": "${workspaceFolder}/BundleAndDeploy.bat",
-            "problemMatcher": [],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        }
-    ]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Bundle and deploy (lua)",
+      "type": "shell",
+      "command": "${workspaceFolder}/BundleAndDeploy.bat",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Bundle and deploy (npm)",
+      "type": "shell",
+      "command": "npm run bundle-deploy",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
 }
