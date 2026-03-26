@@ -82,7 +82,7 @@ local function OnCreateMove(pCmd)
     if not menuSettings.Aimbot.Aimbot then return end
 
     -- 3. Troldier & Combat Assists (Call before melee check to allow switching)
-    local isTrolldierActive = Combat.TroldierAssist(pCmd, pLocal, menuSettings.Misc)
+    Combat.TroldierAssist(pCmd, pLocal, menuSettings.Misc)
 
     local pWeapon = pLocal:GetPropEntity("m_hActiveWeapon")
     if not pWeapon or not pWeapon:IsMeleeWeapon() then return end
@@ -171,27 +171,9 @@ local function OnCreateMove(pCmd)
     end
 
     -- 5. Prediction & Aimbot
-    
-    local targetPredResult = nil
-    
-    -- Always predict potential target first, so we can use its future positions as a collidable AABB for the local player
-    if potentialTarget then
-        local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
-        targetPredResult = Simulation.PredictPlayer(
-            potentialTarget, swingTicks, potStrafe, 0, nil,
-            { gravity = client.GetConVar("sv_gravity") },
-            Simulation.BufTarget)
-            
-        _state.vTargetHitboxPos = targetPredResult.pos[swingTicks] or potentialTarget:GetAbsOrigin()
-        _state.vTargetAimPos = _state.vTargetHitboxPos
-        _state.aimBacktrack = false
-    else
-        _state.vTargetHitboxPos = nil
-        _state.vTargetAimPos = nil
-        _state.aimBacktrack = false
-    end
+    -- (swingTicks is now computed dynamically at the start of the tick for mid-swing accuracy)
 
-    -- Predict local player (needed for range circle even without a target)
+    -- Always predict local player (needed for range circle even without a target)
     local pLocalOrigin = pLocal:GetAbsOrigin() + _state.vHeight
     local chargeModeLocal = 0
     if isCharging then
@@ -207,30 +189,22 @@ local function OnCreateMove(pCmd)
         fixedAnglesLocal = EulerAngles(a.x, a.y, 0)
     end
 
-    local useStrafePred = menuSettings.Misc.strafePred
-    local localStrafe = useStrafePred and TargetSelector.GetStrafeAngle(pLocal:GetIndex()) or 0
+    local useStrafePred      = menuSettings.Misc.strafePred
+    -- Could add warp/instant attack conditions here if required, but for basic strafe pred:
+    local localStrafe        = useStrafePred and TargetSelector.GetStrafeAngle(pLocal:GetIndex()) or 0
 
-    -- We ALWAYS simulate +1 tick so we can check if we hit the ground or the target's head exactly 1 tick after the swing ends
-    local localSimTicks = swingTicks + 1
-    
-    local targetBufferToPass = potentialTarget and Simulation.BufTarget or nil
-
-    local localPred = Simulation.PredictPlayer(
-        pLocal, localSimTicks, localStrafe, chargeModeLocal, fixedAnglesLocal,
+    local localPred          = Simulation.PredictPlayer(
+        pLocal, swingTicks, localStrafe, chargeModeLocal, fixedAnglesLocal,
         { gravity = client.GetConVar("sv_gravity") },
-        Simulation.BufLocal, targetBufferToPass)
-        
-    _state.pLocalOrigin    = pLocal:GetAbsOrigin()
-    _state.pLocalFuture    = localPred.pos[swingTicks] or pLocal:GetAbsOrigin()
-    _state.pLocalPath      = localPred.pos
-    _state.pLocalPathCount = swingTicks
+        Simulation.BufLocal)
+    _state.pLocalOrigin      = pLocal:GetAbsOrigin()
+    _state.pLocalFuture      = localPred.pos[swingTicks] or pLocal:GetAbsOrigin()
+    _state.pLocalPath        = localPred.pos
+    _state.pLocalPathCount   = swingTicks
 
-    if isTrolldierActive and localPred and localPred.onGround[swingTicks + 1] and not localPred.onGround[swingTicks] then
-        pCmd:SetButtons(pCmd:GetButtons() | IN_ATTACK)
-    end
-
-    -- Backtrack window (latency-aware) used by CheckInRangeSimple and for AABB coloring
-    local btOldest, btLatest = TargetSelector.GetBacktrackWindow()
+    -- Amalgam-style Backtrack logic
+    local flCorrect = TargetSelector.GetCorrectLatency()
+    local flServerTime = TargetSelector.GetServerTime(globals.TickCount(), swingTicks)
 
     -- Pre-compute range circle world positions once per tick (tick-rate, not frame-rate)
     if menuSettings.Visuals and menuSettings.Visuals.Local and menuSettings.Visuals.Local.RangeCircle then
@@ -240,17 +214,45 @@ local function OnCreateMove(pCmd)
         _state.rangeCirclePoints = nil
     end
 
+    -- Always show white AABB box at simulated future target position
+    -- Predict the nearest target using full simulation so the visual box always shows exactly where we will aim
+    if potentialTarget then
+        local vVisOrigin = potentialTarget:GetAbsOrigin()
+
+        local potStrafe = TargetSelector.GetStrafeAngle(potentialTarget:GetIndex())
+        local potPred = Simulation.PredictPlayer(
+            potentialTarget, swingTicks, potStrafe, 0, nil,
+            { gravity = client.GetConVar("sv_gravity") },
+            Simulation.BufTarget)
+
+        _state.vTargetHitboxPos = potPred.pos[swingTicks] or vVisOrigin
+        -- vTargetAimPos starts as the same as HitboxPos; overridden during attack
+        _state.vTargetAimPos = _state.vTargetHitboxPos
+        _state.aimBacktrack = false
+    else
+        _state.vTargetHitboxPos = nil
+        _state.vTargetAimPos = nil
+        _state.aimBacktrack = false
+    end
+
     if target then
         local vPlayerOrigin = target:GetAbsOrigin()
-        
+
+        -- Predict target (targets never use charge physics)
+        local targetStrafe = TargetSelector.GetStrafeAngle(target:GetIndex())
+        local targetPred = Simulation.PredictPlayer(
+            target, swingTicks, targetStrafe, 0, nil,
+            { gravity = client.GetConVar("sv_gravity") },
+            Simulation.BufTarget)
+
         _state.vPlayerOrigin = vPlayerOrigin
-        _state.vPlayerFuture = targetPredResult.pos[swingTicks]
-        _state.vPlayerPath = targetPredResult.pos
+        _state.vPlayerFuture = targetPred.pos[swingTicks]
+        _state.vPlayerPath = targetPred.pos
         _state.vPlayerPathCount = swingTicks
 
-        -- Range & Attack
         local TargetSelector = package.loaded["TargetSelector"] or _G["TargetSelector"]
-        local historyBuffer = TargetSelector and TargetSelector.GetHistory(target:GetIndex()) or nil
+        local engineGhosts = TargetSelector and TargetSelector.GetEngineGhosts(target:GetIndex()) or nil
+        local historyBuffer = (engineGhosts and #engineGhosts > 0) and engineGhosts or (TargetSelector and TargetSelector.GetHistory(target:GetIndex()) or nil)
 
         local inRange, point, bTick = Simulation.CheckInRangeSimple(
             target:GetIndex(), _state.totalSwingRange, pLocalOrigin, _state.pLocalFuture + _state.vHeight,
@@ -259,8 +261,8 @@ local function OnCreateMove(pCmd)
                 vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) },
                 swingTicks = swingTicks,
                 history = historyBuffer,
-                btOldest = btOldest,
-                btLatest = btLatest
+                flCorrect = flCorrect,
+                flServerTime = flServerTime
             }
         )
 
@@ -321,6 +323,15 @@ local function OnCreateMove(pCmd)
     CritManager.Tick(pCmd, pWeapon, inCombat, isCharging, menuSettings.Misc)
 end
 
+local function OnDrawModel(ctx)
+    if not ctx:IsDrawingBackTrack() then return end
+    local ent = ctx:GetEntity()
+    if not ent or not ent:IsPlayer() then return end
+    
+    -- Record the actual rendered position and dynamic bounding box of the backtrack ghost
+    TargetSelector.RecordEngineGhost(ent, ent:GetAbsOrigin(), ent:GetMins(), ent:GetMaxs())
+end
+
 local function OnDraw()
     local menuSettings = _menuSettings
     MenuUI.Render(menuSettings)
@@ -336,10 +347,12 @@ end
 local function Init()
     callbacks.Unregister("CreateMove", "Swing_CreateMove")
     callbacks.Unregister("Draw", "Swing_Draw")
+    callbacks.Unregister("DrawModel", "Swing_DrawModel")
     callbacks.Unregister("Unload", "Swing_Unload")
 
     callbacks.Register("CreateMove", "Swing_CreateMove", OnCreateMove)
     callbacks.Register("Draw", "Swing_Draw", OnDraw)
+    callbacks.Register("DrawModel", "Swing_DrawModel", OnDrawModel)
     callbacks.Register("Unload", "Swing_Unload", OnUnload)
 
     print("Swing Prediction v2 Modular Loaded!")

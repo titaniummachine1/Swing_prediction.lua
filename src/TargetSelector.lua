@@ -38,10 +38,8 @@ end
 
 function TargetSelector.UpdateHistory(players, pCmd)
     if not players then return end
-    local iTick    = globals.TickCount()
     local pNetChan = clientstate.GetNetChannel()
-    local flIncoming    = pNetChan and pNetChan:GetLatency(1) or 0
-    local iLatencyTicks = math.floor(0.5 + flIncoming / globals.TickInterval())
+    if not pNetChan then return end
 
     for _, player in pairs(players) do
         if not player or not player:IsValid() then goto continueH end
@@ -52,39 +50,35 @@ function TargetSelector.UpdateHistory(players, pCmd)
             goto continueH
         end
 
+        local flSimTime = player:GetPropFloat("m_flSimulationTime") or 0
+        local iSimTick  = math.floor(0.5 + flSimTime / globals.TickInterval())
+
         if not _targetHistory[idx] then _targetHistory[idx] = {} end
         local hist = _targetHistory[idx]
 
-        -- Prune stale history (older than 660 ticks, same as reference)
-        if hist[1] and math.abs(hist[1].tick - iTick) >= 660 then
-            _targetHistory[idx] = nil
-            goto continueH
-        end
+        -- Logic: Only add record if the simulation tick has actually changed
+        if hist[1] and hist[1].tick == iSimTick then goto continueH end
 
-        -- Capture actual hitbox centers for precision aim
-        local hitboxes = player:GetHitboxes()
-        local aHead  = hitboxes and hitboxes[1]
-        local aChest = hitboxes and hitboxes[4]
-        local headCenter  = aHead  and ((aHead[1]  + aHead[2])  * 0.5) or (player:GetAbsOrigin() + Vector3(0, 0, 75))
+        local hitboxes    = player:GetHitboxes()
+        local aHead       = hitboxes and hitboxes[1]
+        local aChest      = hitboxes and hitboxes[4]
+        local headCenter  = aHead and ((aHead[1] + aHead[2]) * 0.5) or (player:GetAbsOrigin() + Vector3(0, 0, 75))
         local chestCenter = aChest and ((aChest[1] + aChest[2]) * 0.5) or (player:GetAbsOrigin() + Vector3(0, 0, 50))
 
-        local flags = player:GetPropInt("m_fFlags") or 0
-        local onGround = (flags & FL_ONGROUND) ~= 0
+        local flags       = player:GetPropInt("m_fFlags") or 0
+        local onGround    = (flags & FL_ONGROUND) ~= 0
 
         table.insert(hist, 1, {
-            tick  = iTick,
-            pos   = player:GetAbsOrigin(),  -- feet origin for AABB range check
-            head  = headCenter,
-            chest = chestCenter,
-            latencyTicks = iLatencyTicks,
-            vel   = player:EstimateAbsVelocity(),
+            tick     = iSimTick,
+            pos      = player:GetAbsOrigin(),
+            head     = headCenter,
+            chest    = chestCenter,
+            vel      = player:EstimateAbsVelocity(),
             onGround = onGround
         })
 
-        -- Keep max 80 records
-        while #hist > 80 do
-            table.remove(hist)
-        end
+        -- Maintain 1 second of history at 66-tick (approx 66-80 records)
+        while #hist > 80 do table.remove(hist) end
 
         ::continueH::
     end
@@ -92,27 +86,89 @@ end
 
 -- Returns the valid [oldestTick, latestTick] window for backtrack,
 -- based on current server-estimated latency, mirroring reference implementation logic.
-function TargetSelector.GetBacktrackWindow()
-    local iTick       = globals.TickCount()
-    local pNetChan    = clientstate.GetNetChannel()
-    local flIncoming  = pNetChan and pNetChan:GetLatency(1) or 0
-    local flOutgoing  = pNetChan and pNetChan:GetLatency(0) or 0
-    local sv_maxunlag = client.GetConVar("sv_maxunlag") or 0.2
-    local cl_interp   = client.GetConVar("cl_interp") or 0.015
-    local maxBT       = math.floor(0.5 + sv_maxunlag / globals.TickInterval())
+function TargetSelector.GetServerTime(clientTick, swingTicks)
+    local pNetChan = clientstate.GetNetChannel()
+    local flOutgoing = pNetChan and pNetChan:GetLatency(0) or 0
+    return (clientTick + (swingTicks or 0)) * globals.TickInterval() + flOutgoing
+end
 
-    -- Replicate C++: std::clamp(flIncoming + flOutgoing + cl_interp, 0.f, sv_maxunlag)
-    local flCorrect   = math.max(0, math.min(sv_maxunlag, (flIncoming + flOutgoing) + cl_interp))
-    local iLatTicks   = math.floor(0.5 + flCorrect / globals.TickInterval())
+function TargetSelector.GetCorrectLatency()
+    local pNetChan = clientstate.GetNetChannel()
+    if not pNetChan then return 0 end
     
-    local iCurrent    = iTick - iLatTicks
-    local iLatest     = iCurrent + math.min(iLatTicks, maxBT)
-    local iOldest     = iCurrent - maxBT
-    return iOldest, iLatest
+    local flIncoming  = pNetChan:GetLatency(1)
+    local flOutgoing  = pNetChan:GetLatency(0)
+    local cl_interp   = client.GetConVar("cl_interp") or 0.015
+    local sv_maxunlag = client.GetConVar("sv_maxunlag") or 0.2
+    
+    return math.max(0, math.min(sv_maxunlag, flIncoming + flOutgoing + cl_interp))
 end
 
 function TargetSelector.GetHistory(entityIndex)
     return _targetHistory[entityIndex]
+end
+
+local _engineGhosts = {}
+
+-- Captures an engine-rendered backtrack ghost position.
+-- This natively intercepts the engine's backtracking ghost queue.
+function TargetSelector.RecordEngineGhost(player, origin, mins, maxs)
+    if not player or not player:IsValid() then return end
+    local idx = player:GetIndex()
+    if not _engineGhosts[idx] then _engineGhosts[idx] = {} end
+
+    local currentTick = globals.TickCount()
+
+    -- Update existing record
+    for _, record in ipairs(_engineGhosts[idx]) do
+        if (record.pos - origin):Length() < 1.0 then
+            record.lastSeen = currentTick
+            record.mins = mins
+            record.maxs = maxs
+            return
+        end
+    end
+
+    -- Match to manual history to find the tick
+    local matchedTick = nil
+    local hist = _targetHistory[idx]
+    if hist then
+        local bestDist = math.huge
+        for _, hRec in ipairs(hist) do
+            local dist = (hRec.pos - origin):Length()
+            if dist < 5.0 and dist < bestDist then
+                bestDist = dist
+                matchedTick = hRec.tick
+            end
+        end
+    end
+
+    table.insert(_engineGhosts[idx], 1, {
+        pos = origin,
+        mins = mins,
+        maxs = maxs,
+        tick = matchedTick,
+        lastSeen = currentTick
+    })
+
+    while #_engineGhosts[idx] > 20 do
+        table.remove(_engineGhosts[idx])
+    end
+end
+
+function TargetSelector.GetEngineGhosts(entityIndex)
+    local ghosts = _engineGhosts[entityIndex]
+    if not ghosts then return nil end
+    local validGhosts = {}
+    local currentTick = globals.TickCount()
+    for _, record in ipairs(ghosts) do
+        -- Keep ghosts seen recently by the renderer (within ~150ms buffer to smooth over frames)
+        if math.abs(currentTick - record.lastSeen) <= 10 then
+            table.insert(validGhosts, record)
+        end
+    end
+    _engineGhosts[entityIndex] = validGhosts
+    return validGhosts
 end
 
 function TargetSelector.CalcStrafe()
@@ -131,30 +187,30 @@ end
 
 function TargetSelector.GetBestTarget(me)
     if not _players or not _me then return nil end
-    
+
     local normalCandidates = {}
     local meleeCandidates = {}
     local foundTargetInMeleeRange = false
-    
+
     local myAngles = engine.GetViewAngles()
     local myPos = _me:GetAbsOrigin() + _vHeight
     local meleeRangeThreshold = _swingRange + 50
 
     for _, player in pairs(_players) do
         if not player or not player:IsValid() then goto continue end
-        
+
         local isInvalid = not player:IsAlive()
             or player:IsDormant()
             or player:GetIndex() == _me:GetIndex()
             or player:GetTeamNumber() == _me:GetTeamNumber()
             or (gui.GetValue("ignore cloaked") == 1 and player:InCond(4))
             or (_me:InCond(17) and (player:GetAbsOrigin().z - _me:GetAbsOrigin().z) > 17)
-        
+
         if isInvalid then goto continue end
 
         local playerOrigin = player:GetAbsOrigin()
         local distance = (playerOrigin - _me:GetAbsOrigin()):Length()
-        
+
         -- Range Check: Expand to 4x swing range so far targets stay tracked for backtrack history
         local maxRange = _swingRange * 4
         if distance > maxRange and not _me:InCond(17) then
@@ -170,7 +226,7 @@ function TargetSelector.GetBestTarget(me)
 
         if TargetSelector.IsVisible(player, _me) then
             local visibilityFactor = 1.0
-            
+
             if distance <= meleeRangeThreshold then
                 foundTargetInMeleeRange = true
                 local fovFactor = Math.RemapValClamped(fov, 0, 360, 1, 0.7)
@@ -179,7 +235,8 @@ function TargetSelector.GetBestTarget(me)
                 -- Far candidate - tracked but lower priority (for backtrack + visuals)
                 local distanceFactor = Math.RemapValClamped(distance, 0, maxRange, 1, 0.5)
                 local fovFactor = Math.RemapValClamped(fov, 0, 360, 1, 0.1)
-                table.insert(normalCandidates, { player = player, factor = distanceFactor * fovFactor * visibilityFactor })
+                table.insert(normalCandidates,
+                    { player = player, factor = distanceFactor * fovFactor * visibilityFactor })
             end
         end
 
