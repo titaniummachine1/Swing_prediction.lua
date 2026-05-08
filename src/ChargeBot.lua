@@ -1,38 +1,30 @@
 --[[ Imported by: Main ]]
 
-local Simulation = require("Simulation")
-local MathUtils = require("MathUtils")
+local Simulation             = require("Simulation")
+local MathUtils              = require("MathUtils")
 
-local ChargeBot = {}
-
--- --- Constants --------------------------------------------------------------
--- (Charge turn constants now derived from server flCap math in getChargeTurnCapDeg)
+local ChargeBot              = {}
 
 -- --- Module state ------------------------------------------------------------
 
-local _menu = nil
-local _chargeState = "idle"
-local _chargeAimAngles = nil
-local _attackStarted = false
-local _attackTickCount = 0
-local _lastAttackTick = -1000
-local _isExploitReady = false
+local _menu                  = nil
+local _chargeState           = "idle"
+local _chargeAimAngles       = nil
+local _attackStarted         = false
+local _attackTickCount       = 0
+local _lastAttackTick        = -1000
+local _isExploitReady        = false
 
 -- Cached once per tick by CacheEquipment()
-local _hasTideTurner = false
-local _hasBooties    = false
+local _hasTideTurner         = false
+local _hasBooties            = false
 
--- --- Charge Turn Constants (mirrors CalculateChargeCap from tf_player_shared.cpp) ---------------
--- Base yaw cap (radians/tick, pre-frametime scaling) from CalculateChargeCap flCap = 0.45
-local CHARGE_YAW_CAP_BASE    = 0.45   -- radians
--- Bootie turn attribute multiplier (+200% = x3 base cap)
-local BOOTIE_TURN_MULTIPLIER = 3.0    -- with Ali Baba's / Bootlegger
--- Frametime scaling: RemapValClamped(ft, 0.2*ti, 2.0*ti, 0.25, 2.0)
+-- --- Charge Turn Constants ---------------------------------------------------
+local CHARGE_YAW_CAP_BASE    = 0.45
+local BOOTIE_TURN_MULTIPLIER = 3.0
 local SCALE_MIN              = 0.25
 local SCALE_MAX              = 2.0
--- Shield def indices that grant full Tide Turner-style control (skip our cap logic)
 local TIDE_TURNER_DEFINDEX   = 1099
--- Boots that grant +200% charge_turn_control attribute
 local BOOTIES_DEFINDICES     = { [405] = true, [1105] = true }
 
 -- --- Initialization ----------------------------------------------------------
@@ -41,13 +33,12 @@ function ChargeBot.Init(menu)
     _menu = menu
 end
 
--- Call once at the top of each CreateMove tick when pLocal is valid
 function ChargeBot.CacheEquipment(pLocal)
     assert(pLocal, "ChargeBot.CacheEquipment: pLocal missing")
     _hasTideTurner = false
     _hasBooties    = false
 
-    local shields = entities.FindByClass("CTFWearableDemoShield")
+    local shields  = entities.FindByClass("CTFWearableDemoShield")
     for _, shield in pairs(shields) do
         if shield and shield:IsValid() then
             local owner = shield:GetPropEntity("m_hOwnerEntity")
@@ -88,15 +79,14 @@ function ChargeBot.GetLastAttackTick()
 end
 
 function ChargeBot.TickStateMachine(pCmd, pLocalClass)
-    if pLocalClass ~= 4 then 
+    if pLocalClass ~= 4 then
         _chargeState = "idle"
         _chargeAimAngles = nil
-        return 
+        return
     end
 
     if _chargeState == "aim" then
         if _chargeAimAngles then
-            -- _chargeAimAngles is a EulerAngles (pitch=x, yaw=y)
             engine.SetViewAngles(EulerAngles(_chargeAimAngles.x, _chargeAimAngles.y, 0))
         end
         _chargeState = "charge"
@@ -107,7 +97,7 @@ function ChargeBot.TickStateMachine(pCmd, pLocalClass)
     end
 end
 
--- --- Charge Turn Constants: definition block is now above, kept here only as section header ---
+-- --- Math compliance ---------------------------------------------------------
 
 local function getChargeTurnCapDeg()
     if _hasTideTurner then
@@ -119,15 +109,19 @@ local function getChargeTurnCapDeg()
         flCap = flCap * BOOTIE_TURN_MULTIPLIER
     end
 
+    -- SERVER STRICT COMPLIANCE: Use TickInterval to prevent FPS-based desyncs
     local ti = globals.TickInterval()
-    local ft = globals.FrameTime()
+    local ft = ti
     local ftMin = 0.2 * ti
     local ftMax = 2.0 * ti
+
     local ftClamped = math.max(ftMin, math.min(ftMax, ft))
     local scale = SCALE_MIN + (SCALE_MAX - SCALE_MIN) * ((ftClamped - ftMin) / (ftMax - ftMin))
 
     local capRad = flCap * scale
-    local capDeg = math.deg(capRad)
+    -- 2% safety buffer to absorb minor floating point math differences
+    local capDeg = math.deg(capRad) * 0.98
+
     return capDeg, false
 end
 
@@ -136,7 +130,7 @@ function ChargeBot.ChargeControl(pCmd, pLocal)
 
     local capDeg, isTideTurner = getChargeTurnCapDeg()
 
-    -- Tide Turner: has native full control, no capping needed
+    -- Tide Turner gets native full control, no clamping necessary.
     if isTideTurner then return end
 
     local mouseDeltaX = -pCmd.mousedx
@@ -146,48 +140,76 @@ function ChargeBot.ChargeControl(pCmd, pLocal)
     local m_yaw = select(2, client.GetConVar("m_yaw")) or 0.022
     local wantedTurn = mouseDeltaX * m_yaw
 
-    -- Clamp to the server's per-tick cap (squeeze every degree allowed)
-    local actualTurn
-    if wantedTurn > 0 then
-        actualTurn = math.min(wantedTurn, capDeg)
-        -- Commit sidemove in turn direction so client prediction matches server move
+    -- Mimic free mouse rotation up to the absolute server limit
+    local actualTurn = MathUtils.Clamp(wantedTurn, -capDeg, capDeg)
+
+    -- Sync the client's movement prediction when riding the edge of the cap
+    if actualTurn > 0 and actualTurn >= capDeg then
         pCmd:SetSideMove(450)
-    else
-        actualTurn = math.max(wantedTurn, -capDeg)
+    elseif actualTurn < 0 and actualTurn <= -capDeg then
         pCmd:SetSideMove(-450)
     end
 
     local newYaw = MathUtils.NormalizeYaw(currentAngles.y + actualTurn)
     engine.SetViewAngles(EulerAngles(currentAngles.x, newYaw, currentAngles.z))
+
+    -- CRITICAL: Nullify raw mouse input to prevent double-rotation rubberbanding
+    pCmd.mousedx = 0
 end
 
-function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeMeter, pLocalOrigin, pLocalFuture, vPlayerFuture, inRangePoint, canAttack, fDistance, vHitbox)
+function ChargeBot.GetChargeBotAim(pLocalClass, pLocal, chargeMeter, pLocalOrigin, pLocalFuture, vPlayerFuture,
+                                   inRangePoint, canAttack, fDistance, vHitbox)
     if not _menu or not _menu.Charge.ChargeBot then return end
     if pLocalClass ~= 4 then return end
 
+    local chargeBotFOV = tonumber(_menu.Charge.ChargeBotFOV) or 90
+    chargeBotFOV = MathUtils.Clamp(chargeBotFOV, 1, 180)
+    local halfFOV = chargeBotFOV * 0.5
+
     local isCharging = pLocal:InCond(17)
-    local isAimbotReady = input.IsButtonDown(MOUSE_RIGHT) -- This should ideally be passed in or use Input module
+    local isAimbotReady = input.IsButtonDown(MOUSE_RIGHT)
 
     if isCharging or (chargeMeter >= 100 and isAimbotReady) then
         local targetPos = inRangePoint or vPlayerFuture
         if not targetPos then return end
 
-        local trace = engine.TraceHull(pLocalOrigin, targetPos, Vector3(-18,-18,-18), Vector3(18,18,18), MASK_PLAYERSOLID_BRUSHONLY)
-        
+        local trace = engine.TraceHull(pLocalOrigin, targetPos, Vector3(-18, -18, -18), Vector3(18, 18, 18),
+            MASK_PLAYERSOLID_BRUSHONLY)
+
         if trace.fraction == 1 or (trace.entity and trace.entity:IsPlayer()) then
             local aimAngles = (targetPos - pLocalOrigin):Angles()
             local currentAng = engine.GetViewAngles()
             local yawDiff = MathUtils.NormalizeYaw(aimAngles.y - currentAng.y)
 
-            -- Use actual server turn cap for smooth non-rubberband steering
-            local turnCapDeg = 17 -- fallback for when not charging but about to charge
-            if isCharging then
-                local capFromServer = getChargeTurnCapDeg()
-                if capFromServer then turnCapDeg = capFromServer end
+            -- Respect ChargeBot FOV for activation/steering.
+            if math.abs(yawDiff) > halfFOV then
+                return
             end
 
-            local limitedYaw = currentAng.y + MathUtils.Clamp(yawDiff, -turnCapDeg, turnCapDeg)
-            engine.SetViewAngles(EulerAngles(currentAng.x, limitedYaw, 0))
+            -- Safe fallback for the exact tick the charge initiates
+            local turnCapDeg = 1.5
+            local hasFullControl = _hasTideTurner
+
+            if isCharging then
+                local capFromServer, tide = getChargeTurnCapDeg()
+                if tide then
+                    hasFullControl = true
+                elseif capFromServer then
+                    turnCapDeg = capFromServer
+                end
+            end
+
+            local limitedYaw
+            if hasFullControl then
+                -- Instant aim if we have a Tide Turner
+                limitedYaw = aimAngles.y
+            else
+                -- Maximize angle change toward target using exact server limit
+                local actualTurn = MathUtils.Clamp(yawDiff, -turnCapDeg, turnCapDeg)
+                limitedYaw = currentAng.y + actualTurn
+            end
+
+            engine.SetViewAngles(EulerAngles(currentAng.x, MathUtils.NormalizeYaw(limitedYaw), 0))
         end
     end
 end
@@ -205,50 +227,41 @@ function ChargeBot.ArmChargeReach(pLocalClass, chargeMeter)
     end
 end
 
-function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, onGround, inRangePoint, vPlayerFuture, pLocalOrigin, isRefilling)
-    if not _menu or not _menu.Charge.ChargeReach or pLocalClass ~= 4 then 
+function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, onGround, inRangePoint, vPlayerFuture,
+                                     pLocalOrigin, isRefilling)
+    if not _menu or not _menu.Charge.ChargeReach or pLocalClass ~= 4 then
         _chargeState = "idle"
         _attackStarted = false
-        return 
+        return
     end
 
-    -- Update last attack tick if IN_ATTACK is set
-    -- IMPORTANT: Ignore attacks triggered by CritManager (refilling) so we don't accidentally charge
     if (pCmd:GetButtons() & IN_ATTACK) ~= 0 and not isRefilling then
         _lastAttackTick = globals.TickCount()
-        
-        -- Start tracking attack ticks for charge reach exploit
-        -- ONLY start if there's actually a target in range (inRangePoint is valid).
-        -- This prevents wasting charge when swinging at the air.
+
         if chargeMeter == 100 and not _attackStarted and inRangePoint then
             _attackStarted = true
             _attackTickCount = 0
-            
-            -- Store aim direction to target future position so charge travels correctly
+
             local a = (inRangePoint - pLocalOrigin):Angles()
             _chargeAimAngles = EulerAngles(a.x, a.y, 0)
         end
     end
 
-    -- Track attack ticks and execute charge at right moment
     if _attackStarted then
         _attackTickCount = _attackTickCount + 1
 
-        -- Get weapon smack delay (when the weapon will hit)
         local weaponData = pWeapon and pWeapon:GetWeaponData()
-        local weaponSmackDelay = 13 -- fallback
+        local weaponSmackDelay = 13
         if weaponData and weaponData.smackDelay then
-             weaponSmackDelay = math.floor(weaponData.smackDelay / globals.TickInterval())
+            weaponSmackDelay = math.floor(weaponData.smackDelay / globals.TickInterval())
         end
 
-        -- If charge-jump enabled issue jump together with charge
         if _menu.Charge.ChargeJump and onGround then
             pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
         end
 
-        -- Execute charge exactly 2 ticks before the hit registers
         if _attackTickCount >= (weaponSmackDelay - 2) then
-            _chargeState = "aim" -- next TickStateMachine call will trigger aim/charge
+            _chargeState = "aim"
             _attackStarted = false
             _attackTickCount = 0
         end
@@ -258,7 +271,6 @@ function ChargeBot.UpdateChargeReach(pCmd, pWeapon, chargeMeter, pLocalClass, on
         ChargeBot.TickStateMachine(pCmd, pLocalClass)
     end
 
-    -- Manual charge jump
     if _menu.Charge.ChargeJump and (pCmd:GetButtons() & IN_ATTACK2) ~= 0 and chargeMeter == 100 and onGround then
         pCmd:SetButtons(pCmd:GetButtons() | IN_JUMP)
     end

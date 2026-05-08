@@ -18,6 +18,15 @@ local activationModes = { "Always", "Hold", "Toggle", "Release" }
 function MenuUI.Render(menu)
     assert(menu, "MenuUI.Render: menu is nil")
 
+    if type(menu.Charge) ~= "table" then
+        menu.Charge = {}
+    end
+    local rawChargeBotFOV = tonumber(menu.Charge.ChargeBotFOV)
+    if not rawChargeBotFOV then
+        rawChargeBotFOV = 90
+    end
+    menu.Charge.ChargeBotFOV = math.max(1, math.min(180, rawChargeBotFOV))
+
     if not (gui.IsMenuOpen() and TimMenu.Begin("Swing Prediction")) then
         return
     end
