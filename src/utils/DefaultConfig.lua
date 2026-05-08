@@ -23,6 +23,7 @@ DefaultConfig.Menu = {
     -- Charge (Demoknight) settings
     Charge = {
         ChargeBot = false,
+        ChargeBotFOV = 90,
         ChargeControl = false,
         ChargeSensitivity = 1.0,
         ChargeReach = true,
@@ -35,6 +36,7 @@ DefaultConfig.Menu = {
     Visuals = {
         EnableVisuals = true,
         Sphere = false,
+        Profiler = false,
         Section = 1,
         Sections = { "Local", "Target", "Experimental" },
         Local = {

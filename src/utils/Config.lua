@@ -73,7 +73,15 @@ function Config.LoadCFG(defaultConfig, luaFileName, folderName)
     end
 
     printc(0, 255, 140, 255, "[Config] Loaded: " .. path)
-    return ensureFields(cfg, template)
+    local hadMissingFields = not Serializer.keysMatch(template, cfg)
+    local mergedCfg = ensureFields(cfg, template)
+
+    if hadMissingFields then
+        printc(255, 200, 100, 255, "[Config] Missing options detected - merging defaults...")
+        Config.CreateCFG(mergedCfg, luaFileName, folderName)
+    end
+
+    return mergedCfg
 end
 
 return Config

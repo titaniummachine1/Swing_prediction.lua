@@ -60,12 +60,8 @@ function MenuUI.Render(menu)
 
     if menu.currentTab == "Demoknight" or menu.currentTab == 2 then
         TimMenu.BeginSector("Demoknight")
-        local oldValue = menu.Charge.ChargeBot
         menu.Charge.ChargeBot = TimMenu.Checkbox("Charge Bot", menu.Charge.ChargeBot)
         TimMenu.NextLine()
-        if oldValue ~= menu.Charge.ChargeBot then
-            menu.Aimbot.ChargeBot = menu.Charge.ChargeBot
-        end
         menu.Charge.ChargeBotFOV = TimMenu.Slider("ChargeBot FOV", menu.Charge.ChargeBotFOV or 90, 1, 180, 1)
         TimMenu.NextLine()
         local currentKey = menu.Charge.Keybind
@@ -77,34 +73,24 @@ function MenuUI.Render(menu)
             menu.Charge.Keybind = { key = newKey, mode = 1 } -- Migrate to table
         end
         TimMenu.NextLine()
-        local oldChargeControl = menu.Charge.ChargeControl
         menu.Charge.ChargeControl = TimMenu.Checkbox("Charge Control", menu.Charge.ChargeControl)
         TimMenu.NextLine()
-        if oldChargeControl ~= menu.Charge.ChargeControl then
-            menu.Misc.ChargeControl = menu.Charge.ChargeControl
-        end
-        local oldChargeReach = menu.Charge.ChargeReach
         menu.Charge.ChargeReach = TimMenu.Checkbox("Charge Reach", menu.Charge.ChargeReach)
         TimMenu.NextLine()
-        if oldChargeReach ~= menu.Charge.ChargeReach then
-            menu.Misc.ChargeReach = menu.Charge.ChargeReach
-        end
         if menu.Charge.ChargeReach then
             menu.Charge.LateCharge = TimMenu.Checkbox("Late Charge", menu.Charge.LateCharge)
             TimMenu.NextLine()
         end
-        local oldChargeJump = menu.Charge.ChargeJump
         menu.Charge.ChargeJump = TimMenu.Checkbox("Charge Jump", menu.Charge.ChargeJump)
         TimMenu.NextLine()
-        if oldChargeJump ~= menu.Charge.ChargeJump then
-            menu.Misc.ChargeJump = menu.Charge.ChargeJump
-        end
         TimMenu.EndSector()
     end
 
     if menu.currentTab == "Visuals" or menu.currentTab == 3 then
         TimMenu.BeginSector("Visuals")
         menu.Visuals.EnableVisuals = TimMenu.Checkbox("Enable", menu.Visuals.EnableVisuals)
+        TimMenu.NextLine()
+        menu.Visuals.Profiler = TimMenu.Checkbox("Profiler", menu.Visuals.Profiler)
         TimMenu.NextLine()
         menu.Visuals.Section = TimMenu.Selector("Section", menu.Visuals.Section, menu.Visuals.Sections)
         TimMenu.NextLine()
