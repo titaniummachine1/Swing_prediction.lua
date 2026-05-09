@@ -14,6 +14,45 @@ local MenuUI = {}
 
 local activationModes = { "Always", "Hold", "Toggle", "Release" }
 
+local function normalizeKeybind(bind, defaultMode)
+    local fallbackMode = tonumber(defaultMode) or 1
+    if fallbackMode < 0 or fallbackMode > 2 then
+        fallbackMode = 1
+    end
+
+    if type(bind) == "table" then
+        local key = bind.key
+        local mode = bind.mode
+
+        if type(key) == "table" then
+            if mode == nil then
+                mode = key.mode
+            end
+            key = key.key
+        end
+
+        key = tonumber(key) or 0
+        mode = tonumber(mode)
+        if mode == nil or mode < 0 or mode > 2 then
+            mode = fallbackMode
+        end
+
+        return { key = key, mode = mode }
+    end
+
+    return { key = tonumber(bind) or 0, mode = fallbackMode }
+end
+
+local function applyKeybindResult(existingBind, result)
+    local normalized = normalizeKeybind(existingBind, 1)
+    if type(result) == "table" then
+        return normalizeKeybind(result, normalized.mode)
+    end
+
+    normalized.key = tonumber(result) or 0
+    return normalized
+end
+
 
 function MenuUI.Render(menu)
     assert(menu, "MenuUI.Render: menu is nil")
@@ -26,6 +65,8 @@ function MenuUI.Render(menu)
         rawChargeBotFOV = 90
     end
     menu.Charge.ChargeBotFOV = math.max(1, math.min(180, rawChargeBotFOV))
+    menu.Aimbot.Keybind = normalizeKeybind(menu.Aimbot.Keybind, 1)
+    menu.Charge.Keybind = normalizeKeybind(menu.Charge.Keybind, 1)
 
     if not (gui.IsMenuOpen() and TimMenu.Begin("Swing Prediction")) then
         return
@@ -54,14 +95,9 @@ function MenuUI.Render(menu)
         if menu.Aimbot.AlwaysUseMaxSwingTime then
             menu.Aimbot.SwingTime = menu.Aimbot.MaxSwingTime or 13
         end
-        local currentKey = menu.Aimbot.Keybind
-        if type(currentKey) == "table" then currentKey = currentKey.key end
+        local currentKey = menu.Aimbot.Keybind.key
         local newKey = TimMenu.Keybind("Aimbot Keybind", currentKey or 0)
-        if type(menu.Aimbot.Keybind) == "table" then
-            menu.Aimbot.Keybind.key = newKey
-        else
-            menu.Aimbot.Keybind = { key = newKey, mode = 1 } -- Migrate to table
-        end
+        menu.Aimbot.Keybind = applyKeybindResult(menu.Aimbot.Keybind, newKey)
         TimMenu.NextLine()
         TimMenu.EndSector()
     end
@@ -74,14 +110,9 @@ function MenuUI.Render(menu)
         if menu.Charge.ChargeBot then
             menu.Charge.ChargeBotFOV = TimMenu.Slider("ChargeBot FOV", menu.Charge.ChargeBotFOV or 90, 1, 180, 1)
             TimMenu.NextLine()
-            local currentKey = menu.Charge.Keybind
-            if type(currentKey) == "table" then currentKey = currentKey.key end
+            local currentKey = menu.Charge.Keybind.key
             local newKey = TimMenu.Keybind("ChargeBot Keybind", currentKey or 0)
-            if type(menu.Charge.Keybind) == "table" then
-                menu.Charge.Keybind.key = newKey
-            else
-                menu.Charge.Keybind = { key = newKey, mode = 1 } -- Migrate to table
-            end
+            menu.Charge.Keybind = applyKeybindResult(menu.Charge.Keybind, newKey)
             TimMenu.NextLine()
         end
         menu.Charge.ChargeControl = TimMenu.Checkbox("Charge Control", menu.Charge.ChargeControl)

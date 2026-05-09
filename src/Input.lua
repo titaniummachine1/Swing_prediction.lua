@@ -2,17 +2,35 @@ local Input = {}
 
 local _states = {}
 
+local function normalizeBind(bind)
+    if type(bind) == "table" then
+        local key = bind.key
+        local mode = bind.mode
+
+        if type(key) == "table" then
+            if mode == nil then
+                mode = key.mode
+            end
+            key = key.key
+        end
+
+        key = tonumber(key) or 0
+        mode = tonumber(mode)
+        if mode == nil or mode < 0 or mode > 2 then
+            mode = 1
+        end
+
+        return key, mode
+    end
+
+    local key = tonumber(bind) or 0
+    return key, 1
+end
+
 ---@param bind table {key: integer, mode: integer} 0=Always, 1=Hold, 2=Toggle
 ---@return boolean
 function Input.IsKeybindActive(bind)
-    local key, mode
-    if type(bind) == "table" then
-        key = bind.key
-        mode = bind.mode
-    else
-        key = bind
-        mode = 1 -- Default to Hold
-    end
+    local key, mode = normalizeBind(bind)
 
     if not key or key == 0 then
         return mode == 0 -- Always Active if key is 0
@@ -21,7 +39,7 @@ function Input.IsKeybindActive(bind)
     local isDown = input.IsButtonDown(key)
     local keyStr = tostring(key)
 
-    if mode == 0 then -- Always
+    if mode == 0 then     -- Always
         return true
     elseif mode == 1 then -- Hold
         return isDown
