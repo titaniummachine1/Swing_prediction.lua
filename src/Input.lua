@@ -17,7 +17,11 @@ local function normalizeBind(bind)
         key = tonumber(key) or 0
         mode = tonumber(mode)
         if mode == nil or mode < 0 or mode > 2 then
-            mode = 1
+            if key == 0 then
+                mode = 0
+            else
+                mode = 1
+            end
         end
 
         return key, mode

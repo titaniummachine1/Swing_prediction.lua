@@ -562,33 +562,31 @@ function Simulation.CheckInRangeSimple(targetIdx, swingRange, pLocalPos, pLocalF
     if inRange then return true, point, nil end
 
     if params.history then
-        local pNetChan = clientstate.GetNetChannel()
-        local flIncoming = pNetChan and pNetChan:GetLatency(1) or 0
-        local flOutgoing = pNetChan and pNetChan:GetLatency(0) or 0
-        local cl_interp  = client.GetConVar("cl_interp") or 0.015
-        local sv_maxunlag = 0.2
+        local iOldest = params.btOldest
+        local iLatest = params.btLatest
 
-        local curServerTime = (globals.TickCount() * globals.TickInterval()) + flOutgoing
-        
-        for _, record in ipairs(params.history) do
-            local recordSimTime = (record.tick or 0) * globals.TickInterval()
-            local age = curServerTime - recordSimTime
-            
-            -- Priority 1: Engine says this is a drawable ghost (has mins/maxs)
-            -- Priority 2: Standard unlag verification
-            local isEngineGhost = (record.mins ~= nil and record.maxs ~= nil)
-            local isValid = isEngineGhost or (math.abs(flIncoming + flOutgoing + cl_interp - age) <= sv_maxunlag)
-
-            if isValid then
-                if isEngineGhost then
-                    params.vHitbox = { record.mins, record.maxs }
-                else
+        if iOldest and iLatest then
+            for _, record in pairs(params.history) do
+                local recordTick = record.tick or record.simTick
+                if recordTick and recordTick >= iOldest and recordTick <= iLatest then
                     params.vHitbox = { Vector3(-24, -24, 0), Vector3(24, 24, 82) }
+                    inRange, point = Simulation.CheckInRange(record.pos, pLocalFuture, swingRange, targetEntity, params, false)
+                    if inRange then
+                        return true, point, recordTick
+                    end
                 end
-                
+            end
+        end
+    end
+
+    if params.ghostHistory then
+        for _, record in pairs(params.ghostHistory) do
+            local recordTick = record.tick or record.simTick
+            if recordTick then
+                params.vHitbox = { record.mins or Vector3(-24, -24, 0), record.maxs or Vector3(24, 24, 82) }
                 inRange, point = Simulation.CheckInRange(record.pos, pLocalFuture, swingRange, targetEntity, params, false)
                 if inRange then
-                    return true, point, record.tick
+                    return true, point, recordTick
                 end
             end
         end

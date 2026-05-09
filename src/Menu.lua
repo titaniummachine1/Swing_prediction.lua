@@ -15,9 +15,9 @@ local MenuUI = {}
 local activationModes = { "Always", "Hold", "Toggle", "Release" }
 
 local function normalizeKeybind(bind, defaultMode)
-    local fallbackMode = tonumber(defaultMode) or 1
+    local fallbackMode = tonumber(defaultMode) or 0
     if fallbackMode < 0 or fallbackMode > 2 then
-        fallbackMode = 1
+        fallbackMode = 0
     end
 
     if type(bind) == "table" then
@@ -44,7 +44,7 @@ local function normalizeKeybind(bind, defaultMode)
 end
 
 local function applyKeybindResult(existingBind, result)
-    local normalized = normalizeKeybind(existingBind, 1)
+    local normalized = normalizeKeybind(existingBind, 0)
     if type(result) == "table" then
         return normalizeKeybind(result, normalized.mode)
     end
@@ -65,8 +65,8 @@ function MenuUI.Render(menu)
         rawChargeBotFOV = 90
     end
     menu.Charge.ChargeBotFOV = math.max(1, math.min(180, rawChargeBotFOV))
-    menu.Aimbot.Keybind = normalizeKeybind(menu.Aimbot.Keybind, 1)
-    menu.Charge.Keybind = normalizeKeybind(menu.Charge.Keybind, 1)
+    menu.Aimbot.Keybind = normalizeKeybind(menu.Aimbot.Keybind, 0)
+    menu.Charge.Keybind = normalizeKeybind(menu.Charge.Keybind, 0)
 
     if not (gui.IsMenuOpen() and TimMenu.Begin("Swing Prediction")) then
         return
