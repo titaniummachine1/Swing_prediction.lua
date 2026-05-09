@@ -245,10 +245,14 @@ local function OnCreateMove(pCmd)
     local chargeControlActive = isDemoman and menuSettings.Charge.ChargeControl
     local chargeReachActive = isDemoman and menuSettings.Charge.ChargeReach
     local demoknightTargetingActive = chargeBotActive or chargeReachActive
+    local targetingEnabled = aimActive or demoknightTargetingActive
 
     -- 4. Target Selection
-    local potentialTarget = TargetSelector.GetBestTarget(pLocal)
-    local target = ((aimActive or demoknightTargetingActive) and potentialTarget) or nil
+    local potentialTarget = nil
+    if targetingEnabled then
+        potentialTarget = TargetSelector.GetBestTarget(pLocal)
+    end
+    local target = targetingEnabled and potentialTarget or nil
     _state.currentTarget = target -- Locked target for green visuals
 
     -- 4.5. Combat Distance Check (for CritManager Refill)

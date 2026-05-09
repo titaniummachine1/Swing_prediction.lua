@@ -18,7 +18,7 @@ local _bestTarget = nil
 
 -- Rolling buffer for backtrack: _targetHistory[idx] = { {pos = Vector3, tick = number}, ... }
 local _targetHistory = {}
-local _maxBacktrackRecords = 14
+local _maxBacktrackRecords = 80
 
 -- --- Initialization ----------------------------------------------------------
 
@@ -40,6 +40,9 @@ function TargetSelector.UpdateHistory(players, pCmd)
     if not players then return end
     local pNetChan = clientstate.GetNetChannel()
     if not pNetChan then return end
+    local iTick = globals.TickCount()
+    local flIncoming = pNetChan:GetLatency(1) or 0
+    local iLatencyTicks = math.floor(0.5 + flIncoming / globals.TickInterval())
 
     for _, player in pairs(players) do
         if not player or not player:IsValid() then goto continueH end
@@ -50,14 +53,16 @@ function TargetSelector.UpdateHistory(players, pCmd)
             goto continueH
         end
 
-        local flSimTime = player:GetPropFloat("m_flSimulationTime") or 0
-        local iSimTick  = math.floor(0.5 + flSimTime / globals.TickInterval())
-
         if not _targetHistory[idx] then _targetHistory[idx] = {} end
         local hist = _targetHistory[idx]
 
-        -- Logic: Only add record if the simulation tick has actually changed
-        if hist[1] and hist[1].tick == iSimTick then goto continueH end
+        -- Prune stale history and skip duplicate per-tick snapshots.
+        if hist[1] and math.abs(hist[1].tick - iTick) >= 660 then
+            _targetHistory[idx] = nil
+            hist = {}
+            _targetHistory[idx] = hist
+        end
+        if hist[1] and hist[1].tick == iTick then goto continueH end
 
         local hitboxes    = player:GetHitboxes()
         local aHead       = hitboxes and hitboxes[1]
@@ -69,39 +74,34 @@ function TargetSelector.UpdateHistory(players, pCmd)
         local onGround    = (flags & FL_ONGROUND) ~= 0
 
         table.insert(hist, 1, {
-            tick     = iSimTick,
+            tick     = iTick,
+            simTick  = math.floor(0.5 + ((player:GetPropFloat("m_flSimulationTime") or 0) / globals.TickInterval())),
             pos      = player:GetAbsOrigin(),
             head     = headCenter,
             chest    = chestCenter,
             vel      = player:EstimateAbsVelocity(),
-            onGround = onGround
+            onGround = onGround,
+            latencyTicks = iLatencyTicks
         })
 
-        -- Maintain 1 second of history at 66-tick (approx 66-80 records)
-        while #hist > 80 do table.remove(hist) end
+        while #hist > _maxBacktrackRecords do table.remove(hist) end
 
         ::continueH::
     end
 end
 
--- Returns the valid [oldestTick, latestTick] window for backtrack,
--- based on current server-estimated latency, mirroring reference implementation logic.
-function TargetSelector.GetServerTime(clientTick, swingTicks)
+-- Returns the valid [oldestTick, latestTick] window for backtrack at swing impact time.
+function TargetSelector.GetBacktrackWindow(swingTicks)
+    local iTick = globals.TickCount() + (swingTicks or 0)
     local pNetChan = clientstate.GetNetChannel()
-    local flOutgoing = pNetChan and pNetChan:GetLatency(0) or 0
-    return (clientTick + (swingTicks or 0)) * globals.TickInterval() + flOutgoing
-end
-
-function TargetSelector.GetCorrectLatency()
-    local pNetChan = clientstate.GetNetChannel()
-    if not pNetChan then return 0 end
-    
-    local flIncoming  = pNetChan:GetLatency(1)
-    local flOutgoing  = pNetChan:GetLatency(0)
-    local cl_interp   = client.GetConVar("cl_interp") or 0.015
-    local sv_maxunlag = client.GetConVar("sv_maxunlag") or 0.2
-    
-    return math.max(0, math.min(sv_maxunlag, flIncoming + flOutgoing + cl_interp))
+    local flIncoming = pNetChan and pNetChan:GetLatency(1) or 0
+    local iLatTicks = math.floor(0.5 + flIncoming / globals.TickInterval())
+    local maxUnlag = client.GetConVar("sv_maxunlag") or 0.2
+    local iMaxBacktrack = math.floor(0.5 + maxUnlag / globals.TickInterval())
+    local iCurrent = iTick - iLatTicks
+    local iLatest = iCurrent + math.min(iLatTicks, iMaxBacktrack)
+    local iOldest = iCurrent - iMaxBacktrack
+    return iOldest, iLatest
 end
 
 function TargetSelector.GetHistory(entityIndex)

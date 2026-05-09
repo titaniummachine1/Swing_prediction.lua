@@ -12,11 +12,30 @@ local Notify = lnxLib.UI.Notify
 local MenuUI = {}
 
 
-local activationModes = { "Always", "Hold", "Toggle", "Release" }
+local activationModes = { "Always On", "Hold", "Hold On Release", "Toggle" }
+local activationModeValues = { 0, 1, 3, 2 }
+
+local function modeToSelectorIndex(mode)
+    local normalizedMode = tonumber(mode) or 0
+    for index, modeValue in ipairs(activationModeValues) do
+        if modeValue == normalizedMode then
+            return index
+        end
+    end
+    return 1
+end
+
+local function selectorIndexToMode(index)
+    local resolved = activationModeValues[tonumber(index) or 1]
+    if resolved == nil then
+        return 0
+    end
+    return resolved
+end
 
 local function normalizeKeybind(bind, defaultMode)
     local fallbackMode = tonumber(defaultMode) or 0
-    if fallbackMode < 0 or fallbackMode > 2 then
+    if fallbackMode < 0 or fallbackMode > 3 then
         fallbackMode = 0
     end
 
@@ -33,14 +52,22 @@ local function normalizeKeybind(bind, defaultMode)
 
         key = tonumber(key) or 0
         mode = tonumber(mode)
-        if mode == nil or mode < 0 or mode > 2 then
+        if mode == nil or mode < 0 or mode > 3 then
             mode = fallbackMode
+        end
+
+        if key == 0 then
+            mode = 0
         end
 
         return { key = key, mode = mode }
     end
 
-    return { key = tonumber(bind) or 0, mode = fallbackMode }
+    local normalizedKey = tonumber(bind) or 0
+    if normalizedKey == 0 then
+        return { key = normalizedKey, mode = 0 }
+    end
+    return { key = normalizedKey, mode = fallbackMode }
 end
 
 local function applyKeybindResult(existingBind, result)
@@ -50,7 +77,26 @@ local function applyKeybindResult(existingBind, result)
     end
 
     normalized.key = tonumber(result) or 0
+    if normalized.key == 0 then
+        normalized.mode = 0
+    end
     return normalized
+end
+
+local function renderKeybindControls(label, bind)
+    local currentKey = bind.key
+    local newKey = TimMenu.Keybind(label, currentKey or 0)
+    local updatedBind = applyKeybindResult(bind, newKey)
+    TimMenu.NextLine()
+
+    local selectorIndex = modeToSelectorIndex(updatedBind.mode)
+    local nextSelectorIndex = TimMenu.Selector(label .. " Mode", selectorIndex, activationModes)
+    updatedBind.mode = selectorIndexToMode(nextSelectorIndex)
+    if updatedBind.key == 0 then
+        updatedBind.mode = 0
+    end
+
+    return normalizeKeybind(updatedBind, 0)
 end
 
 
@@ -95,9 +141,7 @@ function MenuUI.Render(menu)
         if menu.Aimbot.AlwaysUseMaxSwingTime then
             menu.Aimbot.SwingTime = menu.Aimbot.MaxSwingTime or 13
         end
-        local currentKey = menu.Aimbot.Keybind.key
-        local newKey = TimMenu.Keybind("Aimbot Keybind", currentKey or 0)
-        menu.Aimbot.Keybind = applyKeybindResult(menu.Aimbot.Keybind, newKey)
+        menu.Aimbot.Keybind = renderKeybindControls("Aimbot Keybind", menu.Aimbot.Keybind)
         TimMenu.NextLine()
         TimMenu.EndSector()
     end
@@ -110,9 +154,7 @@ function MenuUI.Render(menu)
         if menu.Charge.ChargeBot then
             menu.Charge.ChargeBotFOV = TimMenu.Slider("ChargeBot FOV", menu.Charge.ChargeBotFOV or 90, 1, 180, 1)
             TimMenu.NextLine()
-            local currentKey = menu.Charge.Keybind.key
-            local newKey = TimMenu.Keybind("ChargeBot Keybind", currentKey or 0)
-            menu.Charge.Keybind = applyKeybindResult(menu.Charge.Keybind, newKey)
+            menu.Charge.Keybind = renderKeybindControls("ChargeBot Keybind", menu.Charge.Keybind)
             TimMenu.NextLine()
         end
         menu.Charge.ChargeControl = TimMenu.Checkbox("Charge Control", menu.Charge.ChargeControl)

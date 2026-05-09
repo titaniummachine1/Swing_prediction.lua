@@ -16,7 +16,7 @@ local function normalizeBind(bind)
 
         key = tonumber(key) or 0
         mode = tonumber(mode)
-        if mode == nil or mode < 0 or mode > 2 then
+        if mode == nil or mode < 0 or mode > 3 then
             if key == 0 then
                 mode = 0
             else
@@ -28,16 +28,19 @@ local function normalizeBind(bind)
     end
 
     local key = tonumber(bind) or 0
+    if key == 0 then
+        return key, 0
+    end
     return key, 1
 end
 
----@param bind table {key: integer, mode: integer} 0=Always, 1=Hold, 2=Toggle
+---@param bind table {key: integer, mode: integer} 0=Always, 1=Hold, 2=Toggle, 3=Release
 ---@return boolean
 function Input.IsKeybindActive(bind)
     local key, mode = normalizeBind(bind)
 
     if not key or key == 0 then
-        return mode == 0 -- Always Active if key is 0
+        return true -- Unbound keybind always acts as enabled.
     end
 
     local isDown = input.IsButtonDown(key)
@@ -57,6 +60,8 @@ function Input.IsKeybindActive(bind)
             _states[keyStr] = false
         end
         return _states[keyStr .. "_toggle"] or false
+    elseif mode == 3 then -- Release
+        return not isDown
     end
 
     return false
