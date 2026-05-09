@@ -6,6 +6,7 @@ local function normalizeBind(bind)
     if type(bind) == "table" then
         local key = bind.key
         local mode = bind.mode
+        local bindId = bind.id
 
         if type(key) == "table" then
             if mode == nil then
@@ -24,27 +25,32 @@ local function normalizeBind(bind)
             end
         end
 
-        return key, mode
+        if bindId == nil then
+            bindId = "key:" .. tostring(key)
+        end
+
+        return key, mode, tostring(bindId)
     end
 
     local key = tonumber(bind) or 0
     if key == 0 then
-        return key, 0
+        return key, 0, "key:0"
     end
-    return key, 1
+    return key, 1, "key:" .. tostring(key)
 end
 
 ---@param bind table {key: integer, mode: integer} 0=Always, 1=Hold, 2=Toggle, 3=Release
 ---@return boolean
 function Input.IsKeybindActive(bind)
-    local key, mode = normalizeBind(bind)
+    local key, mode, bindStateKey = normalizeBind(bind)
 
     if not key or key == 0 then
         return true -- Unbound keybind always acts as enabled.
     end
 
     local isDown = input.IsButtonDown(key)
-    local keyStr = tostring(key)
+    local pressedStateKey = bindStateKey .. "_pressed"
+    local toggleStateKey = bindStateKey .. "_toggle"
 
     if mode == 0 then     -- Always
         return true
@@ -52,14 +58,14 @@ function Input.IsKeybindActive(bind)
         return isDown
     elseif mode == 2 then -- Toggle
         if isDown then
-            if not _states[keyStr] then
-                _states[keyStr] = true
-                _states[keyStr .. "_toggle"] = not _states[keyStr .. "_toggle"]
+            if not _states[pressedStateKey] then
+                _states[pressedStateKey] = true
+                _states[toggleStateKey] = not _states[toggleStateKey]
             end
         else
-            _states[keyStr] = false
+            _states[pressedStateKey] = false
         end
-        return _states[keyStr .. "_toggle"] or false
+        return _states[toggleStateKey] or false
     elseif mode == 3 then -- Release
         return not isDown
     end

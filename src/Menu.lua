@@ -42,6 +42,7 @@ local function normalizeKeybind(bind, defaultMode)
     if type(bind) == "table" then
         local key = bind.key
         local mode = bind.mode
+        local id = bind.id
 
         if type(key) == "table" then
             if mode == nil then
@@ -60,14 +61,14 @@ local function normalizeKeybind(bind, defaultMode)
             mode = 0
         end
 
-        return { key = key, mode = mode }
+        return { key = key, mode = mode, id = id }
     end
 
     local normalizedKey = tonumber(bind) or 0
     if normalizedKey == 0 then
-        return { key = normalizedKey, mode = 0 }
+        return { key = normalizedKey, mode = 0, id = nil }
     end
-    return { key = normalizedKey, mode = fallbackMode }
+    return { key = normalizedKey, mode = fallbackMode, id = nil }
 end
 
 local function applyKeybindResult(existingBind, result)
@@ -141,6 +142,7 @@ function MenuUI.Render(menu)
         if menu.Aimbot.AlwaysUseMaxSwingTime then
             menu.Aimbot.SwingTime = menu.Aimbot.MaxSwingTime or 13
         end
+        menu.Aimbot.Keybind.id = "aimbot"
         menu.Aimbot.Keybind = renderKeybindControls("Aimbot Keybind", menu.Aimbot.Keybind)
         TimMenu.NextLine()
         TimMenu.EndSector()
@@ -154,6 +156,7 @@ function MenuUI.Render(menu)
         if menu.Charge.ChargeBot then
             menu.Charge.ChargeBotFOV = TimMenu.Slider("ChargeBot FOV", menu.Charge.ChargeBotFOV or 90, 1, 180, 1)
             TimMenu.NextLine()
+            menu.Charge.Keybind.id = "chargebot"
             menu.Charge.Keybind = renderKeybindControls("ChargeBot Keybind", menu.Charge.Keybind)
             TimMenu.NextLine()
         end
