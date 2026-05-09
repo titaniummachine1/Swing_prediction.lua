@@ -12,7 +12,7 @@ local Notify = lnxLib.UI.Notify
 local MenuUI = {}
 
 
-local activationModes = { "Always On", "Hold", "Hold On Release", "Toggle" }
+local activationModes = { "Always On", "Hold", "On Release", "Toggle" }
 local activationModeValues = { 0, 1, 3, 2 }
 local bindCaptureState = {
     activeId = nil,
@@ -24,6 +24,23 @@ local function keyToLabel(key)
     if resolvedKey == 0 then
         return "NONE"
     end
+
+    if resolvedKey == MOUSE_LEFT then
+        return "MOUSE1"
+    end
+    if resolvedKey == MOUSE_RIGHT then
+        return "MOUSE2"
+    end
+
+    local keyName = nil
+    if Input and Input.GetKeyName then
+        keyName = Input.GetKeyName(resolvedKey)
+    end
+
+    if type(keyName) == "string" and keyName ~= "" and keyName ~= "UNKNOWN" then
+        return keyName
+    end
+
     return tostring(resolvedKey)
 end
 
@@ -106,9 +123,11 @@ local function renderKeybindControls(label, bind)
         buttonLabel = label .. ": [PRESS KEY]"
     end
 
-    if TimMenu.Button(buttonLabel) then
+    if (not isCapturing) and TimMenu.Button(buttonLabel) then
         bindCaptureState.activeId = bindId
         bindCaptureState.waitingRelease = true
+    elseif isCapturing then
+        TimMenu.Button(buttonLabel)
     end
     TimMenu.NextLine()
 
@@ -118,7 +137,17 @@ local function renderKeybindControls(label, bind)
                 bindCaptureState.waitingRelease = false
             end
         else
+            if input.IsButtonPressed(MOUSE_LEFT) then
+                updatedBind.key = MOUSE_LEFT
+                bindCaptureState.activeId = nil
+                bindCaptureState.waitingRelease = false
+            end
+
             for code = 1, 255 do
+                if bindCaptureState.activeId == nil then
+                    break
+                end
+
                 if input.IsButtonPressed(code) then
                     if code == KEY_ESCAPE then
                         updatedBind.key = 0
