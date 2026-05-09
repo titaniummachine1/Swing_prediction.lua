@@ -14,16 +14,17 @@ local MenuUI = {}
 
 local activationModes = { "Always On", "Hold", "Hold On Release", "Toggle" }
 local activationModeValues = { 0, 1, 3, 2 }
+local bindCaptureState = {
+    activeId = nil,
+    waitingRelease = false,
+}
 
-local function toTimMenuMode(mode)
-    local normalizedMode = tonumber(mode) or 0
-    if normalizedMode == 3 then
-        return 1 -- TimMenu has no release mode, so render it as Hold in the key widget.
+local function keyToLabel(key)
+    local resolvedKey = tonumber(key) or 0
+    if resolvedKey == 0 then
+        return "NONE"
     end
-    if normalizedMode < 0 or normalizedMode > 2 then
-        return 0
-    end
-    return normalizedMode
+    return tostring(resolvedKey)
 end
 
 local function modeToSelectorIndex(mode)
@@ -96,13 +97,42 @@ local function applyKeybindResult(existingBind, result)
 end
 
 local function renderKeybindControls(label, bind)
-    local widgetState = {
-        key = tonumber(bind.key) or 0,
-        mode = toTimMenuMode(bind.mode),
-    }
-    local keybindResult = TimMenu.Keybind(label, widgetState)
-    local updatedBind = applyKeybindResult(bind, keybindResult)
+    local updatedBind = normalizeKeybind(bind, 0)
+    local bindId = tostring(updatedBind.id or label)
+    local isCapturing = bindCaptureState.activeId == bindId
+
+    local buttonLabel = label .. ": [" .. keyToLabel(updatedBind.key) .. "]"
+    if isCapturing then
+        buttonLabel = label .. ": [PRESS KEY]"
+    end
+
+    if TimMenu.Button(buttonLabel) then
+        bindCaptureState.activeId = bindId
+        bindCaptureState.waitingRelease = true
+    end
     TimMenu.NextLine()
+
+    if isCapturing then
+        if bindCaptureState.waitingRelease then
+            if not input.IsButtonDown(MOUSE_LEFT) then
+                bindCaptureState.waitingRelease = false
+            end
+        else
+            for code = 1, 255 do
+                if input.IsButtonPressed(code) then
+                    if code == KEY_ESCAPE then
+                        updatedBind.key = 0
+                        updatedBind.mode = 0
+                    else
+                        updatedBind.key = code
+                    end
+                    bindCaptureState.activeId = nil
+                    bindCaptureState.waitingRelease = false
+                    break
+                end
+            end
+        end
+    end
 
     local selectorIndex = modeToSelectorIndex(updatedBind.mode)
     local nextSelectorIndex = TimMenu.Selector(label .. " Mode", selectorIndex, activationModes)
