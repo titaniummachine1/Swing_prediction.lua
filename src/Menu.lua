@@ -103,8 +103,6 @@ local function renderKeybindControls(label, bind)
     local keybindResult = TimMenu.Keybind(label, widgetState)
     local updatedBind = applyKeybindResult(bind, keybindResult)
     TimMenu.NextLine()
-    TimMenu.Text("Right click keybind box to bind key")
-    TimMenu.NextLine()
 
     local selectorIndex = modeToSelectorIndex(updatedBind.mode)
     local nextSelectorIndex = TimMenu.Selector(label .. " Mode", selectorIndex, activationModes)
