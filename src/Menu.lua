@@ -15,6 +15,17 @@ local MenuUI = {}
 local activationModes = { "Always On", "Hold", "Hold On Release", "Toggle" }
 local activationModeValues = { 0, 1, 3, 2 }
 
+local function toTimMenuMode(mode)
+    local normalizedMode = tonumber(mode) or 0
+    if normalizedMode == 3 then
+        return 1 -- TimMenu has no release mode, so render it as Hold in the key widget.
+    end
+    if normalizedMode < 0 or normalizedMode > 2 then
+        return 0
+    end
+    return normalizedMode
+end
+
 local function modeToSelectorIndex(mode)
     local normalizedMode = tonumber(mode) or 0
     for index, modeValue in ipairs(activationModeValues) do
@@ -85,9 +96,14 @@ local function applyKeybindResult(existingBind, result)
 end
 
 local function renderKeybindControls(label, bind)
-    local currentKey = bind.key
-    local newKey = TimMenu.Keybind(label, currentKey or 0)
-    local updatedBind = applyKeybindResult(bind, newKey)
+    local widgetState = {
+        key = tonumber(bind.key) or 0,
+        mode = toTimMenuMode(bind.mode),
+    }
+    local keybindResult = TimMenu.Keybind(label, widgetState)
+    local updatedBind = applyKeybindResult(bind, keybindResult)
+    TimMenu.NextLine()
+    TimMenu.Text("Right click keybind box to bind key")
     TimMenu.NextLine()
 
     local selectorIndex = modeToSelectorIndex(updatedBind.mode)
