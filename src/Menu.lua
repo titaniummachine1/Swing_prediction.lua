@@ -27,7 +27,7 @@ function MenuUI.Render(menu)
     end
     menu.Charge.ChargeBotFOV = math.max(1, math.min(180, rawChargeBotFOV))
 
-    if not (gui.IsMenuOpen() and TimMenu.Begin("Swing Prediction [FOV-FIX]")) then
+    if not (gui.IsMenuOpen() and TimMenu.Begin("Swing Prediction")) then
         return
     end
 
@@ -71,19 +71,19 @@ function MenuUI.Render(menu)
         TimMenu.BeginSector("Demoknight")
         menu.Charge.ChargeBot = TimMenu.Checkbox("Charge Bot", menu.Charge.ChargeBot)
         TimMenu.NextLine()
-        TimMenu.Text(string.format("Charge Bot Activation FOV: %d", menu.Charge.ChargeBotFOV))
-        TimMenu.NextLine()
-        menu.Charge.ChargeBotFOV = TimMenu.Slider("Charge Bot Activation FOV", menu.Charge.ChargeBotFOV or 90, 1, 180, 1)
-        TimMenu.NextLine()
-        local currentKey = menu.Charge.Keybind
-        if type(currentKey) == "table" then currentKey = currentKey.key end
-        local newKey = TimMenu.Keybind("ChargeBot Keybind", currentKey or 0)
-        if type(menu.Charge.Keybind) == "table" then
-            menu.Charge.Keybind.key = newKey
-        else
-            menu.Charge.Keybind = { key = newKey, mode = 1 } -- Migrate to table
+        if menu.Charge.ChargeBot then
+            menu.Charge.ChargeBotFOV = TimMenu.Slider("ChargeBot FOV", menu.Charge.ChargeBotFOV or 90, 1, 180, 1)
+            TimMenu.NextLine()
+            local currentKey = menu.Charge.Keybind
+            if type(currentKey) == "table" then currentKey = currentKey.key end
+            local newKey = TimMenu.Keybind("ChargeBot Keybind", currentKey or 0)
+            if type(menu.Charge.Keybind) == "table" then
+                menu.Charge.Keybind.key = newKey
+            else
+                menu.Charge.Keybind = { key = newKey, mode = 1 } -- Migrate to table
+            end
+            TimMenu.NextLine()
         end
-        TimMenu.NextLine()
         menu.Charge.ChargeControl = TimMenu.Checkbox("Charge Control", menu.Charge.ChargeControl)
         TimMenu.NextLine()
         menu.Charge.ChargeReach = TimMenu.Checkbox("Charge Reach", menu.Charge.ChargeReach)
